@@ -1,5 +1,5 @@
 #
-# Makefile
+# makefile
 #
 
 PROGRAM=smooth
@@ -10,16 +10,19 @@ OBJ=smooth.o decomment.o gauss_elimination.o create_matrix.o free_matrix.o
 SRC=smooth.c decomment.c gauss_elimination.c create_matrix.c free_matrix.c
 HEAD=decomment.h revision.h matrix.h gauss_elimination.h create_matrix.h free_matrix.h
 
-#  C compiler
+# C compiler
 CC = gcc
 
-# Compiler optimalisation (-O0 -g for debug, -O0 -pg for gprof, -O2 for ussual opt.)
-OPT = -O2 #-O0 -g
+# Compiler optimalisation (-O0 for debug, -O2 for ussual opt.)
+OPT = -O2 #-O0 
+
+# For gdb, OPT must be -O0  (-g for gdb, -pd for gproof)
+DBG = #-pg
 
 # Ostatni parametry prekladace (-Wall -Wextra -pedantic)
 CFLAGS = -Wall -Wextra #-pedantic
 
-# Linkovane knihovny  libefense.a = -lefence
+# Linkovane knihovny  libefence.a = -lefence
 LIB = #-lefence
 
 # Cilum build, install, uninstall, clean a dist neodpovida primo zadny soubor
@@ -53,16 +56,16 @@ clean:
 
 # Source package
 dist:
-	tar czf $(PROGRAM)-$(VERSION).tgz $(SRC) $(HEAD) Makefile
+	tar czf $(PROGRAM)-$(VERSION).tgz $(SRC) $(HEAD) makefile readme.txt test.dat
 
 # Slinkovani
-$(PROGRAM): $(OBJ) Makefile
-	$(CC) $(OPT) $(OBJ) $(LIB) -o $(PROGRAM)
+$(PROGRAM): $(OBJ) makefile
+	$(CC) $(OBJ) $(DBG) $(LIB) -o $(PROGRAM)
 
 #
 # The target form '.s1.s2', where .s1 and .s2 are currently valid suffixes, then
 # it defines a transformation from *.s1 to *.s2 (double suffix interference)
 # If a target has the form '.s1', where .s1 is a currently valid suffix,
 # then it defines a transformation from *.s1 to * (single suffix interference)
-.c.o: $(HEAD) Makefile
-	$(CC) $(CFLAGS) $(OPT) -c $<
+.c.o: $(HEAD) makefile
+	$(CC) $(CFLAGS) $(OPT) $(DBG) -c $<

@@ -3,11 +3,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <errno.h>
-#include <libgen.h>  /* Vyzaduje basename v novejsich versich C*/
+//#include <string.h>
+//#include <errno.h>
+#include <libgen.h>  /* char *basename(char *), char *dirname(char *) */
 #include <unistd.h>  /* UNIX standard function definitions */
-//#include <math.h>
 
 #include "decomment.h"
 #include "revision.h"
@@ -47,13 +46,13 @@ int main(int argc, char **argv)
 
   progname = basename(argv[0]);
 
-/* Zadne argumenty */  
+/* None arguments */  
   if (argc == 1) {
     usage();
     exit (EXIT_FAILURE);
   }
 
-/* Volby prikazove radky */
+/* Options command line */
   while ( (ch = getopt(argc, argv, "n:p:h?")) != -1 ) {
     switch (ch) {
       case 'n':
@@ -80,7 +79,7 @@ int main(int argc, char **argv)
     exit (EXIT_FAILURE);
   }
 
-    o = sp/2;  /* offset */
+    o = sp/2;  /* Offset */
 
   if (dp < 0 || dp > DPMAX) {
     fprintf(stderr,"Incorrect degree of approx. polynom, (0<=p<=%d)!\n",DPMAX);
@@ -88,7 +87,7 @@ int main(int argc, char **argv)
   }
 
 
-/* Defaultni argument - Data_file */  
+/* Argument - filename */  
   if (argv[optind] == NULL) {
     fprintf(stderr,"Data file missing!\n");
     exit (EXIT_FAILURE);
