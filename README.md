@@ -178,6 +178,35 @@ The Savitzky-Golay filter is an optimal linear filter for smoothing and derivati
 f^(d)(x_i) = Σ_{k=-n_L}^{n_R} c_k · y_{i+k}
 ```
 
+### Key Difference from POLYFIT Method
+
+While both SAVGOL and POLYFIT use polynomial approximation, they differ fundamentally in their computational approach:
+
+**POLYFIT approach:**
+- For each data point, fits a new polynomial to the surrounding window
+- Solves the least squares problem individually for each point
+- Coefficients of the polynomial change with each window position
+- Computationally intensive: O(n·p³)
+
+**SAVGOL approach (Method of Undetermined Coefficients):**
+- Recognizes that for equidistant grids, the filter coefficients are translation-invariant
+- Uses the **method of undetermined coefficients** to pre-compute universal weights
+- These weights depend only on the window geometry, not on the actual data values
+- Applies the same weights as a linear convolution across all data points
+- Computationally efficient: O(p³) once, then O(n·w) for application
+
+### The Method of Undetermined Coefficients
+
+The Savitzky-Golay method seeks a linear combination of data points:
+
+```
+ŷ₀ = c₋ₙₗ·y₋ₙₗ + ... + c₀·y₀ + ... + cₙᵣ·yₙᵣ
+```
+
+where the coefficients `c_k` are "undetermined" and must satisfy the condition that the filter exactly reproduces polynomials up to degree `p`.
+
+**The key insight:** For a given window configuration and polynomial degree, these coefficients can be determined once and applied universally.
+
 ### Coefficient Derivation
 
 Coefficients are derived from the condition that the filter must exactly reproduce polynomials up to degree `p`.
@@ -192,6 +221,8 @@ where:
 - `d` is the derivative order
 - `d!` is factorial
 
+This leads to a system of linear equations where the unknowns are the filter coefficients `c_j`.
+
 ### Matrix Formulation
 
 We solve a system of linear equations:
@@ -202,6 +233,16 @@ We solve a system of linear equations:
 [⋮     ⋮        ⋮      ⋱       ⋮      ] [    ⋮    ]   [    ⋮     ]
 [1    n_R     n_R²     ...    n_R^p   ] [  c_{n_R} ]   [δ_{p,d}·p!]
 ```
+
+### Computational Efficiency
+
+The brilliance of the Savitzky-Golay approach becomes apparent when processing large datasets:
+
+**Example for 10,000 data points, window size 21, polynomial degree 4:**
+- **POLYFIT:** Must solve 10,000 separate 5×5 linear systems
+- **SAVGOL:** Solves only ONE 5×5 system, then performs 10,000 simple weighted sums
+
+This difference explains why SAVGOL is preferred for real-time signal processing and large datasets, while maintaining the same mathematical accuracy as POLYFIT for uniform grids.
 
 ### Coefficient Properties
 
@@ -424,11 +465,11 @@ typedef struct {
 
 | Method | Time | Memory | Scalability |
 |--------|------|--------|-------------|
-| POLYFIT | O(n·w·p³) | O(p²) | Good for small w,p |
-| SAVGOL | O(n·w·p³) + O(n) | O(p²) | Good for small w,p |
+| POLYFIT | O(n·p³) | O(p²) | Good for small p |
+| SAVGOL | O(p³) + O(n·w) | O(w) | Excellent for large n |
 | TIKHONOV | O(n) | O(n) | Excellent |
 
-*Note: w = window size, p = polynomial degree (≤12), n = number of data points. For POLYFIT and SAVGOL, each of n points requires solving a p×p system (O(p³)) with w data points in the window. TIKHONOV solves one n×n banded system using efficient LAPACK routines.*
+*Note: w = window size, p = polynomial degree (≤12), n = number of data points. POLYFIT requires solving a p×p system (O(p³)) for each of n points. SAVGOL solves the p×p system only once for coefficient computation, then applies these coefficients as a linear convolution (O(w)) to all n points. TIKHONOV solves one n×n banded system using efficient LAPACK routines.*
 
 ### Smoothing Quality
 
@@ -724,6 +765,6 @@ Each method has a strong mathematical foundation and is optimized for specific d
 
 ---
 
-**Document revision:** 2025-05-28  
+**Document revision:** 2025-05-31  
 **Compatibility:** smooth v5.1+  
-**Dependencies:** LAPACK, BLAS, lib_matrix
+**Dependencies:** LAPACK, BLAS
