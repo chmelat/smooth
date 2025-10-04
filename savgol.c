@@ -1,8 +1,7 @@
 /*  Savitzky-Golay filter for data smoothing
  *  Implementation
+ *  V2.1/2025-10-04/ Added uniform grid check (SG not suitable for non-uniform grids)
  *  V2.0/2025-05-28/ Updated to use LAPACK/BLAS instead of lib_matrix
- *  V1.1/2025-05-27/ Added grid analysis support
- *  V1.0/2025-05-27/ Extracted from smooth.c
  */
 
 #include <stdio.h>
@@ -13,8 +12,11 @@
 #include "grid_analysis.h"
 
 #ifndef DPMAX
-#define DPMAX 12  /* Maximum degree of approximation polynomial - configurable */  
+#define DPMAX 12
 #endif
+
+/* Threshold for grid uniformity - above this CV, grid is considered non-uniform */
+#define UNIFORMITY_CV_THRESHOLD 0.05
 
 /* LAPACK function declarations */
 extern void dposv_(char *uplo, int *n, int *nrhs, double *a, int *lda, 
@@ -54,12 +56,12 @@ void savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, doubl
 {
     int i, j;
     double *a;
-    double *A;  /* Matrix for normal equations (column-major storage) */
-    double *B;  /* Right-hand side vector */
+    double *A;
+    double *B;
     int matrix_size;
     int info;
     int nrhs = 1;
-    char uplo = 'U';  /* Upper triangular part */
+    char uplo = 'U';
     
     /* Input validation */
     if (c == NULL || poly_degree < 0 || deriv_order < 0 || deriv_order > poly_degree) {
@@ -67,7 +69,6 @@ void savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, doubl
         return;
     }
     
-    /* Check that we have enough points for the polynomial degree */
     if (nl + nr < poly_degree) {
         fprintf(stderr, "Error: Not enough points for polynomial degree\n");
         return;
@@ -95,15 +96,11 @@ void savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, doubl
     }
     
     /* Set up the normal equations for the desired polynomial fit */
-    /* Matrix A is symmetric, so we only need to fill upper triangle */
-    /* LAPACK uses column-major storage */
     for (j = 0; j <= poly_degree; j++) {
         for (i = 0; i <= j; i++) {
-            /* Column-major: A[i,j] = A[i + j*matrix_size] */
             A[i + j*matrix_size] = a[i + j];
         }
         
-        /* Right-hand side for the derivatives */
         if (j == deriv_order)
             B[j] = factorial(deriv_order);
         else
@@ -127,7 +124,7 @@ void savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, doubl
     /* Compute the filter coefficients using the solution */
     for (i = 0; i <= nl + nr; i++) {
         double sum = B[0];
-        double pos = i - nl;  /* Relative position to center */
+        double pos = i - nl;
         
         for (j = 1; j <= poly_degree; j++)
             sum += B[j] * power(pos, j);
@@ -149,7 +146,7 @@ static double apply_savgol_filter(double *x, double *y, int center_idx,
     int i;
     double result = 0.0;
     double *c;
-    double h = 1.0;  /* Normalized spacing */
+    double h = 1.0;
     
     /* Allocate coefficients array */
     c = (double*)calloc(nl + nr + 1, sizeof(double));
@@ -161,9 +158,8 @@ static double apply_savgol_filter(double *x, double *y, int center_idx,
     /* Calculate filter coefficients */
     savgol_coefficients(nl, nr, poly_degree, deriv_order, c);
     
-    /* Calculate the average spacing for non-uniform grids */
+    /* For derivatives, calculate average spacing */
     if (deriv_order > 0) {
-        /* For derivatives, we need to account for non-uniform spacing */
         h = 0.0;
         int count = 0;
         for (i = center_idx - nl + 1; i <= center_idx + nr; i++) {
@@ -172,11 +168,10 @@ static double apply_savgol_filter(double *x, double *y, int center_idx,
                 count++;
             }
         }
-        /* Avoid division by zero */
         if (count > 0) {
-            h /= count;  /* Average spacing */
+            h /= count;
         } else {
-            h = 1.0;  /* Default if no valid intervals */
+            h = 1.0;
         }
     }
     
@@ -184,15 +179,13 @@ static double apply_savgol_filter(double *x, double *y, int center_idx,
     for (i = 0; i <= nl + nr; i++) {
         int idx = center_idx - nl + i;
         
-        /* Boundary check */
         if (idx >= 0 && idx < data_size) {
             result += c[i] * y[idx];
         }
     }
     
-    /* Scale for derivatives - for non-uniform x values */
+    /* Scale for derivatives */
     if (deriv_order > 0) {
-        /* Convert from normalized derivatives to actual derivatives */
         double scale_factor = 1.0;
         for (i = 0; i < deriv_order; i++)
             scale_factor /= h;
@@ -251,28 +244,48 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
         }
     }
     
-    /* Analyze grid uniformity */
+    /* CRITICAL: Check grid uniformity - SG method requires uniform grid */
     grid_info = analyze_grid(x, n, 0);
     if (grid_info == NULL) {
-        fprintf(stderr, "Warning: Grid analysis failed, proceeding with standard method\n");
-    } else {
-        /* Print grid analysis if significant non-uniformity detected */
-        if (grid_info->reliability_warning) {
-            printf("# Savitzky-Golay: Grid analysis detected non-uniformity\n");
-            print_grid_analysis(grid_info, 0, "# ");
-            printf("# %s\n", get_grid_recommendation(grid_info));
-            
-            /* Suggest adaptive window size for highly non-uniform grids */
-            if (grid_info->ratio_max_min > 20.0) {
-                int suggested_window = optimal_window_size(grid_info, 3, window_size);
-                if (suggested_window < window_size) {
-                    printf("# WARNING: Consider using smaller window size (%d) for this non-uniform grid\n", 
-                           suggested_window);
-                }
-            }
-        }
-        free_grid_analysis(grid_info);
+        fprintf(stderr, "Error: Grid analysis failed\n");
+        return NULL;
     }
+    
+    /* Check if grid is sufficiently uniform for Savitzky-Golay method */
+    if (grid_info->cv > UNIFORMITY_CV_THRESHOLD) {
+        fprintf(stderr, "\n");
+        fprintf(stderr, "========================================\n");
+        fprintf(stderr, "ERROR: Savitzky-Golay method not suitable for non-uniform grid!\n");
+        fprintf(stderr, "========================================\n");
+        fprintf(stderr, "Grid analysis:\n");
+        fprintf(stderr, "  Coefficient of variation (CV) = %.4f\n", grid_info->cv);
+        fprintf(stderr, "  Threshold for uniformity = %.4f\n", UNIFORMITY_CV_THRESHOLD);
+        fprintf(stderr, "  h_min = %.6e, h_max = %.6e, h_avg = %.6e\n", 
+                grid_info->h_min, grid_info->h_max, grid_info->h_avg);
+        fprintf(stderr, "  Ratio h_max/h_min = %.2f\n", grid_info->ratio_max_min);
+        fprintf(stderr, "\n");
+        fprintf(stderr, "The Savitzky-Golay filter assumes uniformly spaced data points.\n");
+        fprintf(stderr, "Your data has significant spacing variation.\n");
+        fprintf(stderr, "\n");
+        fprintf(stderr, "RECOMMENDED ALTERNATIVES:\n");
+        fprintf(stderr, "  1. Use Tikhonov method: -m 2 -l auto\n");
+        fprintf(stderr, "     (Works correctly with non-uniform grids)\n");
+        fprintf(stderr, "  2. Use Polyfit method: -m 0 -n %d -p %d\n", window_size, poly_degree);
+        fprintf(stderr, "     (Local fitting, less sensitive to spacing)\n");
+        fprintf(stderr, "  3. Resample your data to uniform grid before smoothing\n");
+        fprintf(stderr, "\n");
+        
+        free_grid_analysis(grid_info);
+        return NULL;
+    }
+    
+    /* Grid is sufficiently uniform - proceed with SG filtering */
+    if (grid_info->cv > 0.01) {
+        /* Grid is uniform enough but not perfectly uniform - just warn */
+        printf("# Savitzky-Golay: Grid is nearly uniform (CV=%.4f)\n", grid_info->cv);
+    }
+    
+    free_grid_analysis(grid_info);
     
     offset = window_size / 2;
     
@@ -295,24 +308,20 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
         return NULL;
     }
     
-    /* Left boundary handling - special case with reduced window */
+    /* Left boundary handling */
     for (i = 0; i < offset; i++) {
-        /* For left boundary points, use an asymmetric window */
         int left_pts = i;
         int right_pts = window_size - 1 - left_pts;
         
-        /* Ensure we don't exceed polynomial degree constraints */
         if (left_pts + right_pts < poly_degree) {
             right_pts = poly_degree - left_pts;
             if (i + right_pts >= n) {
-                /* Can't fit polynomial, use nearest valid point */
                 result->y_smooth[i] = y[i];
                 result->y_deriv[i] = 0.0;
                 continue;
             }
         }
         
-        /* Calculate smoothed value and derivative */
         fi = apply_savgol_filter(x, y, i, left_pts, right_pts, poly_degree, 0, n);
         dfi = apply_savgol_filter(x, y, i, left_pts, right_pts, poly_degree, 1, n);
         
@@ -320,9 +329,8 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
         result->y_deriv[i] = dfi;
     }
     
-    /* Central points - use full symmetric window */
+    /* Central points */
     for (i = offset; i < n - offset; i++) {
-        /* Calculate smoothed value and derivative */
         fi = apply_savgol_filter(x, y, i, offset, offset, poly_degree, 0, n);
         dfi = apply_savgol_filter(x, y, i, offset, offset, poly_degree, 1, n);
         
@@ -330,24 +338,20 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
         result->y_deriv[i] = dfi;
     }
     
-    /* Right boundary handling - special case with reduced window */
+    /* Right boundary handling */
     for (i = n - offset; i < n; i++) {
-        /* For right boundary points, use an asymmetric window */
         int right_pts = n - 1 - i;
         int left_pts = window_size - 1 - right_pts;
         
-        /* Ensure we don't exceed polynomial degree constraints */
         if (left_pts + right_pts < poly_degree) {
             left_pts = poly_degree - right_pts;
             if (i - left_pts < 0) {
-                /* Can't fit polynomial, use nearest valid point */
                 result->y_smooth[i] = y[i];
                 result->y_deriv[i] = 0.0;
                 continue;
             }
         }
         
-        /* Calculate smoothed value and derivative */
         fi = apply_savgol_filter(x, y, i, left_pts, right_pts, poly_degree, 0, n);
         dfi = apply_savgol_filter(x, y, i, left_pts, right_pts, poly_degree, 1, n);
         

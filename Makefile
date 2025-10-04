@@ -4,7 +4,7 @@
 
 # Program name and version
 PROGRAM = smooth
-VERSION = 5.2
+VERSION = 5.3
 
 # Installation directories
 PREFIX = /usr/local

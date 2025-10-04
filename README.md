@@ -1,7 +1,7 @@
 # Methods for Smoothing Experimental Data in the smooth Program
 
 **Technical Documentation**  
-Version 5.1 | May 2025
+Version 5.3 | October 2025
 
 ---
 
@@ -44,7 +44,6 @@ The goal of smoothing is to estimate `y_true` while suppressing `ε_i` and prese
 - `-p P` - polynomial degree (polyfit, savgol, max 12)
 - `-l λ` - regularization parameter (tikhonov)
 - `-l auto` - automatic λ selection using GCV (tikhonov)
-- `-a` - use adaptive weights for non-uniform grids (tikhonov)
 - `-d` - display first derivative in output (optional)
 
 **Note on polynomial degree:** Degrees > 6 may generate numerical stability warnings.
@@ -52,6 +51,22 @@ The goal of smoothing is to estimate `y_true` while suppressing `ε_i` and prese
 **Note on derivatives:** From version 5.1, first derivative output is optional. Without the `-d` switch, the program outputs only smoothed values. With the `-d` switch, it outputs both smoothed values and first derivatives.
 
 ---
+
+## What's New in Version 5.3
+
+### Major Improvements
+
+**Tikhonov Regularization:**
+- **Simplified API:** Removed `adaptive_weights` option - method now automatically uses correct discretization
+- **Mathematically correct D² operator:** Proper implementation for non-uniform grids without user intervention
+- **Better accuracy:** Improved results on non-uniform grids by default
+- **Cleaner code:** ~150 lines of code removed while improving correctness
+
+**Savitzky-Golay Filter:**
+- **Grid uniformity checking:** Method now verifies grid uniformity before processing
+- **Automatic rejection:** Non-uniform grids (CV > 0.05) are rejected with helpful error message
+- **Recommendations:** When rejected, program suggests appropriate alternative methods
+- **Mathematical correctness:** Prevents incorrect application of SG filter to inappropriate data
 
 ### API Structure
 
@@ -68,12 +83,12 @@ SavgolResult* savgol_smooth(double *x, double *y, int n,
                             int window_size, int poly_degree);
 void free_savgol_result(SavgolResult *result);
 
-// Tikhonov
+// Tikhonov - SIMPLIFIED in v5.3
 TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda);
-TikhonovResult* tikhonov_smooth_adaptive(double *x, double *y, int n, 
-                                         double lambda, int adaptive_weights);
 void free_tikhonov_result(TikhonovResult *result);
 ```
+
+**Note:** The `tikhonov_smooth_adaptive()` function has been removed in v5.3. The standard `tikhonov_smooth()` function now automatically uses correct discretization for both uniform and non-uniform grids.
 
 ---
 
@@ -157,6 +172,7 @@ typedef struct {
 - Analytical computation of derivatives of any order
 - Adaptable to changes in curvature
 - Good preservation of local extrema
+- Works with moderately non-uniform grids
 
 **Disadvantages:**
 - Sensitive to outliers
@@ -195,6 +211,38 @@ While both SAVGOL and POLYFIT use polynomial approximation, they differ fundamen
 - Applies the same weights as a linear convolution across all data points
 - Computationally efficient: O(p³) once, then O(n·w) for application
 
+### **CRITICAL: Grid Uniformity Requirement**
+
+**Version 5.3 Important Change:** The Savitzky-Golay method now enforces grid uniformity checking.
+
+The mathematical foundation of SG filter assumes **uniformly spaced data points**. The method is based on fitting polynomials in normalized coordinate space where points are at integer positions: {..., -2, -1, 0, 1, 2, ...}.
+
+**Uniformity Check:**
+```
+CV = std_dev(spacing) / avg(spacing)
+
+If CV > 0.05:  REJECT - Grid too non-uniform for SG
+If CV > 0.01:  WARNING - Nearly uniform, proceed with caution
+If CV ≤ 0.01:  OK - Grid sufficiently uniform
+```
+
+**What happens when grid is rejected:**
+```
+========================================
+ERROR: Savitzky-Golay method not suitable for non-uniform grid!
+========================================
+Grid analysis:
+  Coefficient of variation (CV) = 0.2341
+  Threshold for uniformity = 0.0500
+  
+RECOMMENDED ALTERNATIVES:
+  1. Use Tikhonov method: -m 2 -l auto
+     (Works correctly with non-uniform grids)
+  2. Use Polyfit method: -m 0 -n 5 -p 2
+     (Local fitting, less sensitive to spacing)
+  3. Resample your data to uniform grid before smoothing
+```
+
 ### The Method of Undetermined Coefficients
 
 The Savitzky-Golay method seeks a linear combination of data points:
@@ -205,7 +253,7 @@ The Savitzky-Golay method seeks a linear combination of data points:
 
 where the coefficients `c_k` are "undetermined" and must satisfy the condition that the filter exactly reproduces polynomials up to degree `p`.
 
-**The key insight:** For a given window configuration and polynomial degree, these coefficients can be determined once and applied universally.
+**The key insight:** For a given window configuration and polynomial degree, these coefficients can be determined once and applied universally - but only on uniform grids!
 
 ### Coefficient Derivation
 
@@ -242,25 +290,7 @@ The brilliance of the Savitzky-Golay approach becomes apparent when processing l
 - **POLYFIT:** Must solve 10,000 separate 5×5 linear systems
 - **SAVGOL:** Solves only ONE 5×5 system, then performs 10,000 simple weighted sums
 
-This difference explains why SAVGOL is preferred for real-time signal processing and large datasets, while maintaining the same mathematical accuracy as POLYFIT for uniform grids.
-
-### Coefficient Properties
-
-1. **Symmetry:** For symmetric windows and even derivatives, coefficients are symmetric
-2. **Normalization:** Σc_k = 1 for d=0 (constant preservation)
-3. **Moment preservation:** Filter preserves polynomials up to degree p
-
-### Adaptation for Non-uniform Grids
-
-For non-uniform grids, coefficients are scaled according to local average spacing:
-
-```c
-// Calculate average spacing in window
-h_avg = Σ(x_{i+1} - x_i) / number_of_intervals
-
-// Scaling for d-th derivative
-result *= (1/h_avg)^d
-```
+This difference explains why SAVGOL is preferred for real-time signal processing and large datasets, while maintaining the same mathematical accuracy as POLYFIT **for uniform grids**.
 
 ### Efficient Implementation
 
@@ -270,8 +300,6 @@ The program uses LAPACK routine `dposv` for solving the symmetric positive defin
 // Solve linear system for Savitzky-Golay coefficients
 dposv_(&uplo, &matrix_size, &nrhs, A, &matrix_size, B, &matrix_size, &info);
 ```
-
-The coefficient matrix is symmetric and positive definite by construction, ensuring numerical stability.
 
 ### Modularized Implementation
 
@@ -292,20 +320,20 @@ void savgol_coefficients(int nl, int nr, int poly_degree,
 
 ### Optimal Properties
 
-The Savitzky-Golay filter minimizes approximation error in the least squares sense and maximizes signal-to-noise ratio for polynomial signals.
+The Savitzky-Golay filter minimizes approximation error in the least squares sense and maximizes signal-to-noise ratio for polynomial signals **on uniform grids**.
 
 ### Characteristics
 
 **Advantages:**
-- Optimal for polynomial signals
+- Optimal for polynomial signals on uniform grids
 - Excellent preservation of moments and peak areas
 - Efficient implementation (convolution)
 - Minimal phase distortion
 - Simultaneous computation of functions and derivatives
 
 **Disadvantages:**
+- **Requires uniform grid** - automatically rejected if CV > 0.05
 - Fixed coefficients for entire window
-- Problematic for very non-uniform grids
 - May introduce oscillations at sharp edges
 - Limited adaptability
 - Numerical warnings for degrees > 6
@@ -336,15 +364,29 @@ where:
 
 ### Second Derivative Discretization
 
-For uniform grid with step `h`:
+**Version 5.3 Improvement:** Correct implementation for both uniform and non-uniform grids.
+
+**For uniform grid with step `h`:**
 ```
 D²u_i ≈ (u_{i-1} - 2u_i + u_{i+1})/h²
 ```
 
-For non-uniform grid:
+**For non-uniform grid (NEW in v5.3):**
+For point `i` with left spacing `h₁ = x[i] - x[i-1]` and right spacing `h₂ = x[i+1] - x[i]`:
+
 ```
-D²u_i ≈ 2[((u_{i+1}-u_i)/h_{i+1}) - ((u_i-u_{i-1})/h_i)]/(h_i + h_{i+1})
+D²u_i ≈ 2/(h₁+h₂) · [u_{i-1}/h₁ - u_i·(1/h₁+1/h₂) + u_{i+1}/h₂]
 ```
+
+This leads to a **symmetric tridiagonal matrix** with variable coefficients:
+
+```
+A[i,i-1] = 2λ/(h₁·(h₁+h₂))
+A[i,i]   = 1 + 2λ/(h₁+h₂)·(1/h₁+1/h₂)
+A[i,i+1] = 2λ/(h₂·(h₁+h₂))
+```
+
+**Key improvement:** The method automatically uses the correct discretization. No user intervention or parameter selection needed - it "just works" for any grid spacing.
 
 ### Variational Approach
 
@@ -361,15 +403,12 @@ which leads to the linear system:
 
 ### Matrix Representation
 
-For tridiagonal matrix `D²`:
-```
-       [ 1  -2   1   0  ...  0 ]
-D² = 1/h² [ 0   1  -2   1  ...  0 ]
-       [ ⋮   ⋱   ⋱   ⋱   ⋱  ⋮ ]
-       [ 0  ...  0   1  -2   1 ]
-```
+Matrix `A = I + λD^T D` is:
+- Symmetric
+- Positive definite
+- Tridiagonal (banded with bandwidth 1)
 
-Matrix `A = I + λD^T D` is symmetric, positive definite, banded.
+This structure allows efficient solution using LAPACK's banded solver `dpbsv`.
 
 ### Boundary Conditions
 
@@ -378,21 +417,20 @@ The program implements natural boundary conditions:
 u''(0) = u''(L) = 0
 ```
 
-This is realized by matrix modification at edges:
-- First row: reduced operator
-- Last row: reduced operator
+This is realized by matrix modification at edges using first-order differences.
 
-### Adaptive Weights for Non-uniform Grids
+### Automatic Grid Handling (NEW in v5.3)
 
-**Average coefficient method (default):**
-```
-c = λ · (1/(n-1)) · Σ(1/h_i²)
-```
+**Previous versions (≤5.2):** Required user to choose between:
+- Average coefficient method (default)
+- Adaptive weights method (`-a` flag)
 
-**Local weights method (option -a):**
-```
-w_i = λ/h_i²  for each interval
-```
+**Version 5.3:** Automatic correct discretization!
+- No user choice needed
+- Mathematically correct for uniform grids
+- Mathematically correct for non-uniform grids
+- Same code path for both cases
+- Simplified API
 
 ### Generalized Cross Validation (GCV)
 
@@ -407,12 +445,16 @@ where:
 - `H_λ = (I + λD^T D)^{-1}` is the influence matrix
 - `tr(H_λ)` is the matrix trace
 
-**Trace estimation using eigenvalues:**
+**Trace estimation using eigenvalues (corrected in v5.3):**
 ```
 tr(H_λ) ≈ Σ_{k=1}^n 1/(1 + λμ_k)
 ```
 
-where `μ_k` are eigenvalues of matrix `D^T D`.
+For natural boundary conditions:
+```
+θ_k = πk/n  (corrected from πk/(n+1))
+μ_k = 4·sin²(θ_k/2) / h²
+```
 
 ### Efficient Implementation
 
@@ -427,7 +469,7 @@ AB[1,j] = diagonal elements
 dpbsv_(&uplo, &n, &kd, &nrhs, AB, &ldab, b, &n, &info);
 ```
 
-### Modularized Implementation
+### Simplified Implementation (v5.3)
 
 ```c
 typedef struct {
@@ -439,6 +481,9 @@ typedef struct {
     double regularization_term;  // λ||D²u||²
     double total_functional;     // J[u]
 } TikhonovResult;
+
+// Single simple function - no more adaptive_weights parameter!
+TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda);
 ```
 
 ### Characteristics
@@ -449,7 +494,8 @@ typedef struct {
 - Robust to outliers
 - Efficient for large datasets (O(n) memory and time)
 - Automatic parameter selection via GCV
-- Excellent for non-uniform grids
+- **NEW v5.3:** Excellent for non-uniform grids automatically
+- **NEW v5.3:** Simplified usage - no complex parameter choices
 
 **Disadvantages:**
 - Single global parameter λ
@@ -469,7 +515,7 @@ typedef struct {
 | SAVGOL | O(p³) + O(n·w) | O(w) | Excellent for large n |
 | TIKHONOV | O(n) | O(n) | Excellent |
 
-*Note: w = window size, p = polynomial degree (≤12), n = number of data points. POLYFIT requires solving a p×p system (O(p³)) for each of n points. SAVGOL solves the p×p system only once for coefficient computation, then applies these coefficients as a linear convolution (O(w)) to all n points. TIKHONOV solves one n×n banded system using efficient LAPACK routines.*
+*Note: w = window size, p = polynomial degree (≤12), n = number of data points.*
 
 ### Smoothing Quality
 
@@ -480,7 +526,24 @@ typedef struct {
 | Noise robustness | *** | **** | ***** |
 | Derivative quality | ***** | ***** | *** |
 | Boundary behavior | ** | *** | **** |
-| Non-uniform grids | *** | ** | ***** |
+| Non-uniform grids | *** | ❌ | ***** |
+| Ease of use (v5.3) | **** | **** | ***** |
+
+**Key:** ❌ = Not suitable (automatically rejected)
+
+### Grid Type Compatibility
+
+| Grid Type | POLYFIT | SAVGOL | TIKHONOV |
+|-----------|---------|--------|----------|
+| Perfectly uniform (CV < 0.01) | ✓ | ✓ | ✓ |
+| Nearly uniform (CV < 0.05) | ✓ | ⚠️ | ✓ |
+| Moderately non-uniform (CV < 0.2) | ✓ | ❌ | ✓ |
+| Highly non-uniform (CV > 0.2) | ⚠️ | ❌ | ✓ |
+
+**Legend:**
+- ✓ = Recommended
+- ⚠️ = Usable with caution
+- ❌ = Rejected or not recommended
 
 ---
 
@@ -493,22 +556,24 @@ typedef struct {
 - You need to preserve local details
 - You have moderately noisy data
 - You want highest quality derivatives
+- Grid has moderate spacing variations
 
 #### SAVGOL - when:
+- **Grid is uniform (CV < 0.05)** - automatically checked!
 - You want mathematically optimal linear smoothing for polynomial signals
 - Data contains periodic or oscillatory components that need preservation
 - You need excellent peak shape preservation (areas, moments)
 - You want minimal phase distortion in the smoothed signal
-- You're processing time series or spectroscopic data
+- You're processing time series or spectroscopic data on uniform grids
 - You need simultaneous high-quality function and derivative estimation
-- You have reasonably uniform grid spacing
 
 #### TIKHONOV - when:
+- **Grid is non-uniform** - now works perfectly automatically!
 - Data is very noisy
 - You need global consistency
-- You have significantly non-uniform grid
 - You want automatic parameter selection
 - You prefer global optimization approaches over local fitting
+- You want the simplest interface (just λ parameter)
 
 ### Parameter Selection
 
@@ -536,7 +601,7 @@ Note: Degrees > 6 may cause numerical instability warnings.
 
 #### Lambda (λ) for TIKHONOV:
 ```
-- Auto selection: -l auto
+- Auto selection: -l auto  (recommended!)
 - Manual start: λ = 0.1
 - More smoothing: λ > 0.1  
 - Less smoothing: λ < 0.1
@@ -557,6 +622,7 @@ Note: Degrees > 6 may cause numerical instability warnings.
 ./smooth -m 0 -n 7 -p 2 -d data.txt
 
 # Savitzky-Golay (smoothed values only)
+# NOTE: Will be rejected if grid is non-uniform!
 ./smooth -m 1 -n 9 -p 3 data.txt
 
 # Savitzky-Golay with derivatives
@@ -568,11 +634,11 @@ Note: Degrees > 6 may cause numerical instability warnings.
 # Tikhonov with automatic λ and derivatives
 ./smooth -m 2 -l auto -d data.txt
 
-# Tikhonov with adaptive weights
-./smooth -m 2 -l 0.01 -a data.txt
+# Tikhonov with manual λ
+./smooth -m 2 -l 0.01 data.txt
 
-# Tikhonov with adaptive weights and derivatives
-./smooth -m 2 -l 0.01 -a -d data.txt
+# Tikhonov with manual λ and derivatives
+./smooth -m 2 -l 0.01 -d data.txt
 ```
 
 ### Output Format
@@ -595,37 +661,40 @@ Note: Degrees > 6 may cause numerical instability warnings.
   ...
 ```
 
-### Working with Non-uniform Grids
+### Working with Non-uniform Grids (v5.3)
 
 ```bash
-# Uniformity analysis will be automatic for all methods
+# Try Savitzky-Golay on non-uniform grid
 ./smooth -m 1 -n 7 -p 2 nonuniform_data.txt
 
-# Output may contain:
-# Grid uniformity analysis:
-#   h_max/h_min = 10.00, CV = 0.450
-#   Grid type: NON-UNIFORM
-# WARNING: Consider using smaller window size (5) for this non-uniform grid
+# If grid is non-uniform (CV > 0.05), you'll see:
+# ========================================
+# ERROR: Savitzky-Golay method not suitable for non-uniform grid!
+# ========================================
+# RECOMMENDED ALTERNATIVES:
+#   1. Use Tikhonov method: -m 2 -l auto
 
-# For highly non-uniform data use Tikhonov with adaptive weights
-./smooth -m 2 -l auto -a highly_nonuniform_data.txt
+# Use recommended Tikhonov method instead
+./smooth -m 2 -l auto nonuniform_data.txt
 
-# With derivatives
-./smooth -m 2 -l auto -a -d highly_nonuniform_data.txt
+# Works perfectly! No additional flags needed in v5.3
 ```
 
 ### Typical Workflow
 
 1. **Quick data exploration:**
    ```bash
-   # Basic smoothing without derivatives
+   # Try your favorite method
    ./smooth -m 1 data.txt > smooth_data.txt
+   
+   # If rejected due to non-uniform grid:
+   ./smooth -m 2 -l auto data.txt > smooth_data.txt
    ```
 
 2. **Analysis with derivatives:**
    ```bash
-   # Smoothing with derivative computation
-   ./smooth -m 1 -d data.txt > smooth_with_deriv.txt
+   # Add -d flag
+   ./smooth -m 2 -l auto -d data.txt > smooth_with_deriv.txt
    ```
 
 3. **Optimal smoothing for very noisy data:**
@@ -636,8 +705,11 @@ Note: Degrees > 6 may cause numerical instability warnings.
 
 4. **For publication graphics:**
    ```bash
-   # Savitzky-Golay with optimal parameters
+   # Savitzky-Golay if grid is uniform
    ./smooth -m 1 -n 9 -p 3 -d data.txt > publication_data.txt
+   
+   # Or Tikhonov for any grid type
+   ./smooth -m 2 -l auto -d data.txt > publication_data.txt
    ```
 
 ---
@@ -689,20 +761,17 @@ typedef struct {
 #   h_max/h_min = 10.00, CV = 0.450
 #   Grid type: NON-UNIFORM
 #   Uniformity score: 0.35
-#   Recommendation: High non-uniformity - adaptive methods recommended
+#   Recommendation: High non-uniformity - use Tikhonov method
 ```
 
-### optimal_window_size Algorithm
-
-The function automatically recommends window size based on grid uniformity:
+### Grid Uniformity Thresholds
 
 ```
-factor = 0.3 + 0.7 * uniformity_score
-window = min_window + factor * (max_window - min_window)
+CV < 0.01  : Perfectly uniform - all methods work optimally
+CV < 0.05  : Nearly uniform - SAVGOL works with warning, others work fine
+CV < 0.20  : Moderately non-uniform - SAVGOL rejected, use POLYFIT or TIKHONOV
+CV ≥ 0.20  : Highly non-uniform - TIKHONOV recommended
 ```
-
-- **Uniform grid** (score ≈ 1.0) → larger windows
-- **Non-uniform grid** (score < 0.5) → smaller windows
 
 ---
 
@@ -720,10 +789,16 @@ window = min_window + factor * (max_window - min_window)
 # Standard compilation
 make
 
+# Debug build
+make debug
+
 # Clean
 make clean
 
-# Install to /usr/local/bin
+# Install to user's home directory
+make install-user
+
+# Install to system (requires root)
 make install
 ```
 
@@ -741,8 +816,8 @@ gcc -o smooth smooth.c polyfit.c savgol.c tikhonov.c \
 smooth/
 ├── smooth.c           # Main program
 ├── polyfit.c/h        # Polynomial fitting module
-├── savgol.c/h         # Savitzky-Golay module
-├── tikhonov.c/h       # Tikhonov module
+├── savgol.c/h         # Savitzky-Golay module (v5.3: with uniformity check)
+├── tikhonov.c/h       # Tikhonov module (v5.3: simplified, correct D²)
 ├── grid_analysis.c/h  # Grid analysis
 ├── decomment.c/h      # Comment removal
 ├── revision.h         # Program version
@@ -754,17 +829,27 @@ smooth/
 
 ## Conclusion
 
-The `smooth` program v5.1 provides three complementary smoothing methods in a modular architecture with advanced input data analysis:
+The `smooth` program v5.3 provides three complementary smoothing methods in a modular architecture with advanced input data analysis:
 
 - **POLYFIT** - local polynomial approximation using least squares method
-- **SAVGOL** - optimal linear filter with pre-computed coefficients
-- **TIKHONOV** - global variational method with second derivative regularization
-- **GRID_ANALYSIS** - automatic analysis and optimization for non-uniform grids
+- **SAVGOL** - optimal linear filter with pre-computed coefficients (uniform grids only)
+- **TIKHONOV** - global variational method with correct second derivative regularization
+- **GRID_ANALYSIS** - automatic analysis and method recommendation
 
-Each method has a strong mathematical foundation and is optimized for specific data types and applications. Modularization enables easy use of individual methods in other projects. From version 5.1, computation and output of first derivatives is optional via the `-d` flag.
+### Version 5.3 Highlights
+
+**Major Improvements:**
+1. **Tikhonov method simplified** - removed `adaptive_weights` option, now automatically correct for all grid types
+2. **Savitzky-Golay protected** - automatic rejection of non-uniform grids with helpful recommendations
+3. **Better mathematical correctness** - proper D² discretization for non-uniform grids
+4. **Cleaner API** - removed `tikhonov_smooth_adaptive()`, simplified parameter set
+5. **Improved user experience** - automatic method selection guidance
+
+Each method has a strong mathematical foundation and is optimized for specific data types and applications. The program now provides better guidance on which method to use and automatically prevents mathematically incorrect usage patterns.
 
 ---
 
-**Document revision:** 2025-05-31  
-**Compatibility:** smooth v5.1+  
-**Dependencies:** LAPACK, BLAS
+**Document revision:** 2025-10-04  
+**Program version:** smooth v5.3  
+**Dependencies:** LAPACK, BLAS  
+**License:** See source files
