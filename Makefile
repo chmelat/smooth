@@ -4,7 +4,7 @@
 
 # Program name and version
 PROGRAM = smooth
-VERSION = 5.3
+VERSION=$(shell grep '^#define VERSION' revision.h | sed 's/.*"\(.*\)".*/\1/')
 
 # Installation directories
 PREFIX = /usr/local
@@ -102,7 +102,7 @@ clean:
 dist:
 	@echo "Creating distribution package..."
 	mkdir -p $(PROGRAM)-$(VERSION)
-	cp $(SRC) $(HEAD) Makefile Readme.md test_data.txt $(PROGRAM)-$(VERSION)/
+	cp $(SRC) $(HEAD) Makefile README.md test_data.txt $(PROGRAM)-$(VERSION)/
 	tar czf $(PROGRAM)-$(VERSION).tgz $(PROGRAM)-$(VERSION)
 	rm -rf $(PROGRAM)-$(VERSION)
 	@echo "Created $(PROGRAM)-$(VERSION).tgz"
