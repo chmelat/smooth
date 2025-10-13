@@ -1,5 +1,6 @@
 /*  Balance of table points by polynom p-th degree at sliding window size
  *  n points. Least square principe.
+ *  V5.2/2025-10-13/ Added -g option for detailed grid uniformity analysis
  *  V5.1/2025-10-04/ Simplified Tikhonov method (removed adaptive_weights option)
  *  V5.0/2025-05-27/ Modularized version with separate method implementations
  */ 
@@ -17,6 +18,7 @@
 #include "tikhonov.h"
 #include "polyfit.h"
 #include "savgol.h"
+#include "grid_analysis.h"
 
 #define BUF 512
 #define N 5
@@ -54,6 +56,7 @@ int main(int argc, char **argv)
   double lambda = LAMBDA_DEFAULT;
   int auto_lambda = 0;
   int show_derivative = 0;
+  int show_grid_analysis = 0;
 
   progname = basename(argv[0]);
 
@@ -64,7 +67,7 @@ int main(int argc, char **argv)
   }
 
 /* Options command line */
-  while ( (ch = getopt(argc, argv, "n:p:m:l:dh?")) != -1 ) {
+  while ( (ch = getopt(argc, argv, "n:p:m:l:dgh?")) != -1 ) {
     switch (ch) {
       case 'n':
         sp = atoi(optarg);
@@ -109,6 +112,9 @@ int main(int argc, char **argv)
         break;
       case 'd':
         show_derivative = 1;
+        break;
+      case 'g':
+        show_grid_analysis = 1;
         break;
       case 'h':
         help();
@@ -184,6 +190,22 @@ int main(int argc, char **argv)
   if (n < sp && method != METHOD_TIKHONOV) {
     fprintf(stderr,"Need more data (n < %d)!\n",sp);
     exit (EXIT_FAILURE);
+  }
+
+  /* Perform grid uniformity analysis if requested */
+  if (show_grid_analysis) {
+    GridAnalysis *grid_info = analyze_grid(x, n, 1);  /* store_spacings=1 for detailed analysis */
+    if (grid_info) {
+      printf("# ========================================\n");
+      printf("# GRID UNIFORMITY ANALYSIS\n");
+      printf("# ========================================\n");
+      print_grid_analysis(grid_info, 2, "# ");  /* verbose=2 for full details */
+      printf("# ========================================\n");
+      printf("#\n");
+      free_grid_analysis(grid_info);
+    } else {
+      fprintf(stderr, "Warning: Grid analysis failed\n");
+    }
   }
 
   /* Process data according to selected method */
@@ -321,6 +343,7 @@ static void help(void)
     "-l\tLambda regularization parameter for Tikhonov method, default 0.1",
     "\tUse '-l auto' for automatic lambda selection using GCV",
     "-d\tShow first derivative in output",
+    "-g\tShow detailed grid uniformity analysis",
     "\nMethods:",
     "  polyfit  - Local polynomial fitting (least squares)",
     "  savgol   - Savitzky-Golay filter for better derivatives", 
@@ -330,6 +353,7 @@ static void help(void)
     "  smooth -m 1 -n 5 -p 2 -d data.txt  # Savitzky-Golay with derivatives",
     "  smooth -m 2 -l 0.01 data.txt       # Tikhonov with manual lambda",
     "  smooth -m 2 -l auto -d data.txt    # Tikhonov with auto lambda and derivatives",
+    "  smooth -m 2 -g -l auto data.txt    # With detailed grid analysis",
     0
   };
   char **p = msg;
