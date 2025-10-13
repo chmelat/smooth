@@ -1,7 +1,7 @@
 # Methods for Smoothing Experimental Data in the smooth Program
 
 **Technical Documentation**  
-Version 5.3 | October 2025
+Version 5.4 | October 13, 2025
 
 ---
 
@@ -45,28 +45,30 @@ The goal of smoothing is to estimate `y_true` while suppressing `ε_i` and prese
 - `-l λ` - regularization parameter (tikhonov)
 - `-l auto` - automatic λ selection using GCV (tikhonov)
 - `-d` - display first derivative in output (optional)
+- `-g` - show detailed grid uniformity analysis (optional)
 
 **Note on polynomial degree:** Degrees > 6 may generate numerical stability warnings.
 
 **Note on derivatives:** From version 5.1, first derivative output is optional. Without the `-d` switch, the program outputs only smoothed values. With the `-d` switch, it outputs both smoothed values and first derivatives.
 
+**Note on grid analysis:** The `-g` flag (added in version 5.2) provides detailed grid uniformity statistics helpful for understanding your data and choosing appropriate smoothing parameters.
+
 ---
 
-## What's New in Version 5.3
+## What's New in Version 5.4
 
 ### Major Improvements
 
-**Tikhonov Regularization:**
-- **Simplified API:** Removed `adaptive_weights` option - method now automatically uses correct discretization
-- **Mathematically correct D² operator:** Proper implementation for non-uniform grids without user intervention
-- **Better accuracy:** Improved results on non-uniform grids by default
-- **Cleaner code:** ~150 lines of code removed while improving correctness
+**Tikhonov Regularization (Hybrid Implementation):**
+- **Automatic discretization selection:** Method automatically chooses between average coefficient (ratio < 2.5) and local spacing (ratio ≥ 2.5) based on grid uniformity
+- **Harmonic mean for better accuracy:** Uses harmonic mean for interval averaging in nearly-uniform grids (more accurate than arithmetic mean)
+- **Fixed boundary conditions:** Corrected missing superdiagonal element in local spacing method
+- **Improved GCV optimization:** Enhanced with over-fitting penalty and L-curve sanity check for large datasets
+- **Better functional computation:** Mathematically correct D² discretization matching the matrix formulation
 
-**Savitzky-Golay Filter:**
-- **Grid uniformity checking:** Method now verifies grid uniformity before processing
-- **Automatic rejection:** Non-uniform grids (CV > 0.05) are rejected with helpful error message
-- **Recommendations:** When rejected, program suggests appropriate alternative methods
-- **Mathematical correctness:** Prevents incorrect application of SG filter to inappropriate data
+**Grid Analysis:**
+- **Detailed reporting with `-g` flag:** Comprehensive grid uniformity statistics including CV, ratio, spacing details
+- **Better recommendations:** Program suggests optimal methods based on detected grid characteristics
 
 ### API Structure
 
@@ -83,12 +85,10 @@ SavgolResult* savgol_smooth(double *x, double *y, int n,
                             int window_size, int poly_degree);
 void free_savgol_result(SavgolResult *result);
 
-// Tikhonov - SIMPLIFIED in v5.3
+// Tikhonov - Hybrid implementation in v5.4
 TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda);
 void free_tikhonov_result(TikhonovResult *result);
 ```
-
-**Note:** The `tikhonov_smooth_adaptive()` function has been removed in v5.3. The standard `tikhonov_smooth()` function now automatically uses correct discretization for both uniform and non-uniform grids.
 
 ---
 
@@ -213,7 +213,7 @@ While both SAVGOL and POLYFIT use polynomial approximation, they differ fundamen
 
 ### **CRITICAL: Grid Uniformity Requirement**
 
-**Version 5.3 Important Change:** The Savitzky-Golay method now enforces grid uniformity checking.
+**Version 5.3+ Important Feature:** The Savitzky-Golay method now enforces grid uniformity checking.
 
 The mathematical foundation of SG filter assumes **uniformly spaced data points**. The method is based on fitting polynomials in normalized coordinate space where points are at integer positions: {..., -2, -1, 0, 1, 2, ...}.
 
@@ -349,6 +349,8 @@ Tikhonov regularization solves the ill-posed inverse smoothing problem using a v
 **Continuous formulation:**
 ```
 J[u] = ∫(y(x) - u(x))² dx + λ∫(u''(x))² dx
+       ︸━━━━━━━━━━━━━━━━━━     ︸━━━━━━━━━━━━━
+       Data fidelity term      Smoothness penalty
 ```
 
 **Discrete formulation:**
@@ -357,36 +359,244 @@ J[u] = ||y - u||² + λ||D²u||²
 ```
 
 where:
-- `||y - u||²` = Σ(y_i - u_i)² is the data fidelity term
-- `||D²u||²` = Σ(D²u_i)² is the regularization term
-- `λ` is the regularization parameter controlling smoothness
+- `||y - u||²` = Σ(y_i - u_i)² is the **data fidelity term**
+- `||D²u||²` = Σ(D²u_i)² is the **regularization term** (smoothness penalty)
+- `λ` is the **regularization parameter** controlling the balance
 - `D²` is the discrete second derivative operator
 
-### Second Derivative Discretization
+### The Regularization Parameter λ
 
-**Version 5.3 Improvement:** Correct implementation for both uniform and non-uniform grids.
+The parameter λ is the **heart of Tikhonov regularization** - it controls the balance between fitting the data and smoothing the result.
 
-**For uniform grid with step `h`:**
+#### Physical Interpretation
+
 ```
-D²u_i ≈ (u_{i-1} - 2u_i + u_{i+1})/h²
+λ = 0:     No smoothing, u = y (exact data fit)
+           J[u] = ||y - u||² only
+
+λ → ∞:     Maximum smoothing, u → straight line
+           J[u] ≈ λ||D²u||² dominates
+
+λ optimal: Balanced between data fit and smoothness
+           Both terms contribute meaningfully
 ```
 
-**For non-uniform grid (NEW in v5.3):**
+#### Mathematical Role
+
+The minimization of J[u] leads to:
+```
+(I + λD^TD)u = y
+```
+
+**Effect of λ on the solution:**
+- **Small λ (< 0.01):** Matrix ≈ I → solution u ≈ y (minimal smoothing)
+- **Large λ (> 1.0):** Matrix ≈ λD^TD → strong curvature penalty (heavy smoothing)
+- **Optimal λ:** Matrix components balanced → noise removed, signal preserved
+
+#### Frequency Domain Interpretation
+
+In Fourier space, Tikhonov acts as a low-pass filter:
+```
+Ĥ(ω) = 1 / (1 + λω⁴)
+```
+
+where ω is spatial frequency. 
+
+**Effect:**
+- **Low frequencies (slow variations):** Ĥ ≈ 1 → preserved
+- **High frequencies (noise, rapid variations):** Ĥ ≈ 1/(λω⁴) → attenuated
+- **Cutoff frequency:** ω_c ∝ λ^(-1/4)
+
+**This means:**
+```
+Larger λ  → Lower cutoff → More aggressive low-pass filtering → Smoother result
+Smaller λ → Higher cutoff → Less filtering → Result closer to data
+```
+
+#### Practical Guidelines for λ Selection
+
+**1. Automatic Selection (RECOMMENDED):**
+```bash
+./smooth -m 2 -l auto data.txt
+```
+Uses Generalized Cross Validation (GCV) to find optimal λ.
+
+**2. Manual Selection:**
+
+| Data Characteristics | Recommended λ | Reasoning |
+|---------------------|---------------|-----------|
+| Low noise, important details | 0.001 - 0.01 | Preserve features |
+| Moderate noise | 0.01 - 0.1 | Balanced (default: 0.1) |
+| High noise | 0.1 - 1.0 | Strong smoothing |
+| Very noisy, global trends | 1.0 - 10.0 | Maximum smoothing |
+
+**3. Iterative Refinement:**
+```bash
+# Start with automatic
+./smooth -m 2 -l auto data.txt
+
+# If result is over-smoothed (details lost):
+./smooth -m 2 -l 0.01 data.txt
+
+# If result is under-smoothed (still noisy):
+./smooth -m 2 -l 1.0 data.txt
+```
+
+**4. Diagnostic Criteria:**
+
+The program outputs functional components:
+```
+# Functional J = 1.234e+02 (Data: 5.67e+01 + Regularization: 6.67e+01)
+# Data/Total ratio = 0.460, Regularization/Total ratio = 0.540
+```
+
+**Good balance indicators:**
+- Data term: 30-70% of total functional
+- Regularization term: 30-70% of total functional
+
+**Warning signs:**
+- Data term > 95%: Under-smoothed (λ too small)
+- Regularization term > 95%: Over-smoothed (λ too large)
+
+**5. Grid-Dependent Considerations:**
+
+For non-uniform grids with ratio h_max/h_min > 5:
+```bash
+# Start with more conservative (larger) λ
+./smooth -m 2 -l 0.5 nonuniform_data.txt
+
+# GCV may be less accurate - check results visually
+./smooth -m 2 -l auto nonuniform_data.txt
+```
+
+#### λ and Grid Spacing
+
+The effective regularization strength depends on grid spacing:
+```
+Effective strength ∝ λ / h²_avg
+
+Same λ on finer grid   → weaker smoothing
+Same λ on coarser grid → stronger smoothing
+```
+
+For dimensional consistency, λ has units [Length²].
+
+### Second Derivative Discretization (Hybrid Method v5.4)
+
+**Version 5.4 Implementation:** Automatic selection between two discretization schemes based on grid uniformity.
+
+#### Grid Uniformity Detection
+```
+ratio = h_max / h_min
+
+ratio < 2.5:  Nearly uniform    → Average Coefficient Method
+ratio ≥ 2.5:  Highly non-uniform → Local Spacing Method
+```
+
+#### Method 1: Average Coefficient (for ratio < 2.5)
+
+Used for uniform and mildly non-uniform grids. More robust numerically.
+
+**Discretization:**
+For interior point `i` with neighbors at spacing h_left and h_right, use **harmonic mean**:
+```
+h_harm = 2·h_left·h_right / (h_left + h_right)
+
+D²u_i ≈ (u_{i-1} - 2u_i + u_{i+1}) / h_harm²
+```
+
+**Why harmonic mean?** 
+- More accurate than arithmetic mean for averaging intervals
+- Gives greater weight to smaller spacing (physically correct)
+- For h_left = h_right, reduces to standard formula
+
+**Matrix construction:**
+```
+c = λ · Σ(1/h_i²) / (n-1)    (average coefficient)
+
+A[i,i]   = 1 + 2c  (interior points)
+A[i,i±1] = -c      (off-diagonals)
+```
+
+#### Method 2: Local Spacing (for ratio ≥ 2.5)
+
+Used for highly non-uniform grids. More accurate for variable spacing.
+
+**Discretization:**
 For point `i` with left spacing `h₁ = x[i] - x[i-1]` and right spacing `h₂ = x[i+1] - x[i]`:
 
 ```
-D²u_i ≈ 2/(h₁+h₂) · [u_{i-1}/h₁ - u_i·(1/h₁+1/h₂) + u_{i+1}/h₂]
+D²u_i ≈ (2/(h₁+h₂)) · [u_{i-1}/h₁ - u_i·(1/h₁+1/h₂) + u_{i+1}/h₂]
 ```
 
-This leads to a **symmetric tridiagonal matrix** with variable coefficients:
+This is the **correct second derivative formula** for non-uniform grids derived from Taylor expansion.
 
+**Matrix construction:**
 ```
-A[i,i-1] = 2λ/(h₁·(h₁+h₂))
-A[i,i]   = 1 + 2λ/(h₁+h₂)·(1/h₁+1/h₂)
-A[i,i+1] = 2λ/(h₂·(h₁+h₂))
+w = 2λ / (h₁ + h₂)
+
+A[i,i]   = 1 + w·(1/h₁ + 1/h₂)
+A[i,i-1] = -w/h₁
+A[i,i+1] = -w/h₂
 ```
 
-**Key improvement:** The method automatically uses the correct discretization. No user intervention or parameter selection needed - it "just works" for any grid spacing.
+**The resulting matrix is:**
+- Symmetric
+- Positive definite
+- Tridiagonal (bandwidth = 1)
+
+#### Boundary Conditions
+
+Natural boundary conditions (second derivative = 0 at ends):
+
+**Left boundary (i=0):**
+```
+D²u_0 ≈ (u_1 - u_0) / h_0²
+
+A[0,0] += λ/h_0²
+A[0,1] += -λ/h_0²
+```
+
+**Right boundary (i=n-1):**
+```
+D²u_{n-1} ≈ (u_{n-1} - u_{n-2}) / h_{n-1}²
+
+A[n-1,n-1] += λ/h_{n-1}²
+```
+
+**Critical fix in v5.4:** The boundary superdiagonal element A[0,1] was missing in previous versions, causing isolation of the first point. This is now corrected.
+
+### Functional Computation
+
+The actual value of the minimized functional is computed for diagnostic purposes:
+
+**Data term:**
+```
+||y - u||² = Σ(y_i - u_i)²
+```
+
+**Regularization term (must match matrix formulation!):**
+
+For **average coefficient method:**
+```
+||D²u||² = Σ_{interior} [(u_{i-1} - 2u_i + u_{i+1})/h_harm²]²
+         + 0.5·[(u_1 - u_0)/h_0²]²
+         + 0.5·[(u_{n-1} - u_{n-2})/h_{n-1}²]²
+```
+
+For **local spacing method:**
+```
+||D²u||² = Σ_{interior} [D²u_i]² · (h₁+h₂)/2
+         + 0.5·[(u_1 - u_0)/h_0²]² · h_0
+         + 0.5·[(u_{n-1} - u_{n-2})/h_{n-1}²]² · h_{n-1}
+```
+
+Note the **weighting factors** in local spacing method for proper integration over non-uniform grid.
+
+**Total functional:**
+```
+J[u] = ||y - u||² + λ||D²u||²
+```
 
 ### Variational Approach
 
@@ -405,36 +615,14 @@ which leads to the linear system:
 
 Matrix `A = I + λD^T D` is:
 - Symmetric
-- Positive definite
+- Positive definite  
 - Tridiagonal (banded with bandwidth 1)
 
 This structure allows efficient solution using LAPACK's banded solver `dpbsv`.
 
-### Boundary Conditions
-
-The program implements natural boundary conditions:
-```
-u''(0) = u''(L) = 0
-```
-
-This is realized by matrix modification at edges using first-order differences.
-
-### Automatic Grid Handling (NEW in v5.3)
-
-**Previous versions (≤5.2):** Required user to choose between:
-- Average coefficient method (default)
-- Adaptive weights method (`-a` flag)
-
-**Version 5.3:** Automatic correct discretization!
-- No user choice needed
-- Mathematically correct for uniform grids
-- Mathematically correct for non-uniform grids
-- Same code path for both cases
-- Simplified API
-
 ### Generalized Cross Validation (GCV)
 
-For automatic λ selection, we minimize the GCV criterion:
+For automatic λ selection (`-l auto`), we minimize the GCV criterion:
 
 ```
 GCV(λ) = n·RSS(λ) / (n - tr(H_λ))²
@@ -442,26 +630,58 @@ GCV(λ) = n·RSS(λ) / (n - tr(H_λ))²
 
 where:
 - `RSS(λ) = ||y - u_λ||²` is the residual sum of squares
-- `H_λ = (I + λD^T D)^{-1}` is the influence matrix
-- `tr(H_λ)` is the matrix trace
+- `H_λ = (I + λD^T D)^{-1}` is the influence matrix (smoother matrix)
+- `tr(H_λ)` is the trace (effective number of parameters)
 
-**Trace estimation using eigenvalues (corrected in v5.3):**
+**Interpretation:**
+- `tr(H_λ)` measures model complexity (degrees of freedom)
+- Small λ: tr(H) ≈ n (interpolation, overfitting)
+- Large λ: tr(H) ≈ 2 (straight line, underfitting)
+- Optimal λ: minimizes prediction error
+
+**Trace estimation using eigenvalues:**
+
+For uniform grids with natural boundary conditions:
 ```
 tr(H_λ) ≈ Σ_{k=1}^n 1/(1 + λμ_k)
-```
 
-For natural boundary conditions:
-```
-θ_k = πk/n  (corrected from πk/(n+1))
+where eigenvalues:
+θ_k = πk/n
 μ_k = 4·sin²(θ_k/2) / h²
 ```
+
+**Note:** This approximation is exact for uniform grids but approximate for non-uniform grids. For highly non-uniform grids (ratio > 5), the program issues a warning.
+
+#### Enhanced GCV in v5.4
+
+**Over-fitting penalty:**
+```
+If tr(H)/n > 0.7:
+    GCV_modified = GCV · exp(10·(tr(H)/n - 0.7))
+```
+
+This exponential penalty prevents selection of too-small λ that would lead to overfitting.
+
+**L-curve backup (for n > 20000):**
+
+For very large datasets, GCV trace approximation may be inaccurate. The program also computes the L-curve (plot of ||D²u||² vs ||y-u||²) and finds the corner point with maximum curvature:
+
+```
+κ = |x'y'' - y'x''| / (x'² + y'²)^(3/2)
+
+where:
+x = log(||y - u||²)
+y = log(||D²u||²)
+```
+
+If GCV and L-curve disagree significantly, the program uses the more conservative (larger) λ.
 
 ### Efficient Implementation
 
 The program uses LAPACK routine `dpbsv` for solving symmetric positive definite banded systems:
 
 ```c
-// Banded matrix storage (LAPACK format)
+// Banded matrix storage (LAPACK column-major format)
 AB[0,j] = superdiagonal elements
 AB[1,j] = diagonal elements
 
@@ -469,7 +689,13 @@ AB[1,j] = diagonal elements
 dpbsv_(&uplo, &n, &kd, &nrhs, AB, &ldab, b, &n, &info);
 ```
 
-### Simplified Implementation (v5.3)
+**Complexity:**
+- Memory: O(n) for banded storage
+- Time: O(n) for factorization and back-substitution
+
+This is **optimal** for tridiagonal systems.
+
+### Hybrid Implementation (v5.4)
 
 ```c
 typedef struct {
@@ -482,26 +708,34 @@ typedef struct {
     double total_functional;     // J[u]
 } TikhonovResult;
 
-// Single simple function - no more adaptive_weights parameter!
+// Main function
 TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda);
+
+// Automatic λ selection
+double find_optimal_lambda_gcv(double *x, double *y, int n);
+
+// Memory cleanup
+void free_tikhonov_result(TikhonovResult *result);
 ```
 
 ### Characteristics
 
 **Advantages:**
 - Global optimization with theoretical foundation
-- Flexible balance between data fidelity and smoothness
-- Robust to outliers
+- Flexible balance between data fidelity and smoothness (controlled by λ)
+- Robust to outliers (quadratic penalty less sensitive than least squares)
 - Efficient for large datasets (O(n) memory and time)
-- Automatic parameter selection via GCV
-- **NEW v5.3:** Excellent for non-uniform grids automatically
-- **NEW v5.3:** Simplified usage - no complex parameter choices
+- **Automatic λ selection via GCV** - no guessing needed
+- **Excellent for non-uniform grids** - correct discretization automatic
+- **Unified approach** - same algorithm for uniform and non-uniform grids
+- Works well for noisy data with global trends
 
 **Disadvantages:**
-- Single global parameter λ
-- May suppress local details
-- GCV may fail for some data types
+- Single global parameter λ (cannot vary locally)
+- May suppress local details if λ too large
+- GCV may fail for some data types (especially highly non-uniform grids)
 - Requires LAPACK library
+- Boundary effects if data has discontinuities at edges
 
 ---
 
@@ -526,10 +760,11 @@ TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda);
 | Noise robustness | *** | **** | ***** |
 | Derivative quality | ***** | ***** | *** |
 | Boundary behavior | ** | *** | **** |
-| Non-uniform grids | *** | ❌ | ***** |
-| Ease of use (v5.3) | **** | **** | ***** |
+| Non-uniform grids | *** | ✗ | ***** |
+| Ease of use (v5.4) | **** | **** | ***** |
+| Parameter selection | Manual | Manual | Auto (GCV) |
 
-**Key:** ❌ = Not suitable (automatically rejected)
+**Key:** ✗ = Not suitable (automatically rejected)
 
 ### Grid Type Compatibility
 
@@ -537,13 +772,15 @@ TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda);
 |-----------|---------|--------|----------|
 | Perfectly uniform (CV < 0.01) | ✓ | ✓ | ✓ |
 | Nearly uniform (CV < 0.05) | ✓ | ⚠️ | ✓ |
-| Moderately non-uniform (CV < 0.2) | ✓ | ❌ | ✓ |
-| Highly non-uniform (CV > 0.2) | ⚠️ | ❌ | ✓ |
+| Moderately non-uniform (0.05 < CV < 0.2) | ✓ | ✗ | ✓ |
+| Highly non-uniform (CV > 0.2) | ⚠️ | ✗ | ✓ |
+| Very large ratio (h_max/h_min > 10) | ⚠️ | ✗ | ✓* |
 
 **Legend:**
 - ✓ = Recommended
 - ⚠️ = Usable with caution
-- ❌ = Rejected or not recommended
+- ✗ = Rejected or not recommended
+- \* = Uses local spacing method automatically
 
 ---
 
@@ -557,6 +794,7 @@ TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda);
 - You have moderately noisy data
 - You want highest quality derivatives
 - Grid has moderate spacing variations
+- You need local adaptability
 
 #### SAVGOL - when:
 - **Grid is uniform (CV < 0.05)** - automatically checked!
@@ -566,14 +804,18 @@ TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda);
 - You want minimal phase distortion in the smoothed signal
 - You're processing time series or spectroscopic data on uniform grids
 - You need simultaneous high-quality function and derivative estimation
+- Computational efficiency is critical (large datasets)
 
 #### TIKHONOV - when:
-- **Grid is non-uniform** - now works perfectly automatically!
+- **Grid is non-uniform** - works perfectly automatically!
 - Data is very noisy
 - You need global consistency
-- You want automatic parameter selection
+- **You want automatic parameter selection (λ auto)** - highly recommended!
 - You prefer global optimization approaches over local fitting
-- You want the simplest interface (just λ parameter)
+- You want robust handling of outliers
+- You want the simplest workflow (one parameter, automatic selection)
+- You need to process very large datasets efficiently
+- **You're not sure which method to use** - Tikhonov with `-l auto` is safest!
 
 ### Parameter Selection
 
@@ -585,6 +827,8 @@ Recommendations:
 - Low noise: n = 5-9
 - Medium noise: n = 9-15  
 - High noise: n = 15-25
+
+Rule of thumb: n ≈ 2p + 3
 ```
 
 #### Polynomial degree (p):
@@ -601,11 +845,29 @@ Note: Degrees > 6 may cause numerical instability warnings.
 
 #### Lambda (λ) for TIKHONOV:
 ```
-- Auto selection: -l auto  (recommended!)
-- Manual start: λ = 0.1
-- More smoothing: λ > 0.1  
-- Less smoothing: λ < 0.1
-- Range: 10⁻⁶ to 10³
+**RECOMMENDED:**
+- Auto selection: -l auto  (uses GCV optimization)
+
+**MANUAL SELECTION:**
+Starting points by noise level:
+- Low noise:        λ = 0.001 - 0.01
+- Medium noise:     λ = 0.01 - 0.1   (default: 0.1)
+- High noise:       λ = 0.1 - 1.0
+- Very noisy data:  λ = 1.0 - 10.0
+
+Full range: 10⁻⁶ to 10³
+
+**ITERATIVE REFINEMENT:**
+1. Start with -l auto
+2. Check functional balance (should be 30-70% each)
+3. If over-smoothed: decrease λ by factor of 10
+4. If under-smoothed: increase λ by factor of 10
+5. Repeat until satisfied
+
+**GRID-DEPENDENT:**
+For non-uniform grids (ratio > 5):
+- Start more conservative (larger λ)
+- GCV may be less accurate - check visually
 ```
 
 ---
@@ -628,7 +890,7 @@ Note: Degrees > 6 may cause numerical instability warnings.
 # Savitzky-Golay with derivatives
 ./smooth -m 1 -n 9 -p 3 -d data.txt
 
-# Tikhonov with automatic λ (without derivatives)
+# Tikhonov with automatic λ (RECOMMENDED)
 ./smooth -m 2 -l auto data.txt
 
 # Tikhonov with automatic λ and derivatives
@@ -639,13 +901,18 @@ Note: Degrees > 6 may cause numerical instability warnings.
 
 # Tikhonov with manual λ and derivatives
 ./smooth -m 2 -l 0.01 -d data.txt
+
+# Grid analysis (works with any method)
+./smooth -m 2 -l auto -g data.txt
 ```
 
 ### Output Format
 
 **Without `-d` flag:**
 ```
-# Data smooth - aprox. pol. 2dg from 7 points of moving window (least square)
+# Data smooth - Tikhonov regularization with lambda = 1e-01
+# Functional J = 1.234e+02 (Data: 5.67e+01 + Regularization: 6.67e+01)
+# Data/Total ratio = 0.460, Regularization/Total ratio = 0.540
 #    x          y
   0.00000E+00  1.00000E+00
   1.00000E+00  2.71828E+00
@@ -654,62 +921,96 @@ Note: Degrees > 6 may cause numerical instability warnings.
 
 **With `-d` flag:**
 ```
-# Data smooth - aprox. pol. 2dg from 7 points of moving window (least square)
+# Data smooth - Tikhonov regularization with lambda = 1e-01
+# Functional J = 1.234e+02 (Data: 5.67e+01 + Regularization: 6.67e+01)
+# Data/Total ratio = 0.460, Regularization/Total ratio = 0.540
 #    x          y          y'
   0.00000E+00  1.00000E+00  1.00000E+00
   1.00000E+00  2.71828E+00  2.71828E+00
   ...
 ```
 
-### Working with Non-uniform Grids (v5.3)
+**With `-g` flag (grid analysis):**
+```
+# ========================================
+# GRID UNIFORMITY ANALYSIS
+# ========================================
+# Grid uniformity analysis:
+#   n = 1000 points
+#   h_min = 9.500000e-03, h_max = 1.200000e-02, h_avg = 1.000000e-02
+#   h_max/h_min = 1.26, CV = 0.052
+#   Grid type: NON-UNIFORM
+#   Uniformity score: 0.94
+#   Standard deviation: 5.200000e-04
+#   Detected clusters: 0
+#   Recommendation: Grid is nearly uniform - standard methods work well
+# ========================================
+#
+# Using Average Coefficient Method (h_max/h_min = 1.26)
+# GCV optimization for n=1000 points (h_max/h_min = 1.26)
+...
+```
+
+### Working with Non-uniform Grids (v5.4)
 
 ```bash
-# Try Savitzky-Golay on non-uniform grid
-./smooth -m 1 -n 7 -p 2 nonuniform_data.txt
+# First, analyze your grid
+./smooth -m 2 -l auto -g nonuniform_data.txt
 
-# If grid is non-uniform (CV > 0.05), you'll see:
-# ========================================
-# ERROR: Savitzky-Golay method not suitable for non-uniform grid!
-# ========================================
-# RECOMMENDED ALTERNATIVES:
-#   1. Use Tikhonov method: -m 2 -l auto
+# If ratio < 2.5, program uses average coefficient method
+# Output: "Using Average Coefficient Method (h_max/h_min = 1.85)"
 
-# Use recommended Tikhonov method instead
+# If ratio ≥ 2.5, program uses local spacing method
+# Output: "Using Local Spacing Method (h_max/h_min = 8.42)"
+
+# Automatic selection - no user intervention needed!
+# Just use the same command:
 ./smooth -m 2 -l auto nonuniform_data.txt
 
-# Works perfectly! No additional flags needed in v5.3
+# For very non-uniform grids (ratio > 5), you may see:
+# "WARNING: Highly non-uniform grid detected!"
+# "GCV trace approximation may be less accurate."
+# In this case, try manual λ or check results visually.
 ```
 
 ### Typical Workflow
 
-1. **Quick data exploration:**
+1. **Quick data exploration with grid analysis:**
    ```bash
-   # Try your favorite method
-   ./smooth -m 1 data.txt > smooth_data.txt
+   # Check grid uniformity
+   ./smooth -m 2 -l auto -g data.txt > smooth_data.txt
    
-   # If rejected due to non-uniform grid:
-   ./smooth -m 2 -l auto data.txt > smooth_data.txt
+   # Review output comments for:
+   # - Grid uniformity (CV, ratio)
+   # - Which discretization method was used
+   # - Functional balance (data vs regularization)
    ```
 
-2. **Analysis with derivatives:**
+2. **Choose method based on grid:**
    ```bash
-   # Add -d flag
-   ./smooth -m 2 -l auto -d data.txt > smooth_with_deriv.txt
+   # For uniform grids (CV < 0.05):
+   ./smooth -m 1 -n 9 -p 3 -d data.txt
+   
+   # For non-uniform grids:
+   ./smooth -m 2 -l auto -d data.txt
    ```
 
-3. **Optimal smoothing for very noisy data:**
+3. **Refine λ if needed:**
    ```bash
-   # Tikhonov with automatic parameter
-   ./smooth -m 2 -l auto data.txt > tikhonov_smooth.txt
+   # If automatic λ gives over-smoothing:
+   ./smooth -m 2 -l 0.01 -d data.txt
+   
+   # If under-smoothing:
+   ./smooth -m 2 -l 1.0 -d data.txt
    ```
 
 4. **For publication graphics:**
    ```bash
-   # Savitzky-Golay if grid is uniform
-   ./smooth -m 1 -n 9 -p 3 -d data.txt > publication_data.txt
-   
-   # Or Tikhonov for any grid type
+   # Final smoothing with derivatives
    ./smooth -m 2 -l auto -d data.txt > publication_data.txt
+   
+   # Check functional balance in output comments
+   # Ideal: both terms contribute 30-70%
    ```
 
 ---
@@ -749,28 +1050,60 @@ typedef struct {
     int n_clusters;         // Number of detected clusters
     int reliability_warning;// Reliability warning
     char warning_msg[512];  // Warning text
+    double *spacings;       // Array of spacings (optional)
+    int n_points;           // Number of points
+    int n_intervals;        // Number of intervals (n-1)
 } GridAnalysis;
 ```
 
 ### Example Analysis Output
 
 ```
+# ========================================
+# GRID UNIFORMITY ANALYSIS
+# ========================================
 # Grid uniformity analysis:
 #   n = 1000 points
 #   h_min = 1.000000e-02, h_max = 1.000000e-01, h_avg = 5.500000e-02
 #   h_max/h_min = 10.00, CV = 0.450
 #   Grid type: NON-UNIFORM
 #   Uniformity score: 0.35
-#   Recommendation: High non-uniformity - use Tikhonov method
+#   Standard deviation: 2.475000e-02
+#   Detected clusters: 2
+#   Recommendation: High non-uniformity - adaptive methods recommended
+# WARNING: HIGH grid non-uniformity: h_max/h_min = 10.0
+# Adaptive methods are strongly recommended.
+# Consider using smaller regularization parameters.
+# 
+# WARNING: 2 abrupt spacing changes detected (possible data clustering).
+# Standard methods may over-smooth clustered regions.
+# ========================================
 ```
 
 ### Grid Uniformity Thresholds
 
 ```
-CV < 0.01  : Perfectly uniform - all methods work optimally
-CV < 0.05  : Nearly uniform - SAVGOL works with warning, others work fine
-CV < 0.20  : Moderately non-uniform - SAVGOL rejected, use POLYFIT or TIKHONOV
-CV ≥ 0.20  : Highly non-uniform - TIKHONOV recommended
+CV < 0.01:   Perfectly uniform - all methods work optimally
+             → POLYFIT, SAVGOL, TIKHONOV all excellent
+
+CV < 0.05:   Nearly uniform - SAVGOL works with warning
+             → SAVGOL may show warning but works
+             → POLYFIT and TIKHONOV work fine
+
+0.05 ≤ CV < 0.20: Moderately non-uniform
+             → SAVGOL rejected automatically
+             → POLYFIT usable
+             → TIKHONOV recommended (uses average coef if ratio < 2.5)
+
+CV ≥ 0.20:   Highly non-uniform
+             → SAVGOL rejected
+             → POLYFIT with caution
+             → TIKHONOV strongly recommended (may use local spacing)
+
+RATIO:
+ratio < 2.5:  Tikhonov uses average coefficient method
+ratio ≥ 2.5:  Tikhonov uses local spacing method
+ratio > 10:   Warning issued, GCV may be less accurate
 ```
 
 ---
@@ -808,16 +1141,20 @@ make install
 # Standard compilation
 gcc -o smooth smooth.c polyfit.c savgol.c tikhonov.c \
     grid_analysis.c decomment.c -llapack -lblas -lm -O2
+
+# With warnings
+gcc -Wall -Wextra -pedantic -o smooth smooth.c polyfit.c savgol.c \
+    tikhonov.c grid_analysis.c decomment.c -llapack -lblas -lm -O2
 ```
 
 ### File Structure
 
 ```
 smooth/
-├── smooth.c           # Main program
+├── smooth.c           # Main program (v5.2: added -g flag)
 ├── polyfit.c/h        # Polynomial fitting module
 ├── savgol.c/h         # Savitzky-Golay module (v5.3: with uniformity check)
-├── tikhonov.c/h       # Tikhonov module (v5.3: simplified, correct D²)
+├── tikhonov.c/h       # Tikhonov module (v5.4: hybrid implementation)
 ├── grid_analysis.c/h  # Grid analysis
 ├── decomment.c/h      # Comment removal
 ├── revision.h         # Program version
@@ -829,27 +1166,58 @@ smooth/
 
 ## Conclusion
 
-The `smooth` program v5.3 provides three complementary smoothing methods in a modular architecture with advanced input data analysis:
+The `smooth` program v5.4 provides three complementary smoothing methods in a modular architecture with advanced input data analysis:
 
 - **POLYFIT** - local polynomial approximation using least squares method
 - **SAVGOL** - optimal linear filter with pre-computed coefficients (uniform grids only)
-- **TIKHONOV** - global variational method with correct second derivative regularization
+- **TIKHONOV** - global variational method with hybrid automatic discretization
 - **GRID_ANALYSIS** - automatic analysis and method recommendation
 
-### Version 5.3 Highlights
+### Version 5.4 Highlights
 
 **Major Improvements:**
-1. **Tikhonov method simplified** - removed `adaptive_weights` option, now automatically correct for all grid types
-2. **Savitzky-Golay protected** - automatic rejection of non-uniform grids with helpful recommendations
-3. **Better mathematical correctness** - proper D² discretization for non-uniform grids
-4. **Cleaner API** - removed `tikhonov_smooth_adaptive()`, simplified parameter set
-5. **Improved user experience** - automatic method selection guidance
+1. **Tikhonov hybrid implementation** - automatic selection between average coefficient (ratio < 2.5) and local spacing (ratio ≥ 2.5) methods
+2. **Harmonic mean** - more accurate interval averaging for nearly-uniform grids
+3. **Fixed boundary conditions** - corrected missing superdiagonal element
+4. **Enhanced GCV** - over-fitting penalty and L-curve backup for large datasets
+5. **Better diagnostics** - functional balance reporting, λ selection guidance
+6. **Grid analysis with `-g`** - detailed uniformity statistics for parameter optimization
 
-Each method has a strong mathematical foundation and is optimized for specific data types and applications. The program now provides better guidance on which method to use and automatically prevents mathematically incorrect usage patterns.
+### When to Use Each Method
+
+**Quick Decision Tree:**
+
+```
+Is your grid uniform (CV < 0.05)?
+├─ YES: Use SAVGOL for best computational efficiency
+│        smooth -m 1 -n 9 -p 3 -d data.txt
+│
+└─ NO:  Use TIKHONOV for correct handling
+         smooth -m 2 -l auto -d data.txt
+
+Need local adaptability? 
+└─ Use POLYFIT regardless of grid
+    smooth -m 0 -n 7 -p 2 -d data.txt
+
+Not sure?
+└─ Use TIKHONOV with automatic λ - safest choice!
+    smooth -m 2 -l auto -g -d data.txt
+```
+
+Each method has a strong mathematical foundation and is optimized for specific data types. The program provides automatic guidance on method selection and parameters, with extensive diagnostics to ensure correct usage.
+
+### Best Practices
+
+1. **Always check grid first:** Use `-g` flag to understand your data
+2. **Start with automatic:** Use `-l auto` for Tikhonov, let GCV find optimal λ
+3. **Check functional balance:** Look for 30-70% split between data and regularization terms
+4. **Iterate if needed:** Adjust λ manually if automatic selection doesn't satisfy requirements
+5. **Use derivatives wisely:** Add `-d` only when needed - cleaner output without it
+6. **Understand the trade-off:** More smoothing (larger λ) = more noise reduction but less detail
 
 ---
 
-**Document revision:** 2025-10-04  
-**Program version:** smooth v5.3  
+**Document revision:** 2025-10-13  
+**Program version:** smooth v5.4  
 **Dependencies:** LAPACK, BLAS  
 **License:** See source files
