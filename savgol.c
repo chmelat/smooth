@@ -1,7 +1,8 @@
 /*  Savitzky-Golay filter for data smoothing
- *  Implementation
- *  V2.1/2025-10-04/ Added uniform grid check (SG not suitable for non-uniform grids)
- *  V2.0/2025-05-28/ Updated to use LAPACK/BLAS instead of lib_matrix
+ *  OPTIMIZED Implementation with pre-computed coefficients
+ *  V2.2/2025-10-14/ FIXED: Pre-compute coefficients once, massive speedup!
+ *  V2.1/2025-10-04/ Added uniform grid check
+ *  V2.0/2025-05-28/ Updated to use LAPACK/BLAS
  */
 
 #include <stdio.h>
@@ -15,7 +16,7 @@
 #define DPMAX 12
 #endif
 
-/* Threshold for grid uniformity - above this CV, grid is considered non-uniform */
+/* Threshold for grid uniformity */
 #define UNIFORMITY_CV_THRESHOLD 0.05
 
 /* LAPACK function declarations */
@@ -25,9 +26,6 @@ extern void dposv_(char *uplo, int *n, int *nrhs, double *a, int *lda,
 /* Local function declarations */
 static double power(double x, int n);
 static double factorial(int n);
-static double apply_savgol_filter(double *x, double *y, int center_idx, 
-                                  int nl, int nr, int poly_degree, 
-                                  int deriv_order, int data_size);
 
 /* Power function x^n */
 static double power(double x, int n)
@@ -138,73 +136,18 @@ void savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, doubl
     free(B);
 }
 
-/* Apply Savitzky-Golay filter at a specific point */
-static double apply_savgol_filter(double *x, double *y, int center_idx, 
-                                  int nl, int nr, int poly_degree, 
-                                  int deriv_order, int data_size)
-{
-    int i;
-    double result = 0.0;
-    double *c;
-    double h = 1.0;
-    
-    /* Allocate coefficients array */
-    c = (double*)calloc(nl + nr + 1, sizeof(double));
-    if (c == NULL) {
-        fprintf(stderr, "Error: Memory allocation failed for filter coefficients\n");
-        return 0.0;
-    }
-    
-    /* Calculate filter coefficients */
-    savgol_coefficients(nl, nr, poly_degree, deriv_order, c);
-    
-    /* For derivatives, calculate average spacing */
-    if (deriv_order > 0) {
-        h = 0.0;
-        int count = 0;
-        for (i = center_idx - nl + 1; i <= center_idx + nr; i++) {
-            if (i > center_idx - nl && i <= center_idx + nr && i > 0 && i < data_size) {
-                h += x[i] - x[i-1];
-                count++;
-            }
-        }
-        if (count > 0) {
-            h /= count;
-        } else {
-            h = 1.0;
-        }
-    }
-    
-    /* Apply the filter */
-    for (i = 0; i <= nl + nr; i++) {
-        int idx = center_idx - nl + i;
-        
-        if (idx >= 0 && idx < data_size) {
-            result += c[i] * y[idx];
-        }
-    }
-    
-    /* Scale for derivatives */
-    if (deriv_order > 0) {
-        double scale_factor = 1.0;
-        for (i = 0; i < deriv_order; i++)
-            scale_factor /= h;
-        
-        result *= scale_factor;
-    }
-    
-    free(c);
-    return result;
-}
-
-/* Main Savitzky-Golay smoothing function */
+/* Main Savitzky-Golay smoothing function - OPTIMIZED */
 SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int poly_degree)
 {
     SavgolResult *result;
     GridAnalysis *grid_info;
-    int i;
+    int i, k;
     int offset;
-    double fi, dfi;
+    double h_avg;
+    
+    /* Pre-computed coefficient arrays */
+    double *c_func = NULL;    /* Coefficients for function (deriv_order=0) */
+    double *c_deriv = NULL;   /* Coefficients for derivative (deriv_order=1) */
     
     /* Input validation */
     if (x == NULL || y == NULL || n < 1) {
@@ -285,6 +228,7 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
         printf("# Savitzky-Golay: Grid is nearly uniform (CV=%.4f)\n", grid_info->cv);
     }
     
+    h_avg = grid_info->h_avg;
     free_grid_analysis(grid_info);
     
     offset = window_size / 2;
@@ -308,11 +252,59 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
         return NULL;
     }
     
-    /* Left boundary handling */
+    /* ========================================================================
+     * KEY OPTIMIZATION: Pre-compute coefficients ONCE for central points
+     * ======================================================================== */
+    
+    c_func = (double *)calloc(window_size, sizeof(double));
+    c_deriv = (double *)calloc(window_size, sizeof(double));
+    
+    if (c_func == NULL || c_deriv == NULL) {
+        fprintf(stderr, "Error: Memory allocation failed for coefficient arrays\n");
+        free(c_func);
+        free(c_deriv);
+        free_savgol_result(result);
+        return NULL;
+    }
+    
+    /* Compute coefficients ONCE for symmetric window (central points) */
+    savgol_coefficients(offset, offset, poly_degree, 0, c_func);   /* Function */
+    savgol_coefficients(offset, offset, poly_degree, 1, c_deriv); /* Derivative */
+    
+    /* ========================================================================
+     * Process central points using pre-computed coefficients - FAST!
+     * ======================================================================== */
+    
+    for (i = offset; i < n - offset; i++) {
+        double val = 0.0;
+        double deriv = 0.0;
+        
+        /* Apply convolution with pre-computed coefficients */
+        for (k = 0; k < window_size; k++) {
+            int idx = i - offset + k;
+            val += c_func[k] * y[idx];
+            deriv += c_deriv[k] * y[idx];
+        }
+        
+        result->y_smooth[i] = val;
+        
+        /* Scale derivative by average spacing */
+        result->y_deriv[i] = deriv / h_avg;
+    }
+    
+    /* ========================================================================
+     * Boundary handling - compute coefficients for asymmetric windows
+     * (Only a few points, so per-point computation is acceptable)
+     * ======================================================================== */
+    
+    /* Left boundary */
     for (i = 0; i < offset; i++) {
         int left_pts = i;
         int right_pts = window_size - 1 - left_pts;
+        double *c_bound_func, *c_bound_deriv;
+        int n_coeff;
         
+        /* Ensure enough points for polynomial degree */
         if (left_pts + right_pts < poly_degree) {
             right_pts = poly_degree - left_pts;
             if (i + right_pts >= n) {
@@ -322,27 +314,44 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
             }
         }
         
-        fi = apply_savgol_filter(x, y, i, left_pts, right_pts, poly_degree, 0, n);
-        dfi = apply_savgol_filter(x, y, i, left_pts, right_pts, poly_degree, 1, n);
+        n_coeff = left_pts + right_pts + 1;
+        c_bound_func = (double *)calloc(n_coeff, sizeof(double));
+        c_bound_deriv = (double *)calloc(n_coeff, sizeof(double));
         
-        result->y_smooth[i] = fi;
-        result->y_deriv[i] = dfi;
+        if (c_bound_func && c_bound_deriv) {
+            savgol_coefficients(left_pts, right_pts, poly_degree, 0, c_bound_func);
+            savgol_coefficients(left_pts, right_pts, poly_degree, 1, c_bound_deriv);
+            
+            double val = 0.0;
+            double deriv = 0.0;
+            
+            for (k = 0; k < n_coeff; k++) {
+                int idx = i - left_pts + k;
+                if (idx >= 0 && idx < n) {
+                    val += c_bound_func[k] * y[idx];
+                    deriv += c_bound_deriv[k] * y[idx];
+                }
+            }
+            
+            result->y_smooth[i] = val;
+            result->y_deriv[i] = deriv / h_avg;
+        } else {
+            result->y_smooth[i] = y[i];
+            result->y_deriv[i] = 0.0;
+        }
+        
+        free(c_bound_func);
+        free(c_bound_deriv);
     }
     
-    /* Central points */
-    for (i = offset; i < n - offset; i++) {
-        fi = apply_savgol_filter(x, y, i, offset, offset, poly_degree, 0, n);
-        dfi = apply_savgol_filter(x, y, i, offset, offset, poly_degree, 1, n);
-        
-        result->y_smooth[i] = fi;
-        result->y_deriv[i] = dfi;
-    }
-    
-    /* Right boundary handling */
+    /* Right boundary */
     for (i = n - offset; i < n; i++) {
         int right_pts = n - 1 - i;
         int left_pts = window_size - 1 - right_pts;
+        double *c_bound_func, *c_bound_deriv;
+        int n_coeff;
         
+        /* Ensure enough points for polynomial degree */
         if (left_pts + right_pts < poly_degree) {
             left_pts = poly_degree - right_pts;
             if (i - left_pts < 0) {
@@ -352,12 +361,39 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
             }
         }
         
-        fi = apply_savgol_filter(x, y, i, left_pts, right_pts, poly_degree, 0, n);
-        dfi = apply_savgol_filter(x, y, i, left_pts, right_pts, poly_degree, 1, n);
+        n_coeff = left_pts + right_pts + 1;
+        c_bound_func = (double *)calloc(n_coeff, sizeof(double));
+        c_bound_deriv = (double *)calloc(n_coeff, sizeof(double));
         
-        result->y_smooth[i] = fi;
-        result->y_deriv[i] = dfi;
+        if (c_bound_func && c_bound_deriv) {
+            savgol_coefficients(left_pts, right_pts, poly_degree, 0, c_bound_func);
+            savgol_coefficients(left_pts, right_pts, poly_degree, 1, c_bound_deriv);
+            
+            double val = 0.0;
+            double deriv = 0.0;
+            
+            for (k = 0; k < n_coeff; k++) {
+                int idx = i - left_pts + k;
+                if (idx >= 0 && idx < n) {
+                    val += c_bound_func[k] * y[idx];
+                    deriv += c_bound_deriv[k] * y[idx];
+                }
+            }
+            
+            result->y_smooth[i] = val;
+            result->y_deriv[i] = deriv / h_avg;
+        } else {
+            result->y_smooth[i] = y[i];
+            result->y_deriv[i] = 0.0;
+        }
+        
+        free(c_bound_func);
+        free(c_bound_deriv);
     }
+    
+    /* Clean up pre-computed coefficients */
+    free(c_func);
+    free(c_deriv);
     
     return result;
 }
