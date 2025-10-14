@@ -194,18 +194,18 @@ int main(int argc, char **argv)
 
   /* Perform grid uniformity analysis if requested */
   if (show_grid_analysis) {
-    GridAnalysis *grid_info = analyze_grid(x, n, 1);  /* store_spacings=1 for detailed analysis */
+    GridAnalysis *grid_info = analyze_grid(x, n, 0);  /* store_spacings=0 - no histogram needed */
     if (grid_info) {
-      printf("# ========================================\n");
-      printf("# GRID UNIFORMITY ANALYSIS\n");
-      printf("# ========================================\n");
-      print_grid_analysis(grid_info, 2, "# ");  /* verbose=2 for full details */
-      printf("# ========================================\n");
-      printf("#\n");
+      print_grid_analysis(grid_info, 1, "# ");  /* verbose=1 - basic stats + recommendations only */
       free_grid_analysis(grid_info);
     } else {
       fprintf(stderr, "Warning: Grid analysis failed\n");
     }
+    
+    /* Clean up and exit - grid analysis only, no smoothing */
+    free(x);
+    free(y);
+    return EXIT_SUCCESS;
   }
 
   /* Process data according to selected method */
