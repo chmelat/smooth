@@ -64,6 +64,8 @@ The goal of smoothing is to estimate `y_true` while suppressing `ε_i` and prese
 
 **Butterworth Digital Filter (NEW):**
 - **4th-order low-pass Butterworth filter** with filtfilt (zero-phase filtering)
+- **Low-pass frequency filter:** Removes high-frequency noise, preserves low-frequency trends
+- **Cutoff frequency control:** Simple fc parameter controls smoothing strength (lower fc = stronger smoothing)
 - **Complex number implementation:** Uses C complex.h for precise pole calculation
 - **Scipy-compatible algorithm:** Follows scipy.signal.butter design methodology
 - **Filtfilt implementation:** Forward-backward filtering eliminates phase distortion
@@ -83,26 +85,6 @@ The goal of smoothing is to estimate `y_true` while suppressing `ε_i` and prese
 **Grid Analysis:**
 - **Detailed reporting with `-g` flag:** Comprehensive grid uniformity statistics including CV, ratio, spacing details
 - **Better recommendations:** Program suggests optimal methods based on detected grid characteristics
-
-### API Structure
-
-All smoothing methods have consistent APIs:
-
-```c
-// Polyfit
-PolyfitResult* polyfit_smooth(double *x, double *y, int n, 
-                              int window_size, int poly_degree);
-void free_polyfit_result(PolyfitResult *result);
-
-// Savitzky-Golay
-SavgolResult* savgol_smooth(double *x, double *y, int n, 
-                            int window_size, int poly_degree);
-void free_savgol_result(SavgolResult *result);
-
-// Tikhonov - Hybrid implementation in v5.4
-TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda);
-void free_tikhonov_result(TikhonovResult *result);
-```
 
 ---
 
@@ -757,7 +739,16 @@ void free_tikhonov_result(TikhonovResult *result);
 
 ### Theoretical Foundation
 
-The Butterworth filter is a classical digital signal processing (DSP) filter characterized by a **maximally flat magnitude response** in the passband. It provides optimal frequency-domain filtering with zero phase distortion when implemented as filtfilt.
+The Butterworth filter is a classical **low-pass frequency filter** in digital signal processing (DSP). It removes high-frequency noise while preserving low-frequency signal trends.
+
+**What does "low-pass" mean?**
+- **Passes low frequencies:** Slow variations in your data pass through unchanged
+- **Blocks high frequencies:** Rapid fluctuations (noise) are removed
+- **The cutoff frequency (fc)** determines the boundary between "low" and "high"
+  - Lower fc → more aggressive smoothing (removes more detail)
+  - Higher fc → gentler smoothing (preserves more detail)
+
+The filter is characterized by a **maximally flat magnitude response** in the passband and provides zero phase distortion when implemented as filtfilt.
 
 **Filter Transfer Function:**
 
@@ -871,8 +862,15 @@ The companion matrix for `[1, a1, a2, a3, a4]` is:
 
 ### Normalized Cutoff Frequency
 
-The cutoff frequency `fc` is **normalized** to the sampling rate:
+The cutoff frequency `fc` is **normalized** to the sampling rate and is the **most important parameter** for Butterworth filtering.
 
+**Simple explanation:**
+- `fc` controls how much smoothing you get
+- **Smaller fc (e.g., 0.05)** → heavy smoothing, only very slow trends preserved
+- **Larger fc (e.g., 0.30)** → light smoothing, more detail preserved
+- Valid range: `0 < fc < 0.5` (Nyquist limit)
+
+**Technical details:**
 ```
 fc = f_cutoff / f_sample
 
@@ -882,7 +880,7 @@ where:
 ```
 
 **Nyquist Constraint:** `0 < fc < 0.5`
-- `fc = 0.5` corresponds to Nyquist frequency (f_sample/2)
+- `fc = 0.5` corresponds to Nyquist frequency (f_sample/2) - maximum possible
 - Higher fc → less filtering (more high frequencies pass)
 - Lower fc → more filtering (smoother result)
 
@@ -894,19 +892,21 @@ Example: Data with spacing h_avg = 0.1 seconds
 - If fc = 0.2, then f_cutoff = 0.2 × 10 = 2 Hz
 - Filter removes frequencies above ~2 Hz
 
-**Practical Guidelines:**
+**Practical Guidelines for Choosing fc:**
 
-| fc Range | Effect | Use Case |
-|----------|--------|----------|
-| 0.01 - 0.05 | Heavy smoothing | Very noisy data, need only low-freq trends |
-| 0.05 - 0.15 | Moderate smoothing | Typical noisy experimental data |
-| 0.15 - 0.30 | Light smoothing | Preserve most signal features |
-| > 0.30 | Minimal smoothing | May not remove enough noise |
+| fc Value | Smoothing Strength | When to Use |
+|----------|-------------------|-------------|
+| 0.01 - 0.05 | **Very strong** | Extremely noisy data, only global trends matter |
+| 0.05 - 0.15 | **Moderate** | Typical experimental data with noise |
+| 0.15 - 0.30 | **Light** | Good quality data, preserve features |
+| > 0.30 | **Minimal** | Low noise, want to keep almost everything |
 
-**Recommended starting values:**
-- **General purpose:** fc = 0.15 - 0.20
-- **High noise:** fc = 0.05 - 0.10
-- **Preserve details:** fc = 0.20 - 0.30
+**Quick Start Recommendations:**
+- **Not sure? Start with fc = 0.15** - good balance for most data
+- **Too noisy after smoothing?** Decrease fc (e.g., try 0.10)
+- **Lost important details?** Increase fc (e.g., try 0.25)
+- **Extreme noise?** Try fc = 0.05
+- **High quality data?** Try fc = 0.25 - 0.30
 
 ### IIR Filter Implementation
 
@@ -1046,8 +1046,6 @@ Grid Uniformity (ratio = h_max/h_min):
 | Nearly uniform (CV < 0.05) | ✓ | ⚠️ | ✓ | ✓ |
 | Moderately non-uniform (0.05 < CV < 0.2) | ✓ | ✗ | ✓ | ⚠️ |
 | Highly non-uniform (CV > 0.2) | ⚠️ | ✗ | ✓ | ⚠️ |
-| Very large ratio (h_max/h_min > 10) | ⚠️ | ✗ | ✓* | ⚠️ |
-| Extreme ratio (h_max/h_min > 20) | ⚠️ | ✗ | ✓* | ✗ |
 
 **Legend:**
 - ✓ = Recommended
@@ -1092,14 +1090,15 @@ Grid Uniformity (ratio = h_max/h_min):
 
 #### BUTTERWORTH - when:
 - **Grid is uniform or nearly-uniform (ratio < 20)** - essential requirement!
-- You need **frequency-domain interpretation** of filtering
-- Data is periodic, oscillatory, or spectroscopic
+- You want to **remove high-frequency noise** while keeping slow trends
+- You need **simple frequency-based smoothing** - just set cutoff frequency fc
 - You want **zero phase distortion** (no signal delay)
-- You understand cutoff frequency concept from signal processing
+- Data is periodic, oscillatory, or spectroscopic
+- You need **frequency-domain interpretation** of filtering
 - Data is from instrumentation with known sampling rate
 - You need **predictable frequency response** (maximally flat passband)
 - Working with time-series data at constant sampling
-- Signal processing background - comfortable with fc parameter
+- You understand or want to learn about cutoff frequency concept
 
 ### Parameter Selection
 
@@ -1507,7 +1506,9 @@ The `smooth` program v5.5 provides four complementary smoothing methods in a mod
 ### Version 5.5 Highlights
 
 **New Addition:**
-- **Butterworth filter (4th-order)** - classical DSP filter with filtfilt for zero-phase smoothing
+- **Butterworth low-pass filter (4th-order)** - classical DSP frequency filter with filtfilt for zero-phase smoothing
+  - Removes high-frequency noise while preserving low-frequency trends
+  - Simple cutoff frequency parameter fc controls smoothing strength
   - Complex number implementation for precise pole calculation
   - Scipy-compatible algorithm (follows scipy.signal.butter)
   - Maximally flat frequency response in passband
