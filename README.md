@@ -1,7 +1,7 @@
 # Methods for Smoothing Experimental Data in the smooth Program
 
-**Technical Documentation**  
-Version 5.4 | October 13, 2025
+**Technical Documentation**
+Version 5.5 | November 3, 2025
 
 ---
 
@@ -11,17 +11,18 @@ Version 5.4 | October 13, 2025
 2. [Polynomial Fitting (POLYFIT)](#polynomial-fitting-polyfit)
 3. [Savitzky-Golay Filter (SAVGOL)](#savitzky-golay-filter-savgol)
 4. [Tikhonov Regularization (TIKHONOV)](#tikhonov-regularization-tikhonov)
-5. [Method Comparison](#method-comparison)
-6. [Practical Recommendations](#practical-recommendations)
-7. [Usage Examples](#usage-examples)
-8. [Grid Analysis Module](#grid-analysis-module)
-9. [Compilation and Installation](#compilation-and-installation)
+5. [Butterworth Filter (BUTTERWORTH)](#butterworth-filter-butterworth)
+6. [Method Comparison](#method-comparison)
+7. [Practical Recommendations](#practical-recommendations)
+8. [Usage Examples](#usage-examples)
+9. [Grid Analysis Module](#grid-analysis-module)
+10. [Compilation and Installation](#compilation-and-installation)
 
 ---
 
 ## Introduction
 
-The `smooth` program implements three sophisticated methods for smoothing experimental data with the capability of simultaneous derivative computation. Each method has specific properties, advantages, and areas of application.
+The `smooth` program implements four sophisticated methods for smoothing experimental data with the capability of simultaneous derivative computation. Each method has specific properties, advantages, and areas of application.
 
 ### General Smoothing Problem
 
@@ -39,12 +40,14 @@ The goal of smoothing is to estimate `y_true` while suppressing `ε_i` and prese
 ```
 
 **Basic Parameters:**
-- `-m {0|1|2}` - method selection (polyfit|savgol|tikhonov)
+- `-m {0|1|2|3}` - method selection (polyfit|savgol|tikhonov|butterworth)
 - `-n N` - smoothing window size (polyfit, savgol)
 - `-p P` - polynomial degree (polyfit, savgol, max 12)
 - `-l λ` - regularization parameter (tikhonov)
 - `-l auto` - automatic λ selection using GCV (tikhonov)
-- `-d` - display first derivative in output (optional)
+- `-f fc` - normalized cutoff frequency (butterworth, 0 < fc < 0.5)
+- `-f auto` - automatic cutoff selection (butterworth, currently returns 0.1)
+- `-d` - display first derivative in output (optional, not available for butterworth)
 - `-g` - show detailed grid uniformity analysis (optional)
 
 **Note on polynomial degree:** Degrees > 6 may generate numerical stability warnings.
@@ -55,9 +58,20 @@ The goal of smoothing is to estimate `y_true` while suppressing `ε_i` and prese
 
 ---
 
-## What's New in Version 5.4
+## What's New in Version 5.5
 
 ### Major Improvements
+
+**Butterworth Digital Filter (NEW):**
+- **4th-order low-pass Butterworth filter** with filtfilt (zero-phase filtering)
+- **Complex number implementation:** Uses C complex.h for precise pole calculation
+- **Scipy-compatible algorithm:** Follows scipy.signal.butter design methodology
+- **Filtfilt implementation:** Forward-backward filtering eliminates phase distortion
+- **Proper initial conditions:** Implements scipy's lfilter_zi algorithm with companion matrix
+- **Edge handling:** Reflection padding minimizes boundary effects
+- **Frequency-domain control:** Intuitive cutoff frequency parameter (0 < fc < 0.5)
+
+### Previous Version 5.4 Improvements
 
 **Tikhonov Regularization (Hybrid Implementation):**
 - **Automatic discretization selection:** Method automatically chooses between average coefficient (ratio < 2.5) and local spacing (ratio ≥ 2.5) based on grid uniformity
@@ -739,6 +753,261 @@ void free_tikhonov_result(TikhonovResult *result);
 
 ---
 
+## Butterworth Filter (BUTTERWORTH)
+
+### Theoretical Foundation
+
+The Butterworth filter is a classical digital signal processing (DSP) filter characterized by a **maximally flat magnitude response** in the passband. It provides optimal frequency-domain filtering with zero phase distortion when implemented as filtfilt.
+
+**Filter Transfer Function:**
+
+In the analog domain (s-domain), the Butterworth filter has magnitude response:
+```
+|H(jω)|² = 1 / (1 + (ω/ωc)^(2N))
+```
+
+where:
+- `N` = filter order (4 in our implementation)
+- `ωc` = cutoff frequency (3dB point)
+- `ω` = frequency
+
+**Key Properties:**
+- **Maximally flat passband:** No ripples for ω < ωc
+- **Monotonic rolloff:** Smooth transition from passband to stopband
+- **-3dB at cutoff:** |H(jωc)| = 1/√2 ≈ 0.707
+- **Rolloff rate:** -20N dB/decade (for N=4: -80 dB/decade)
+
+### Digital Implementation
+
+The smooth program implements a **4th-order digital Butterworth low-pass filter** using the following algorithm:
+
+**Step 1: Pole Calculation**
+
+Butterworth poles lie on unit circle in s-domain at angles:
+```
+θk = π/2 + π(2k+1)/(2N),  k = 0,1,...,N-1
+```
+
+For N=4:
+```
+s_poles[k] = exp(j·θk)  where θ = {5π/8, 7π/8, 9π/8, 11π/8}
+```
+
+**Step 2: Frequency Scaling**
+
+Scale poles by prewarped cutoff frequency:
+```
+wc = tan(π·fc)    (prewarp for bilinear transform)
+s_poles_scaled = wc · s_poles
+```
+
+**Step 3: Bilinear Transform**
+
+Convert analog poles to digital domain:
+```
+z_poles = (2 + s_poles_scaled) / (2 - s_poles_scaled)
+```
+
+The bilinear transformation maps:
+- Left half of s-plane → inside unit circle in z-plane
+- jω axis → unit circle in z-plane
+- Preserves stability
+
+**Step 4: Biquad Cascade**
+
+Form two 2nd-order sections (biquads) from conjugate pole pairs:
+```
+H(z) = H1(z) · H2(z)
+
+Each biquad: H_i(z) = (b0 + b1·z⁻¹ + b2·z⁻²) / (1 + a1·z⁻¹ + a2·z⁻²)
+```
+
+This approach provides better numerical stability than direct 4th-order implementation.
+
+### Filtfilt Algorithm
+
+The **filtfilt** (forward-backward filtering) eliminates phase distortion:
+
+**Algorithm:**
+1. **Pad signal:** Reflect signal at boundaries (3×order length)
+2. **Forward filter:** Apply H(z) from left to right → y_fwd
+3. **Reverse:** y_rev = reverse(y_fwd)
+4. **Backward filter:** Apply H(z) to y_rev → y_bwd
+5. **Reverse back:** y_final = reverse(y_bwd)
+6. **Extract:** Remove padding to get final result
+
+**Effect:**
+- **Zero phase lag:** No signal delay
+- **Effective order:** 2N = 8 (squared magnitude response)
+- **Steeper rolloff:** |H_eff(jω)|² = |H(jω)|⁴
+
+### Initial Conditions (lfilter_zi)
+
+To minimize edge transients, we compute initial filter state using **scipy's lfilter_zi algorithm**:
+
+**Problem:** Find initial state `zi` such that for constant input `x = c`:
+```
+zi = A·zi + B·c
+```
+
+This ensures the filter starts in steady-state, eliminating startup transients.
+
+**Solution:** Solve linear system using companion matrix:
+```
+(I - A)·zi = B
+
+where:
+  A = companion(a).T    (companion matrix of denominator)
+  B = b[1:] - a[1:]·b[0]
+```
+
+The companion matrix for `[1, a1, a2, a3, a4]` is:
+```
+     [a1  -a2  a3  -a4]
+     [1    0   0    0 ]
+     [0    1   0    0 ]
+     [0    0   1    0 ]
+```
+
+### Normalized Cutoff Frequency
+
+The cutoff frequency `fc` is **normalized** to the sampling rate:
+
+```
+fc = f_cutoff / f_sample
+
+where:
+  f_cutoff = desired cutoff frequency in physical units
+  f_sample = 1 / h_avg  (h_avg = average data spacing)
+```
+
+**Nyquist Constraint:** `0 < fc < 0.5`
+- `fc = 0.5` corresponds to Nyquist frequency (f_sample/2)
+- Higher fc → less filtering (more high frequencies pass)
+- Lower fc → more filtering (smoother result)
+
+**Physical Interpretation:**
+
+Example: Data with spacing h_avg = 0.1 seconds
+- Sample rate: f_sample = 1/0.1 = 10 Hz
+- Nyquist frequency: 5 Hz
+- If fc = 0.2, then f_cutoff = 0.2 × 10 = 2 Hz
+- Filter removes frequencies above ~2 Hz
+
+**Practical Guidelines:**
+
+| fc Range | Effect | Use Case |
+|----------|--------|----------|
+| 0.01 - 0.05 | Heavy smoothing | Very noisy data, need only low-freq trends |
+| 0.05 - 0.15 | Moderate smoothing | Typical noisy experimental data |
+| 0.15 - 0.30 | Light smoothing | Preserve most signal features |
+| > 0.30 | Minimal smoothing | May not remove enough noise |
+
+**Recommended starting values:**
+- **General purpose:** fc = 0.15 - 0.20
+- **High noise:** fc = 0.05 - 0.10
+- **Preserve details:** fc = 0.20 - 0.30
+
+### IIR Filter Implementation
+
+Uses **Transposed Direct Form II** for numerical stability:
+
+```
+For each sample n:
+  y[n] = b[0]·x[n] + z[0]
+  z[0] = b[1]·x[n] - a[1]·y[n] + z[1]
+  z[1] = b[2]·x[n] - a[2]·y[n] + z[2]
+  z[2] = b[3]·x[n] - a[3]·y[n] + z[3]
+  z[3] = b[4]·x[n] - a[4]·y[n]
+```
+
+where `z[]` is the filter state (4 elements for 4th order).
+
+### Modularized Implementation
+
+```c
+// butterworth.h
+typedef struct {
+    double *y_smooth;     // Smoothed values
+    int n;                // Number of points
+    int order;            // Filter order (4)
+    double cutoff_freq;   // Normalized cutoff frequency
+    double sample_rate;   // Effective sample rate (1/h_avg)
+} ButterworthResult;
+
+// Main function
+ButterworthResult* butterworth_filtfilt(double *x, double *y, int n,
+                                        double cutoff_freq, int auto_cutoff);
+
+// Automatic cutoff selection (currently returns 0.1)
+double estimate_cutoff_frequency(double *x, double *y, int n);
+
+// Memory cleanup
+void free_butterworth_result(ButterworthResult *result);
+```
+
+### Grid Requirements
+
+**IMPORTANT:** Butterworth filter works best with **uniform or nearly-uniform grids**.
+
+The filter assumes uniform sampling when computing the cutoff frequency. For highly non-uniform grids:
+
+```
+Grid Uniformity (ratio = h_max/h_min):
+  ratio < 5:   Good - Butterworth works well
+  5 ≤ ratio < 20: Acceptable - may have suboptimal performance
+  ratio ≥ 20:  Rejected - use Tikhonov instead
+```
+
+**Why uniform grids?**
+- Frequency analysis assumes constant sampling rate
+- fc is defined relative to sample rate
+- Non-uniform sampling distorts frequency response
+
+**For non-uniform grids:** Use Tikhonov method (`-m 2 -l auto`) which handles arbitrary spacing correctly.
+
+### Characteristics
+
+**Advantages:**
+- **Zero phase distortion** (filtfilt eliminates all phase lag)
+- **Maximally flat frequency response** in passband
+- **Classical DSP approach** with extensive literature and understanding
+- **Predictable frequency-domain behavior** - easy to interpret cutoff frequency
+- **No ringing** (unlike Chebyshev or elliptic filters)
+- **Efficient implementation** - O(n) time complexity
+- **Smooth monotonic rolloff** - natural attenuation curve
+
+**Disadvantages:**
+- **Requires uniform/nearly-uniform grid** (ratio < 20)
+- **No derivative output** (Butterworth is smoothing-only)
+- **Less local adaptability** than polynomial methods
+- **Cutoff selection not automatic** (currently manual tuning needed)
+- **Edge effects** despite padding
+- **Frequency interpretation** may be less intuitive than λ for some users
+
+### Comparison with Other Methods
+
+**BUTTERWORTH vs SAVITZKY-GOLAY:**
+- Both assume uniform grids
+- **Butterworth:** True frequency-domain filtering, maximally flat passband
+- **Savitzky-Golay:** Polynomial approximation in time domain
+- **Choose Butterworth for:** Periodic signals, spectral data, frequency-domain interpretation
+- **Choose Savitzky-Golay for:** Polynomial trends, peak detection, derivative estimation
+
+**BUTTERWORTH vs TIKHONOV:**
+- **Butterworth:** Classical signal processing, frequency-domain control
+- **Tikhonov:** Variational optimization, works with non-uniform grids
+- **Choose Butterworth for:** Uniform data, need frequency-domain understanding
+- **Choose Tikhonov for:** Non-uniform grids, mathematical optimization approach
+
+**BUTTERWORTH vs POLYFIT:**
+- **Butterworth:** Global frequency filtering, uniform smoothing
+- **Polyfit:** Local polynomial fitting, adapts to curvature changes
+- **Choose Butterworth for:** Stationary signals, spectroscopic data
+- **Choose Polyfit for:** Variable curvature, local feature preservation
+
+---
+
 ## Method Comparison
 
 ### Computational Complexity
@@ -748,33 +1017,37 @@ void free_tikhonov_result(TikhonovResult *result);
 | POLYFIT | O(n·p³) | O(p²) | Good for small p |
 | SAVGOL | O(p³) + O(n·w) | O(w) | Excellent for large n |
 | TIKHONOV | O(n) | O(n) | Excellent |
+| BUTTERWORTH | O(n) | O(n) | Excellent |
 
 *Note: w = window size, p = polynomial degree (≤12), n = number of data points.*
 
 ### Smoothing Quality
 
-| Property | POLYFIT | SAVGOL | TIKHONOV |
-|----------|---------|--------|----------|
-| Local adaptability | ***** | **** | ** |
-| Extreme preservation | **** | ***** | *** |
-| Noise robustness | *** | **** | ***** |
-| Derivative quality | ***** | ***** | *** |
-| Boundary behavior | ** | *** | **** |
-| Non-uniform grids | *** | ✗ | ***** |
-| Ease of use (v5.4) | **** | **** | ***** |
-| Parameter selection | Manual | Manual | Auto (GCV) |
+| Property | POLYFIT | SAVGOL | TIKHONOV | BUTTERWORTH |
+|----------|---------|--------|----------|-------------|
+| Local adaptability | ***** | **** | ** | ** |
+| Extreme preservation | **** | ***** | *** | *** |
+| Noise robustness | *** | **** | ***** | ***** |
+| Derivative quality | ***** | ***** | *** | N/A |
+| Boundary behavior | ** | *** | **** | *** |
+| Non-uniform grids | *** | ✗ | ***** | ** |
+| Ease of use (v5.5) | **** | **** | ***** | **** |
+| Parameter selection | Manual | Manual | Auto (GCV) | Manual |
+| Frequency control | No | No | No | Yes |
+| Phase distortion | N/A | N/A | N/A | Zero |
 
 **Key:** ✗ = Not suitable (automatically rejected)
 
 ### Grid Type Compatibility
 
-| Grid Type | POLYFIT | SAVGOL | TIKHONOV |
-|-----------|---------|--------|----------|
-| Perfectly uniform (CV < 0.01) | ✓ | ✓ | ✓ |
-| Nearly uniform (CV < 0.05) | ✓ | ⚠️ | ✓ |
-| Moderately non-uniform (0.05 < CV < 0.2) | ✓ | ✗ | ✓ |
-| Highly non-uniform (CV > 0.2) | ⚠️ | ✗ | ✓ |
-| Very large ratio (h_max/h_min > 10) | ⚠️ | ✗ | ✓* |
+| Grid Type | POLYFIT | SAVGOL | TIKHONOV | BUTTERWORTH |
+|-----------|---------|--------|----------|-------------|
+| Perfectly uniform (CV < 0.01) | ✓ | ✓ | ✓ | ✓ |
+| Nearly uniform (CV < 0.05) | ✓ | ⚠️ | ✓ | ✓ |
+| Moderately non-uniform (0.05 < CV < 0.2) | ✓ | ✗ | ✓ | ⚠️ |
+| Highly non-uniform (CV > 0.2) | ⚠️ | ✗ | ✓ | ⚠️ |
+| Very large ratio (h_max/h_min > 10) | ⚠️ | ✗ | ✓* | ⚠️ |
+| Extreme ratio (h_max/h_min > 20) | ⚠️ | ✗ | ✓* | ✗ |
 
 **Legend:**
 - ✓ = Recommended
@@ -816,6 +1089,17 @@ void free_tikhonov_result(TikhonovResult *result);
 - You want the simplest workflow (one parameter, automatic selection)
 - You need to process very large datasets efficiently
 - **You're not sure which method to use** - Tikhonov with `-l auto` is safest!
+
+#### BUTTERWORTH - when:
+- **Grid is uniform or nearly-uniform (ratio < 20)** - essential requirement!
+- You need **frequency-domain interpretation** of filtering
+- Data is periodic, oscillatory, or spectroscopic
+- You want **zero phase distortion** (no signal delay)
+- You understand cutoff frequency concept from signal processing
+- Data is from instrumentation with known sampling rate
+- You need **predictable frequency response** (maximally flat passband)
+- Working with time-series data at constant sampling
+- Signal processing background - comfortable with fc parameter
 
 ### Parameter Selection
 
@@ -870,6 +1154,45 @@ For non-uniform grids (ratio > 5):
 - GCV may be less accurate - check visually
 ```
 
+#### Cutoff frequency (fc) for BUTTERWORTH:
+```
+**RECOMMENDED:**
+Start with manual selection: fc = 0.15 - 0.20
+
+**MANUAL SELECTION by noise level:**
+- Low noise:        fc = 0.20 - 0.30  (preserve details)
+- Medium noise:     fc = 0.15 - 0.20  (typical, recommended)
+- High noise:       fc = 0.05 - 0.15  (aggressive smoothing)
+- Very noisy data:  fc = 0.01 - 0.05  (heavy smoothing)
+
+Full range: 0 < fc < 0.5 (Nyquist limit)
+
+**AUTOMATIC SELECTION:**
+- Use -f auto (currently returns default fc = 0.1)
+- Note: Automatic selection not yet fully implemented
+- Manual tuning recommended for best results
+
+**PHYSICAL INTERPRETATION:**
+fc = f_cutoff / f_sample
+where f_sample = 1 / h_avg
+
+Example: h_avg = 0.1 sec → f_sample = 10 Hz
+         fc = 0.2 → f_cutoff = 2 Hz (removes freq > 2 Hz)
+
+**ITERATIVE REFINEMENT:**
+1. Start with fc = 0.15 or fc = 0.20
+2. If result too smooth (details lost): increase fc
+3. If result too noisy (not smooth enough): decrease fc
+4. Typical adjustment: ±0.05
+5. Repeat until satisfied
+
+**GRID-DEPENDENT:**
+For non-uniform grids (ratio > 5):
+- Results may be suboptimal
+- Consider using Tikhonov instead
+- If ratio > 20: automatically rejected
+```
+
 ---
 
 ## Usage Examples
@@ -901,6 +1224,12 @@ For non-uniform grids (ratio > 5):
 
 # Tikhonov with manual λ and derivatives
 ./smooth -m 2 -l 0.01 -d data.txt
+
+# Butterworth with manual cutoff frequency
+./smooth -m 3 -f 0.15 data.txt
+
+# Butterworth with automatic cutoff (currently returns 0.1)
+./smooth -m 3 -f auto data.txt
 
 # Grid analysis (works with any method)
 ./smooth -m 2 -l auto -g data.txt
@@ -1139,22 +1468,23 @@ make install
 
 ```bash
 # Standard compilation
-gcc -o smooth smooth.c polyfit.c savgol.c tikhonov.c \
+gcc -o smooth smooth.c polyfit.c savgol.c tikhonov.c butterworth.c \
     grid_analysis.c decomment.c -llapack -lblas -lm -O2
 
 # With warnings
 gcc -Wall -Wextra -pedantic -o smooth smooth.c polyfit.c savgol.c \
-    tikhonov.c grid_analysis.c decomment.c -llapack -lblas -lm -O2
+    tikhonov.c butterworth.c grid_analysis.c decomment.c -llapack -lblas -lm -O2
 ```
 
 ### File Structure
 
 ```
 smooth/
-├── smooth.c           # Main program (v5.2: added -g flag)
+├── smooth.c           # Main program (v5.5: added Butterworth)
 ├── polyfit.c/h        # Polynomial fitting module
 ├── savgol.c/h         # Savitzky-Golay module (v5.3: with uniformity check)
 ├── tikhonov.c/h       # Tikhonov module (v5.4: hybrid implementation)
+├── butterworth.c/h    # Butterworth filter module (v5.5: new)
 ├── grid_analysis.c/h  # Grid analysis
 ├── decomment.c/h      # Comment removal
 ├── revision.h         # Program version
@@ -1166,16 +1496,26 @@ smooth/
 
 ## Conclusion
 
-The `smooth` program v5.4 provides three complementary smoothing methods in a modular architecture with advanced input data analysis:
+The `smooth` program v5.5 provides four complementary smoothing methods in a modular architecture with advanced input data analysis:
 
 - **POLYFIT** - local polynomial approximation using least squares method
 - **SAVGOL** - optimal linear filter with pre-computed coefficients (uniform grids only)
 - **TIKHONOV** - global variational method with hybrid automatic discretization
+- **BUTTERWORTH** - digital low-pass filter with zero-phase filtfilt (NEW in v5.5)
 - **GRID_ANALYSIS** - automatic analysis and method recommendation
 
-### Version 5.4 Highlights
+### Version 5.5 Highlights
 
-**Major Improvements:**
+**New Addition:**
+- **Butterworth filter (4th-order)** - classical DSP filter with filtfilt for zero-phase smoothing
+  - Complex number implementation for precise pole calculation
+  - Scipy-compatible algorithm (follows scipy.signal.butter)
+  - Maximally flat frequency response in passband
+  - Proper initial conditions via lfilter_zi algorithm
+  - Frequency-domain control with normalized cutoff parameter
+
+### Previous Version 5.4 Improvements
+
 1. **Tikhonov hybrid implementation** - automatic selection between average coefficient (ratio < 2.5) and local spacing (ratio ≥ 2.5) methods
 2. **Harmonic mean** - more accurate interval averaging for nearly-uniform grids
 3. **Fixed boundary conditions** - corrected missing superdiagonal element
@@ -1189,13 +1529,22 @@ The `smooth` program v5.4 provides three complementary smoothing methods in a mo
 
 ```
 Is your grid uniform (CV < 0.05)?
-├─ YES: Use SAVGOL for best computational efficiency
-│        smooth -m 1 -n 9 -p 3 -d data.txt
+├─ YES: Multiple good options:
+│   ├─ SAVGOL: Best for polynomial signals with derivatives
+│   │   smooth -m 1 -n 9 -p 3 -d data.txt
+│   ├─ BUTTERWORTH: Best for frequency-domain interpretation
+│   │   smooth -m 3 -f 0.15 data.txt
+│   └─ TIKHONOV: Universal choice with auto parameters
+│       smooth -m 2 -l auto -d data.txt
 │
-└─ NO:  Use TIKHONOV for correct handling
-         smooth -m 2 -l auto -d data.txt
+└─ NO (non-uniform): Use TIKHONOV for correct handling
+    smooth -m 2 -l auto -d data.txt
 
-Need local adaptability? 
+Need frequency-domain control?
+└─ Use BUTTERWORTH (requires uniform grid)
+    smooth -m 3 -f 0.15 data.txt
+
+Need local adaptability?
 └─ Use POLYFIT regardless of grid
     smooth -m 0 -n 7 -p 2 -d data.txt
 

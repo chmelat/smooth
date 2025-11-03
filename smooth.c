@@ -1,9 +1,10 @@
 /*  Balance of table points by polynom p-th degree at sliding window size
  *  n points. Least square principe.
+ *  V5.5/2025-11-03/ Added Butterworth filtfilt method
  *  V5.2/2025-10-13/ Added -g option for detailed grid uniformity analysis
  *  V5.1/2025-10-04/ Simplified Tikhonov method (removed adaptive_weights option)
  *  V5.0/2025-05-27/ Modularized version with separate method implementations
- */ 
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,6 +19,7 @@
 #include "tikhonov.h"
 #include "polyfit.h"
 #include "savgol.h"
+#include "butterworth.h"
 #include "grid_analysis.h"
 
 #define BUF 512
@@ -27,11 +29,13 @@
 #endif
 #define DP 2
 #define LAMBDA_DEFAULT 0.1
+#define CUTOFF_DEFAULT 0.1
 
 /* Method flags */
 #define METHOD_POLYFIT 0
 #define METHOD_SAVGOL 1
 #define METHOD_TIKHONOV 2
+#define METHOD_BUTTERWORTH 3
 
 /* Local declare functions */
 static void usage(void);
@@ -55,19 +59,21 @@ int main(int argc, char **argv)
   int method = METHOD_POLYFIT;
   double lambda = LAMBDA_DEFAULT;
   int auto_lambda = 0;
+  double cutoff_freq = CUTOFF_DEFAULT;
+  int auto_cutoff = 0;
   int show_derivative = 0;
   int show_grid_analysis = 0;
 
   progname = basename(argv[0]);
 
-/* None arguments */  
+/* None arguments */
   if (argc == 1) {
     usage();
     exit (EXIT_FAILURE);
   }
 
 /* Options command line */
-  while ( (ch = getopt(argc, argv, "n:p:m:l:dgh?")) != -1 ) {
+  while ( (ch = getopt(argc, argv, "n:p:m:l:f:dgh?")) != -1 ) {
     switch (ch) {
       case 'n':
         sp = atoi(optarg);
@@ -78,11 +84,11 @@ int main(int argc, char **argv)
       case 'm':
         if (optarg[0] >= '0' && optarg[0] <= '9') {
           int method_num = atoi(optarg);
-          if (method_num >= METHOD_POLYFIT && method_num <= METHOD_TIKHONOV) {
+          if (method_num >= METHOD_POLYFIT && method_num <= METHOD_BUTTERWORTH) {
             method = method_num;
           } else {
             fprintf(stderr, "Unknown method number: %d\n", method_num);
-            fprintf(stderr, "Valid methods: 0 (polyfit), 1 (savgol), 2 (tikhonov)\n");
+            fprintf(stderr, "Valid methods: 0 (polyfit), 1 (savgol), 2 (tikhonov), 3 (butterworth)\n");
             exit(EXIT_FAILURE);
           }
         } else {
@@ -92,9 +98,11 @@ int main(int argc, char **argv)
             method = METHOD_SAVGOL;
           } else if (strcmp(optarg, "tikhonov") == 0) {
             method = METHOD_TIKHONOV;
+          } else if (strcmp(optarg, "butterworth") == 0) {
+            method = METHOD_BUTTERWORTH;
           } else {
             fprintf(stderr, "Unknown method: %s\n", optarg);
-            fprintf(stderr, "Valid methods: polyfit, savgol, tikhonov, 0, 1, 2\n");
+            fprintf(stderr, "Valid methods: polyfit, savgol, tikhonov, butterworth, 0, 1, 2, 3\n");
             exit(EXIT_FAILURE);
           }
         }
@@ -106,6 +114,17 @@ int main(int argc, char **argv)
           lambda = atof(optarg);
           if (lambda < 0) {
             fprintf(stderr, "Lambda must be non-negative!\n");
+            exit(EXIT_FAILURE);
+          }
+        }
+        break;
+      case 'f':
+        if (strcmp(optarg, "auto") == 0) {
+          auto_cutoff = 1;
+        } else {
+          cutoff_freq = atof(optarg);
+          if (cutoff_freq <= 0.0 || cutoff_freq >= 0.5) {
+            fprintf(stderr, "Cutoff frequency must be in range (0, 0.5)!\n");
             exit(EXIT_FAILURE);
           }
         }
@@ -285,25 +304,62 @@ int main(int argc, char **argv)
       }
       break;
       
+    case METHOD_BUTTERWORTH:
+      {
+        ButterworthResult *result;
+
+        /* Warn if derivative output was requested */
+        if (show_derivative) {
+          fprintf(stderr, "# WARNING: Derivative output (-d) not supported for Butterworth method\n");
+          fprintf(stderr, "#          Outputting smoothed values only\n");
+        }
+
+        /* Apply Butterworth filtfilt */
+        result = butterworth_filtfilt(x, y, n, cutoff_freq, auto_cutoff);
+
+        if (result == NULL) {
+          fprintf(stderr, "Butterworth filtering failed!\n");
+          exit(EXIT_FAILURE);
+        }
+
+        /* Output header */
+        printf("# Data smooth - Butterworth filter (order %d, filtfilt)\n", result->order);
+        printf("# Normalized cutoff frequency: fc = %.6lG\n", result->cutoff_freq);
+        printf("# Sample rate: fs = %.6lG\n", result->sample_rate);
+        printf("# Actual cutoff frequency: f_cutoff = %.6lG\n",
+               result->cutoff_freq * result->sample_rate);
+        printf("# Effective order after filtfilt: %d\n", 2 * result->order);
+        printf("#    x          y\n");
+
+        /* Output results - Butterworth doesn't have derivatives */
+        for (i = 0; i < n; i++) {
+          printf("%12.8lG %10.6lG\n", x[i], result->y_smooth[i]);
+        }
+
+        /* Clean up */
+        free_butterworth_result(result);
+      }
+      break;
+
     case METHOD_POLYFIT:
     default:
       {
         PolyfitResult *result;
-        
+
         result = polyfit_smooth(x, y, n, sp, dp);
-        
+
         if (result == NULL) {
           fprintf(stderr, "Polynomial fitting failed!\n");
           exit(EXIT_FAILURE);
         }
-        
+
         printf("# Data smooth - aprox. pol. %ddg from %d points of moving window (least square)\n", dp, sp);
         if (show_derivative) {
           printf("#    x          y          y'\n");
         } else {
           printf("#    x          y\n");
         }
-        
+
         for (i = 0; i < n; i++) {
           if (show_derivative) {
             printf("%12.8lG %10.6lG %10.6lG\n", x[i], result->y_smooth[i], result->y_deriv[i]);
@@ -311,7 +367,7 @@ int main(int argc, char **argv)
             printf("%12.8lG %10.6lG\n", x[i], result->y_smooth[i]);
           }
         }
-        
+
         free_polyfit_result(result);
       }
       break;
@@ -337,23 +393,29 @@ static void help(void)
 {
   static char *msg[] = {
     "-h, -?\tHelp",
-    "-n\tPoints in moving window, default 5 (not used for Tikhonov)",  
-    "-p\tDegree of approx. polynom, default 2",
-    "-m\tMethod: 0 (polyfit, default), 1 (savgol), or 2 (tikhonov)",
+    "-n\tPoints in moving window, default 5 (not used for Tikhonov or Butterworth)",
+    "-p\tDegree of approx. polynom, default 2 (not used for Butterworth)",
+    "-m\tMethod: 0 (polyfit, default), 1 (savgol), 2 (tikhonov), or 3 (butterworth)",
     "-l\tLambda regularization parameter for Tikhonov method, default 0.1",
     "\tUse '-l auto' for automatic lambda selection using GCV",
-    "-d\tShow first derivative in output",
+    "-f\tNormalized cutoff frequency for Butterworth filter, default 0.1",
+    "\tRange: 0 < fc < 0.5, where fc = f_cutoff / f_sample",
+    "\tUse '-f auto' for automatic cutoff selection",
+    "-d\tShow first derivative in output (not available for Butterworth)",
     "-g\tShow detailed grid uniformity analysis",
     "\nMethods:",
-    "  polyfit  - Local polynomial fitting (least squares)",
-    "  savgol   - Savitzky-Golay filter for better derivatives", 
-    "  tikhonov - Global smoothing with regularization (correct for non-uniform grids)",
+    "  polyfit     - Local polynomial fitting (least squares)",
+    "  savgol      - Savitzky-Golay filter for better derivatives",
+    "  tikhonov    - Global smoothing with regularization (correct for non-uniform grids)",
+    "  butterworth - Digital Butterworth low-pass filter with filtfilt (zero-phase)",
     "\nExamples:",
-    "  smooth -m 0 -n 7 -p 3 data.txt     # Polyfit with 7-point window, 3rd degree",
-    "  smooth -m 1 -n 5 -p 2 -d data.txt  # Savitzky-Golay with derivatives",
-    "  smooth -m 2 -l 0.01 data.txt       # Tikhonov with manual lambda",
-    "  smooth -m 2 -l auto -d data.txt    # Tikhonov with auto lambda and derivatives",
-    "  smooth -m 2 -g -l auto data.txt    # With detailed grid analysis",
+    "  smooth -m 0 -n 7 -p 3 data.txt        # Polyfit with 7-point window, 3rd degree",
+    "  smooth -m 1 -n 5 -p 2 -d data.txt     # Savitzky-Golay with derivatives",
+    "  smooth -m 2 -l 0.01 data.txt          # Tikhonov with manual lambda",
+    "  smooth -m 2 -l auto -d data.txt       # Tikhonov with auto lambda and derivatives",
+    "  smooth -m 3 -f 0.1 data.txt           # Butterworth with fc=0.1",
+    "  smooth -m 3 -f auto data.txt          # Butterworth with auto cutoff",
+    "  smooth -m 2 -g -l auto data.txt       # With detailed grid analysis",
     0
   };
   char **p = msg;

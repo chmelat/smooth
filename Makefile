@@ -12,9 +12,9 @@ PREFIX = /usr/local
 USER_PREFIX = $(HOME)
 
 # Files
-SRC = smooth.c decomment.c tikhonov.c polyfit.c savgol.c grid_analysis.c
+SRC = smooth.c decomment.c tikhonov.c polyfit.c savgol.c butterworth.c grid_analysis.c
 OBJ = $(SRC:.c=.o)
-HEAD = decomment.h revision.h tikhonov.h polyfit.h savgol.h grid_analysis.h
+HEAD = decomment.h revision.h tikhonov.h polyfit.h savgol.h butterworth.h grid_analysis.h
 
 # C compiler and flags
 CC = clang
