@@ -191,25 +191,25 @@ static void compute_initial_conditions(double *b, double *a, double *zi)
 
     /* IminusA = I - companion(a).T
      * Companion matrix for [1, a1, a2, a3, a4]:
-     *   [a1, -a2, a3, -a4]
-     *   [1,   0,   0,   0 ]
-     *   [0,   1,   0,   0 ]
-     *   [0,   0,   1,   0 ]
+     *   [-a1, -a2, -a3, -a4]
+     *   [1,    0,   0,   0]
+     *   [0,    1,   0,   0]
+     *   [0,    0,   1,   0]
      *
-     * Transposed:
-     *   [a1,  1,  0,  0]
-     *   [-a2, 0,  1,  0]
-     *   [a3,  0,  0,  1]
-     *   [-a4, 0,  0,  0]
+     * Transposed companion(a).T:
+     *   [-a1,  1,  0,  0]
+     *   [-a2,  0,  1,  0]
+     *   [-a3,  0,  0,  1]
+     *   [-a4,  0,  0,  0]
      *
      * I - companion(a).T:
-     *   [1-a1,  -1,   0,   0]
-     *   [a2,     1,  -1,   0]
-     *   [-a3,    0,   1,  -1]
-     *   [a4,     0,   0,   1]
+     *   [1-a1, -1,  0,  0]
+     *   [ a2,   1, -1,  0]
+     *   [-a3,   0,  1, -1]
+     *   [ a4,   0,  0,  1]
      */
 
-    IminusA[0][0] = 1.0 - a[1];
+    IminusA[0][0] = 1.0 + a[1];  /* Note: companion matrix uses -a[1:], so I-A.T uses 1+a[1] */
     IminusA[0][1] = -1.0;
     IminusA[0][2] = 0.0;
     IminusA[0][3] = 0.0;
@@ -219,7 +219,7 @@ static void compute_initial_conditions(double *b, double *a, double *zi)
     IminusA[1][2] = -1.0;
     IminusA[1][3] = 0.0;
 
-    IminusA[2][0] = -a[3];
+    IminusA[2][0] = a[3];   /* Third row, first column */
     IminusA[2][1] = 0.0;
     IminusA[2][2] = 1.0;
     IminusA[2][3] = -1.0;
@@ -229,34 +229,43 @@ static void compute_initial_conditions(double *b, double *a, double *zi)
     IminusA[3][2] = 0.0;
     IminusA[3][3] = 1.0;
 
-    /* Solve the system using Gaussian elimination (simple for 4x4) */
-    /* Forward elimination */
-    for (int k = 0; k < 4; k++) {
-        /* Find pivot */
-        double pivot = IminusA[k][k];
-        if (fabs(pivot) < 1e-10) {
-            /* Singular matrix - use zero initial conditions */
-            for (int i = 0; i < 4; i++) zi[i] = 0.0;
-            return;
-        }
+    /* Solve the system using LAPACK dgesv
+     * This is more robust than our simple Gaussian elimination
+     * dgesv solves A*X = B with LU decomposition and partial pivoting
+     */
 
-        /* Eliminate column k */
-        for (int i = k+1; i < 4; i++) {
-            double factor = IminusA[i][k] / pivot;
-            for (int j = k; j < 4; j++) {
-                IminusA[i][j] -= factor * IminusA[k][j];
-            }
-            B[i] -= factor * B[k];
+    /* LAPACK expects column-major format, so we need to transpose */
+    double A_colmajor[16];
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+            A_colmajor[j*4 + i] = IminusA[i][j];  /* Transpose: A[i][j] -> A_col[j][i] */
         }
     }
 
-    /* Back substitution */
-    for (int i = 3; i >= 0; i--) {
+    /* Copy B to zi (will be overwritten with solution) */
+    for (int i = 0; i < 4; i++) {
         zi[i] = B[i];
-        for (int j = i+1; j < 4; j++) {
-            zi[i] -= IminusA[i][j] * zi[j];
-        }
-        zi[i] /= IminusA[i][i];
+    }
+
+    /* LAPACK dgesv arguments */
+    int n = 4;      /* Order of matrix */
+    int nrhs = 1;   /* Number of right-hand sides */
+    int lda = 4;    /* Leading dimension of A */
+    int ipiv[4];    /* Pivot indices */
+    int ldb = 4;    /* Leading dimension of B */
+    int info;       /* Return status */
+
+    /* External LAPACK function declaration */
+    extern void dgesv_(int *n, int *nrhs, double *A, int *lda,
+                       int *ipiv, double *B, int *ldb, int *info);
+
+    /* Call LAPACK solver */
+    dgesv_(&n, &nrhs, A_colmajor, &lda, ipiv, zi, &ldb, &info);
+
+    if (info != 0) {
+        /* Solver failed - use zero initial conditions */
+        fprintf(stderr, "Warning: LAPACK dgesv failed (info=%d), using zero initial conditions\n", info);
+        for (int i = 0; i < 4; i++) zi[i] = 0.0;
     }
 }
 
@@ -311,10 +320,13 @@ static void apply_iir_filter(double *b, double *a, double *x, double *y, int n,
     }
 }
 
-/* Pad signal using reflection for edge handling
+/* Pad signal using odd reflection for edge handling (scipy default)
  *
  * Creates padded signal: [y_reflected | y | y_reflected]
  * This minimizes edge effects in filtfilt.
+ *
+ * Odd reflection: reflects the signal by extending the slope at the edges.
+ * This is more robust for signals with trends near boundaries.
  *
  * Parameters:
  *   y        - Input signal
@@ -334,21 +346,39 @@ static double* pad_signal(double *y, int n, int pad_len, int *total_len)
         return NULL;
     }
 
-    /* Left padding: reflect around y[0] */
-    for (int i = 0; i < pad_len; i++) {
-        int idx = pad_len - 1 - i;  /* index into original array */
-        if (idx >= n) idx = n - 1;
-        padded[i] = 2.0 * y[0] - y[idx];
-    }
-
-    /* Copy original signal */
+    /* Copy original signal to middle */
     memcpy(padded + pad_len, y, n * sizeof(double));
 
-    /* Right padding: reflect around y[n-1] */
+    /* Left padding: scipy.signal.odd_ext implementation
+     * left_ext = x[pad_len:0:-1]  means x[pad_len], x[pad_len-1], ..., x[1]
+     * left_pad = 2*x[0] - left_ext
+     *
+     * padded[i] = 2*y[0] - y[pad_len - i] for i = 0..pad_len-1
+     */
+    double left_end = y[0];
     for (int i = 0; i < pad_len; i++) {
-        int idx = n - 2 - i;  /* index into original array */
-        if (idx < 0) idx = 0;
-        padded[pad_len + n + i] = 2.0 * y[n-1] - y[idx];
+        int src_idx = pad_len - i;  /* pad_len, pad_len-1, ..., 1 */
+        if (src_idx >= n) {
+            /* If pad_len >= n, clamp to last valid index */
+            src_idx = n - 1;
+        }
+        padded[i] = 2.0 * left_end - y[src_idx];
+    }
+
+    /* Right padding: scipy.signal.odd_ext implementation
+     * right_ext = x[-2:-(pad_len+2):-1] means x[-2], x[-3], ..., x[-(pad_len+1)]
+     * right_pad = 2*x[-1] - right_ext
+     *
+     * padded[pad_len+n+i] = 2*y[n-1] - y[n-2-i] for i = 0..pad_len-1
+     */
+    double right_end = y[n-1];
+    for (int i = 0; i < pad_len; i++) {
+        int src_idx = n - 2 - i;  /* n-2, n-3, ..., down to n-1-pad_len */
+        if (src_idx < 0) {
+            /* If pad_len >= n, clamp to first valid index */
+            src_idx = 0;
+        }
+        padded[pad_len + n + i] = 2.0 * right_end - y[src_idx];
     }
 
     return padded;
@@ -459,10 +489,17 @@ ButterworthResult* butterworth_filtfilt(double *x, double *y, int n,
     double b[5], a[5];
     butterworth_coefficients(fc, b, a);
 
-    /* Padding length: 3 times the filter order is typical */
-    int pad_len = 3 * result->order;
-    if (pad_len > n / 2) {
-        pad_len = n / 2;
+    /* Padding length: match scipy.signal.filtfilt default
+     * scipy uses: padlen = 3 * max(len(a), len(b))
+     * For 4th order filter: len(a) = len(b) = 5
+     * So padlen = 3 * 5 = 15
+     */
+    int ntaps = 5;  /* max(len(a), len(b)) for our 4th order filter */
+    int pad_len = 3 * ntaps;  /* = 15, same as scipy default */
+
+    /* Scipy constraint: padlen must be less than n */
+    if (pad_len >= n) {
+        pad_len = n - 1;
     }
 
     /* Pad the signal */
@@ -513,9 +550,21 @@ ButterworthResult* butterworth_filtfilt(double *x, double *y, int n,
     }
     apply_iir_filter(b, a, y_temp, y_bwd, padded_len, zi, NULL);
 
-    /* Reverse back and extract original signal (remove padding) */
+    /* Reverse the backward-filtered signal back to original order
+     * Following scipy.signal.filtfilt algorithm:
+     * 1. Forward filter: y_fwd = lfilter(y_padded)
+     * 2. Reverse: y_temp = y_fwd[::-1]
+     * 3. Backward filter: y_bwd = lfilter(y_temp)
+     * 4. Reverse again: y_final = y_bwd[::-1]
+     * 5. Extract middle: result = y_final[pad_len:pad_len+n]
+     */
+    for (int i = 0; i < padded_len; i++) {
+        y_temp[i] = y_bwd[padded_len - 1 - i];
+    }
+
+    /* Extract original signal (remove padding) from the reversed result */
     for (int i = 0; i < n; i++) {
-        result->y_smooth[i] = y_bwd[padded_len - 1 - pad_len - i];
+        result->y_smooth[i] = y_temp[pad_len + i];
     }
 
     /* Cleanup */

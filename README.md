@@ -1,7 +1,7 @@
 # Methods for Smoothing Experimental Data in the smooth Program
 
 **Technical Documentation**
-Version 5.5 | November 3, 2025
+Version 5.5 | November 4, 2025
 
 ---
 
@@ -69,8 +69,11 @@ The goal of smoothing is to estimate `y_true` while suppressing `ε_i` and prese
 - **Complex number implementation:** Uses C complex.h for precise pole calculation
 - **Scipy-compatible algorithm:** Follows scipy.signal.butter design methodology
 - **Filtfilt implementation:** Forward-backward filtering eliminates phase distortion
-- **Proper initial conditions:** Implements scipy's lfilter_zi algorithm with companion matrix
-- **Edge handling:** Reflection padding minimizes boundary effects
+- **Robust initial conditions:** Implements scipy's lfilter_zi algorithm using LAPACK dgesv solver
+  - Uses companion matrix formulation for steady-state computation
+  - LAPACK dgesv with LU decomposition ensures numerical stability
+  - Handles challenging cases (very low fc with coefficients ~10⁻⁸)
+- **Edge handling:** Odd reflection padding minimizes boundary effects
 - **Frequency-domain control:** Intuitive cutoff frequency parameter (0 < fc < 0.5)
 
 ### Previous Version 5.4 Improvements
@@ -845,20 +848,44 @@ This ensures the filter starts in steady-state, eliminating startup transients.
 
 **Solution:** Solve linear system using companion matrix:
 ```
-(I - A)·zi = B
+(I - A^T)·zi = B
 
 where:
-  A = companion(a).T    (companion matrix of denominator)
+  A = companion(a).T    (companion matrix transposed)
   B = b[1:] - a[1:]·b[0]
 ```
 
 The companion matrix for `[1, a1, a2, a3, a4]` is:
 ```
-     [a1  -a2  a3  -a4]
-     [1    0   0    0 ]
-     [0    1   0    0 ]
-     [0    0   1    0 ]
+     [-a1  -a2  -a3  -a4]
+     [1     0    0    0 ]
+     [0     1    0    0 ]
+     [0     0    1    0 ]
 ```
+
+And its transpose `A^T`:
+```
+     [-a1   1    0    0]
+     [-a2   0    1    0]
+     [-a3   0    0    1]
+     [-a4   0    0    0]
+```
+
+Therefore `I - A^T`:
+```
+     [1+a1  -1    0    0]
+     [a2     1   -1    0]
+     [a3     0    1   -1]
+     [a4     0    0    1]
+```
+
+**Implementation:** The linear system is solved using **LAPACK's dgesv** routine for robustness:
+```c
+// Uses LU decomposition with partial pivoting
+dgesv_(&n, &nrhs, A_colmajor, &lda, ipiv, zi, &ldb, &info);
+```
+
+This approach ensures numerical stability even for challenging filter coefficients (e.g., very low cutoff frequencies where coefficients can be extremely small ~10⁻⁸).
 
 ### Normalized Cutoff Frequency
 
@@ -1512,7 +1539,8 @@ The `smooth` program v5.5 provides four complementary smoothing methods in a mod
   - Complex number implementation for precise pole calculation
   - Scipy-compatible algorithm (follows scipy.signal.butter)
   - Maximally flat frequency response in passband
-  - Proper initial conditions via lfilter_zi algorithm
+  - Robust initial conditions via lfilter_zi algorithm using LAPACK dgesv
+  - Correct companion matrix implementation ensures accuracy
   - Frequency-domain control with normalized cutoff parameter
 
 ### Previous Version 5.4 Improvements
@@ -1567,7 +1595,7 @@ Each method has a strong mathematical foundation and is optimized for specific d
 
 ---
 
-**Document revision:** 2025-10-13  
-**Program version:** smooth v5.4  
-**Dependencies:** LAPACK, BLAS  
+**Document revision:** 2025-11-04
+**Program version:** smooth v5.5
+**Dependencies:** LAPACK, BLAS
 **License:** See source files
