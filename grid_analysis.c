@@ -118,29 +118,29 @@ GridAnalysis* analyze_grid(double *x, int n, int store_spacings)
     /* Assess reliability and generate warnings */
     analysis->reliability_warning = 0;
     analysis->warning_msg[0] = '\0';
-    
-    /* Severe non-uniformity warnings */
-    if (analysis->ratio_max_min > 100.0) {
+
+    /* Non-uniformity warnings based on CV (more robust metric) */
+    if (analysis->cv > 1.0) {
         analysis->reliability_warning = 1;
-        sprintf(analysis->warning_msg, 
-                "SEVERE grid non-uniformity detected: h_max/h_min = %.1f\n"
+        sprintf(analysis->warning_msg,
+                "SEVERE grid non-uniformity detected: CV = %.2f\n"
                 "This may lead to unreliable smoothing results!\n"
-                "Consider resampling data to a more uniform grid.", 
-                analysis->ratio_max_min);
-    }
-    else if (analysis->ratio_max_min > 20.0) {
-        analysis->reliability_warning = 1;
-        sprintf(analysis->warning_msg, 
-                "HIGH grid non-uniformity: h_max/h_min = %.1f\n"
-                "Adaptive methods are strongly recommended.\n"
-                "Consider using smaller regularization parameters.", 
-                analysis->ratio_max_min);
+                "Consider resampling data to a more uniform grid.",
+                analysis->cv);
     }
     else if (analysis->cv > 0.5) {
         analysis->reliability_warning = 1;
-        sprintf(analysis->warning_msg, 
+        sprintf(analysis->warning_msg,
+                "HIGH grid non-uniformity: CV = %.2f\n"
+                "Adaptive methods are strongly recommended.\n"
+                "Consider using smaller regularization parameters.",
+                analysis->cv);
+    }
+    else if (analysis->cv > 0.2) {
+        analysis->reliability_warning = 1;
+        sprintf(analysis->warning_msg,
                 "Significant spacing variation detected: CV = %.2f\n"
-                "Adaptive methods may improve results.", 
+                "Adaptive methods may improve results.",
                 analysis->cv);
     }
     
@@ -222,10 +222,9 @@ void print_grid_analysis(GridAnalysis *analysis, int verbose, const char *prefix
     /* Basic report (verbose = 0) */
     printf("%sGrid uniformity analysis:\n", prefix);
     printf("%s  n = %d points\n", prefix, analysis->n_points);
-    printf("%s  h_min = %.6e, h_max = %.6e, h_avg = %.6e\n", 
+    printf("%s  h_min = %.6e, h_max = %.6e, h_avg = %.6e\n",
            prefix, analysis->h_min, analysis->h_max, analysis->h_avg);
-    printf("%s  h_max/h_min = %.2f, CV = %.3f\n", 
-           prefix, analysis->ratio_max_min, analysis->cv);
+    printf("%s  CV = %.3f\n", prefix, analysis->cv);
     printf("%s  Grid type: %s\n", prefix, analysis->is_uniform ? "UNIFORM" : "NON-UNIFORM");
     printf("%s  Uniformity score: %.2f\n", prefix, analysis->uniformity_score);
     

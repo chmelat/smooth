@@ -29,7 +29,7 @@
 #endif
 #define DP 2
 #define LAMBDA_DEFAULT 0.1
-#define CUTOFF_DEFAULT 0.1
+#define CUTOFF_DEFAULT 0.2
 
 /* Method flags */
 #define METHOD_POLYFIT 0
@@ -123,8 +123,9 @@ int main(int argc, char **argv)
           auto_cutoff = 1;
         } else {
           cutoff_freq = atof(optarg);
-          if (cutoff_freq <= 0.0 || cutoff_freq >= 0.5) {
-            fprintf(stderr, "Cutoff frequency must be in range (0, 0.5)!\n");
+          if (cutoff_freq <= 0.0 || cutoff_freq >= 1.0) {
+            fprintf(stderr, "Cutoff frequency must be in range (0, 1)!\n");
+            fprintf(stderr, "where fc = 1 corresponds to Nyquist frequency (fs/2)\n");
             exit(EXIT_FAILURE);
           }
         }
@@ -324,10 +325,11 @@ int main(int argc, char **argv)
 
         /* Output header */
         printf("# Data smooth - Butterworth filter (order %d, filtfilt)\n", result->order);
-        printf("# Normalized cutoff frequency: fc = %.6lG\n", result->cutoff_freq);
         printf("# Sample rate: fs = %.6lG\n", result->sample_rate);
-        printf("# Actual cutoff frequency: f_cutoff = %.6lG\n",
-               result->cutoff_freq * result->sample_rate);
+        printf("# Nyquist frequency: f_Nyquist = %.6lG (= fs/2)\n", result->sample_rate / 2.0);
+        printf("# Normalized cutoff frequency: fc = %.6lG (where 1.0 = f_Nyquist)\n", result->cutoff_freq);
+        printf("# Actual cutoff frequency: f_cutoff = %.6lG (= fc × f_Nyquist)\n",
+               result->cutoff_freq * result->sample_rate / 2.0);
         printf("# Effective order after filtfilt: %d\n", 2 * result->order);
         printf("#    x          y\n");
 
@@ -398,8 +400,9 @@ static void help(void)
     "-m\tMethod: 0 (polyfit, default), 1 (savgol), 2 (tikhonov), or 3 (butterworth)",
     "-l\tLambda regularization parameter for Tikhonov method, default 0.1",
     "\tUse '-l auto' for automatic lambda selection using GCV",
-    "-f\tNormalized cutoff frequency for Butterworth filter, default 0.1",
-    "\tRange: 0 < fc < 0.5, where fc = f_cutoff / f_sample",
+    "-f\tNormalized cutoff frequency for Butterworth filter, default 0.2",
+    "\tRange: 0 < fc < 1, where fc = f_cutoff / f_Nyquist",
+    "\t(fc = 1 corresponds to Nyquist frequency = f_sample/2)",
     "\tUse '-f auto' for automatic cutoff selection",
     "-d\tShow first derivative in output (not available for Butterworth)",
     "-g\tShow detailed grid uniformity analysis",
@@ -415,7 +418,7 @@ static void help(void)
     "  smooth -m 2 -l auto -d data.txt       # Tikhonov with auto lambda and derivatives",
     "  smooth -m 3 -f 0.1 data.txt           # Butterworth with fc=0.1",
     "  smooth -m 3 -f auto data.txt          # Butterworth with auto cutoff",
-    "  smooth -m 2 -g -l auto data.txt       # With detailed grid analysis",
+    "  smooth -g data.txt                    # Detailed grid analysis",
     0
   };
   char **p = msg;

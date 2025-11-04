@@ -459,7 +459,7 @@ The program outputs functional components:
 
 **5. Grid-Dependent Considerations:**
 
-For non-uniform grids with ratio h_max/h_min > 5:
+For highly non-uniform grids (CV > 0.2):
 ```bash
 # Start with more conservative (larger) λ
 ./smooth -m 2 -l 0.5 nonuniform_data.txt
@@ -486,13 +486,13 @@ For dimensional consistency, λ has units [Length²].
 
 #### Grid Uniformity Detection
 ```
-ratio = h_max / h_min
+CV = coefficient of variation (h_std / h_avg)
 
-ratio < 2.5:  Nearly uniform    → Average Coefficient Method
-ratio ≥ 2.5:  Highly non-uniform → Local Spacing Method
+CV < 0.15:  Nearly uniform    → Average Coefficient Method
+CV ≥ 0.15:  Highly non-uniform → Local Spacing Method
 ```
 
-#### Method 1: Average Coefficient (for ratio < 2.5)
+#### Method 1: Average Coefficient (for CV < 0.15)
 
 Used for uniform and mildly non-uniform grids. More robust numerically.
 
@@ -517,7 +517,7 @@ A[i,i]   = 1 + 2c  (interior points)
 A[i,i±1] = -c      (off-diagonals)
 ```
 
-#### Method 2: Local Spacing (for ratio ≥ 2.5)
+#### Method 2: Local Spacing (for CV ≥ 0.15)
 
 Used for highly non-uniform grids. More accurate for variable spacing.
 
@@ -649,7 +649,7 @@ where eigenvalues:
 μ_k = 4·sin²(θ_k/2) / h²
 ```
 
-**Note:** This approximation is exact for uniform grids but approximate for non-uniform grids. For highly non-uniform grids (ratio > 5), the program issues a warning.
+**Note:** This approximation is exact for uniform grids but approximate for non-uniform grids. For highly non-uniform grids (CV > 0.2), the program issues a warning.
 
 #### Enhanced GCV in v5.4
 
@@ -977,14 +977,7 @@ void free_butterworth_result(ButterworthResult *result);
 
 **IMPORTANT:** Butterworth filter works best with **uniform or nearly-uniform grids**.
 
-The filter assumes uniform sampling when computing the cutoff frequency. For highly non-uniform grids:
-
-```
-Grid Uniformity (ratio = h_max/h_min):
-  ratio < 5:   Good - Butterworth works well
-  5 ≤ ratio < 20: Acceptable - may have suboptimal performance
-  ratio ≥ 20:  Rejected - use Tikhonov instead
-```
+The filter assumes uniform sampling when computing the cutoff frequency. For highly non-uniform grids, the program checks grid uniformity before applying the filter.
 
 **Why uniform grids?**
 - Frequency analysis assumes constant sampling rate
@@ -1257,8 +1250,8 @@ For non-uniform grids (ratio > 5):
 # Butterworth with automatic cutoff (currently returns 0.1)
 ./smooth -m 3 -f auto data.txt
 
-# Grid analysis (works with any method)
-./smooth -m 2 -l auto -g data.txt
+# Grid analysis only (exits after analysis)
+./smooth -g data.txt
 ```
 
 ### Output Format
@@ -1293,16 +1286,13 @@ For non-uniform grids (ratio > 5):
 # Grid uniformity analysis:
 #   n = 1000 points
 #   h_min = 9.500000e-03, h_max = 1.200000e-02, h_avg = 1.000000e-02
-#   h_max/h_min = 1.26, CV = 0.052
+#   CV = 0.052
 #   Grid type: NON-UNIFORM
 #   Uniformity score: 0.94
 #   Standard deviation: 5.200000e-04
 #   Detected clusters: 0
 #   Recommendation: Grid is nearly uniform - standard methods work well
 # ========================================
-#
-# Using Average Coefficient Method (h_max/h_min = 1.26)
-# GCV optimization for n=1000 points (h_max/h_min = 1.26)
 ...
 ```
 
@@ -1310,19 +1300,16 @@ For non-uniform grids (ratio > 5):
 
 ```bash
 # First, analyze your grid
-./smooth -m 2 -l auto -g nonuniform_data.txt
+./smooth -g nonuniform_data.txt
 
-# If ratio < 2.5, program uses average coefficient method
-# Output: "Using Average Coefficient Method (h_max/h_min = 1.85)"
+# Based on the grid uniformity (CV value), the program will automatically select:
+# - Average coefficient method for nearly uniform grids (CV < 0.15)
+# - Local spacing method for non-uniform grids (CV ≥ 0.15)
 
-# If ratio ≥ 2.5, program uses local spacing method
-# Output: "Using Local Spacing Method (h_max/h_min = 8.42)"
-
-# Automatic selection - no user intervention needed!
-# Just use the same command:
+# After grid analysis, apply smoothing with automatic parameter selection
 ./smooth -m 2 -l auto nonuniform_data.txt
 
-# For very non-uniform grids (ratio > 5), you may see:
+# For highly non-uniform grids (CV > 0.2), you may see:
 # "WARNING: Highly non-uniform grid detected!"
 # "GCV trace approximation may be less accurate."
 # In this case, try manual λ or check results visually.
@@ -1332,20 +1319,19 @@ For non-uniform grids (ratio > 5):
 
 1. **Quick data exploration with grid analysis:**
    ```bash
-   # Check grid uniformity
-   ./smooth -m 2 -l auto -g data.txt > smooth_data.txt
-   
-   # Review output comments for:
+   # Check grid uniformity only (program exits after analysis)
+   ./smooth -g data.txt
+
+   # Review output for:
    # - Grid uniformity (CV, ratio)
-   # - Which discretization method was used
-   # - Functional balance (data vs regularization)
+   # - Method recommendations
    ```
 
 2. **Choose method based on grid:**
    ```bash
    # For uniform grids (CV < 0.05):
    ./smooth -m 1 -n 9 -p 3 -d data.txt
-   
+
    # For non-uniform grids:
    ./smooth -m 2 -l auto -d data.txt
    ```
@@ -1354,7 +1340,7 @@ For non-uniform grids (ratio > 5):
    ```bash
    # If automatic λ gives over-smoothing:
    ./smooth -m 2 -l 0.01 -d data.txt
-   
+
    # If under-smoothing:
    ./smooth -m 2 -l 1.0 -d data.txt
    ```
@@ -1363,7 +1349,7 @@ For non-uniform grids (ratio > 5):
    ```bash
    # Final smoothing with derivatives
    ./smooth -m 2 -l auto -d data.txt > publication_data.txt
-   
+
    # Check functional balance in output comments
    # Ideal: both terms contribute 30-70%
    ```
@@ -1420,16 +1406,15 @@ typedef struct {
 # Grid uniformity analysis:
 #   n = 1000 points
 #   h_min = 1.000000e-02, h_max = 1.000000e-01, h_avg = 5.500000e-02
-#   h_max/h_min = 10.00, CV = 0.450
+#   CV = 0.450
 #   Grid type: NON-UNIFORM
 #   Uniformity score: 0.35
 #   Standard deviation: 2.475000e-02
 #   Detected clusters: 2
 #   Recommendation: High non-uniformity - adaptive methods recommended
-# WARNING: HIGH grid non-uniformity: h_max/h_min = 10.0
-# Adaptive methods are strongly recommended.
-# Consider using smaller regularization parameters.
-# 
+# WARNING: Significant spacing variation detected: CV = 0.45
+# Adaptive methods may improve results.
+#
 # WARNING: 2 abrupt spacing changes detected (possible data clustering).
 # Standard methods may over-smooth clustered regions.
 # ========================================
@@ -1445,20 +1430,24 @@ CV < 0.05:   Nearly uniform - SAVGOL works with warning
              → SAVGOL may show warning but works
              → POLYFIT and TIKHONOV work fine
 
-0.05 ≤ CV < 0.20: Moderately non-uniform
+0.05 ≤ CV < 0.15: Moderately non-uniform
              → SAVGOL rejected automatically
              → POLYFIT usable
-             → TIKHONOV recommended (uses average coef if ratio < 2.5)
+             → TIKHONOV uses average coefficient method
+
+0.15 ≤ CV < 0.20: Non-uniform
+             → SAVGOL rejected
+             → POLYFIT usable with caution
+             → TIKHONOV uses local spacing method
 
 CV ≥ 0.20:   Highly non-uniform
              → SAVGOL rejected
              → POLYFIT with caution
-             → TIKHONOV strongly recommended (may use local spacing)
+             → TIKHONOV uses local spacing method (warning issued)
 
-RATIO:
-ratio < 2.5:  Tikhonov uses average coefficient method
-ratio ≥ 2.5:  Tikhonov uses local spacing method
-ratio > 10:   Warning issued, GCV may be less accurate
+TIKHONOV METHOD SELECTION:
+CV < 0.15:  Uses average coefficient method (robust, efficient)
+CV ≥ 0.15:  Uses local spacing method (more accurate for non-uniform grids)
 ```
 
 ---
@@ -1579,7 +1568,7 @@ Need local adaptability?
 
 Not sure?
 └─ Use TIKHONOV with automatic λ - safest choice!
-    smooth -m 2 -l auto -g -d data.txt
+    smooth -m 2 -l auto -d data.txt
 ```
 
 Each method has a strong mathematical foundation and is optimized for specific data types. The program provides automatic guidance on method selection and parameters, with extensive diagnostics to ensure correct usage.

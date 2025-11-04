@@ -23,57 +23,28 @@ extern void dpbsv_(char *uplo, int *n, int *kd, int *nrhs,
 /* BLAS function declarations */
 extern void dcopy_(int *n, double *x, int *incx, double *y, int *incy);
 
-/* Discretization methods */
-#define DISCR_AVERAGE_COEF 0
-#define DISCR_LOCAL_SPACING 1
-
-/* Select discretization method based on grid uniformity */
-static int select_discretization_method(double *x, int n, double *h_min, double *h_max, double *h_avg)
-{
-    if (n < 2) return DISCR_AVERAGE_COEF;
-    
-    *h_min = x[1] - x[0];
-    *h_max = *h_min;
-    double sum_h = 0.0;
-    
-    for (int i = 1; i < n; i++) {
-        double h = x[i] - x[i-1];
-        if (h < *h_min) *h_min = h;
-        if (h > *h_max) *h_max = h;
-        sum_h += h;
-    }
-    
-    *h_avg = sum_h / (n - 1);
-    double ratio = *h_max / *h_min;
-    
-    /* Decision logic:
-     * ratio < 1.5:  virtually uniform → average coef (robust, efficient)
-     * 1.5 ≤ ratio < 2.5: mildly non-uniform → average coef (better numerics)
-     * ratio ≥ 2.5: highly non-uniform → local spacing (more accurate)
-     */
-    return (ratio < 2.5) ? DISCR_AVERAGE_COEF : DISCR_LOCAL_SPACING;
-}
+/* CV threshold for selecting discretization method */
+#define CV_THRESHOLD 0.15
 
 /* Build band matrix with hybrid discretization */
-static void build_band_matrix(double *x, int n, double lambda, double *AB, int ldab, int kd)
+static void build_band_matrix(double *x, int n, double lambda, double *AB, int ldab, int kd,
+                              GridAnalysis *grid_info)
 {
     int j;
-    double h_min, h_max, h_avg;
-    
+
     memset(AB, 0, ldab * n * sizeof(double));
-    
+
     /* Identity matrix */
     for (j = 0; j < n; j++) {
         AB[kd + j*ldab] = 1.0;
     }
-    
+
     if (lambda <= 0.0 || n < 3) return;
-    
-    /* Select discretization method */
-    int method = select_discretization_method(x, n, &h_min, &h_max, &h_avg);
-    double ratio = h_max / h_min;
-    
-    if (method == DISCR_AVERAGE_COEF) {
+
+    /* Select discretization method based on CV */
+    int use_average_coef = (grid_info && grid_info->cv < CV_THRESHOLD);
+
+    if (use_average_coef) {
         /* Average Coefficient Method (from old version)
          * Better for uniform/mildly non-uniform grids */
         
@@ -97,16 +68,18 @@ static void build_band_matrix(double *x, int n, double lambda, double *AB, int l
         for (j = 1; j < n; j++) {
             AB[0 + j*ldab] += c * (-1.0);
         }
-        
-        if (ratio > 1.2) {
-            printf("# Using Average Coefficient Method (h_max/h_min = %.2f)\n", ratio);
+
+        if (grid_info && grid_info->cv > 0.01) {
+            printf("# Using Average Coefficient Method (CV = %.3f)\n", grid_info->cv);
         }
-        
+
     } else {
         /* Local Spacing Method (from new version)
          * Better for highly non-uniform grids */
-        
-        printf("# Using Local Spacing Method (h_max/h_min = %.2f)\n", ratio);
+
+        if (grid_info) {
+            printf("# Using Local Spacing Method (CV = %.3f)\n", grid_info->cv);
+        }
         
         /* Interior points */
         for (j = 1; j < n-1; j++) {
@@ -262,45 +235,48 @@ TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda)
         }
     }
     
-    /* Grid analysis - only show if significant issues */
+    /* Grid analysis - used for discretization method selection and warnings */
     GridAnalysis *grid_info = analyze_grid(x, n, 0);
-    if (grid_info) {
-        if (grid_info->reliability_warning) {
-            printf("# Grid analysis:\n");
-            print_grid_analysis(grid_info, 0, "# ");
-        }
-        free_grid_analysis(grid_info);
+    if (grid_info && grid_info->reliability_warning) {
+        printf("# Grid analysis:\n");
+        print_grid_analysis(grid_info, 0, "# ");
     }
-    
+
     result = (TikhonovResult *)malloc(sizeof(TikhonovResult));
     if (!result) {
         fprintf(stderr, "Error: Memory allocation failed\n");
+        free_grid_analysis(grid_info);
         return NULL;
     }
-    
+
     result->n = n;
     result->lambda = lambda;
     result->y_smooth = (double *)malloc(n * sizeof(double));
     result->y_deriv = (double *)malloc(n * sizeof(double));
-    
+
     if (!result->y_smooth || !result->y_deriv) {
         free_tikhonov_result(result);
+        free_grid_analysis(grid_info);
         return NULL;
     }
-    
+
     AB = (double *)calloc(ldab * n, sizeof(double));
     b = (double *)malloc(n * sizeof(double));
-    
+
     if (!AB || !b) {
-        free(AB); 
+        free(AB);
         free(b);
         free_tikhonov_result(result);
+        free_grid_analysis(grid_info);
         return NULL;
     }
-    
+
     dcopy_(&n, y, &inc, b, &inc);
-    
-    build_band_matrix(x, n, lambda, AB, ldab, kd);
+
+    build_band_matrix(x, n, lambda, AB, ldab, kd, grid_info);
+
+    /* Free grid_info after use */
+    free_grid_analysis(grid_info);
     
     dpbsv_(&uplo, &n, &kd, &nrhs, AB, &ldab, b, &n, &info);
     
@@ -473,24 +449,23 @@ double find_optimal_lambda_gcv(double *x, double *y, int n)
         fprintf(stderr, "Warning: Too few points for GCV (n=%d)\n", n);
         return best_lambda;
     }
-    
-    /* Check grid uniformity */
-    double h_min = x[1] - x[0];
-    double h_max = h_min;
-    for (int i = 1; i < n; i++) {
-        double h = x[i] - x[i-1];
-        if (h < h_min) h_min = h;
-        if (h > h_max) h_max = h;
+
+    /* Check grid uniformity using grid_analysis */
+    GridAnalysis *grid_info = analyze_grid(x, n, 0);
+    if (!grid_info) {
+        fprintf(stderr, "Warning: Grid analysis failed\n");
+        return best_lambda;
     }
-    double ratio = h_max / h_min;
-    
-    printf("# GCV optimization for n=%d points (h_max/h_min = %.2f)\n", n, ratio);
-    
-    if (ratio > 5.0) {
-        printf("# WARNING: Highly non-uniform grid detected!\n");
+
+    printf("# GCV optimization for n=%d points (CV = %.3f)\n", n, grid_info->cv);
+
+    if (grid_info->cv > 0.2) {
+        printf("# WARNING: Highly non-uniform grid detected (CV = %.3f)!\n", grid_info->cv);
         printf("# GCV trace approximation may be less accurate.\n");
         printf("# Consider using L-curve method or manual lambda selection.\n");
     }
+
+    free_grid_analysis(grid_info);
     
     printf("# Format: λ | Functional | RSS | tr(H) (ratio) | GCV\n");
     

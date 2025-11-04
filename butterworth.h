@@ -27,11 +27,12 @@ typedef struct {
  *   x           - Array of x-coordinates (must be strictly monotonic increasing)
  *   y           - Array of y-values to be smoothed
  *   n           - Number of data points (must be >= 20 for reliable filtering)
- *   cutoff_freq - Normalized cutoff frequency (0 < fc < 0.5)
- *                 fc = f_cutoff / f_sample
+ *   cutoff_freq - Normalized cutoff frequency (0 < fc < 1)
+ *                 fc = f_cutoff / f_Nyquist = f_cutoff / (f_sample / 2)
  *                 where f_sample = 1 / h_avg (h_avg = average spacing)
+ *                 fc = 1 corresponds to Nyquist frequency (maximum representable)
  *                 Smaller fc = more smoothing
- *                 Typical range: 0.01 - 0.3
+ *                 Typical range: 0.02 - 0.6
  *   auto_cutoff - If > 0, automatically determine cutoff from data
  *                 (overrides cutoff_freq parameter)
  *
@@ -45,19 +46,29 @@ typedef struct {
  *   Returns NULL on error.
  *
  * Normalized Cutoff Frequency (fc):
- *   fc = f_cutoff / f_sample, where:
+ *   fc = f_cutoff / f_Nyquist = f_cutoff / (f_sample / 2), where:
  *   - f_cutoff = desired cutoff frequency in your physical units
  *   - f_sample = sampling rate = 1/h_avg
- *   - Must satisfy: 0 < fc < 0.5 (Nyquist criterion)
+ *   - f_Nyquist = f_sample / 2 (Nyquist frequency - maximum representable frequency)
+ *   - Must satisfy: 0 < fc < 1 (where fc = 1 corresponds to Nyquist frequency)
  *
- *   Example: If data spacing h_avg = 0.1 sec, then f_sample = 10 Hz
- *            To filter out frequencies above 1 Hz: fc = 1/10 = 0.1
+ *   IMPORTANT: fc is normalized with respect to Nyquist frequency (fs/2), not fs!
+ *              This is the standard convention in digital signal processing.
+ *              fc = 1 represents Nyquist frequency - the theoretical limit.
+ *              Frequencies above Nyquist cannot be represented in sampled data
+ *              and cause aliasing.
+ *
+ *   Example: If data spacing h_avg = 0.1 sec, then:
+ *            f_sample = 10 Hz, f_Nyquist = 5 Hz
+ *            To filter out frequencies above 1 Hz: fc = 1/5 = 0.2
+ *            To filter at Nyquist frequency: fc = 5/5 = 1.0
  *
  * Cutoff Frequency Guidelines:
- *   fc = 0.01 - 0.05: Heavy smoothing (removes high-frequency details)
- *   fc = 0.05 - 0.15: Moderate smoothing (typical for noisy data)
- *   fc = 0.15 - 0.30: Light smoothing (preserves most details)
- *   fc > 0.30:        Minimal smoothing (may not remove enough noise)
+ *   fc = 0.02 - 0.10: Heavy smoothing (removes high-frequency details)
+ *   fc = 0.10 - 0.30: Moderate smoothing (typical for noisy data)
+ *   fc = 0.30 - 0.60: Light smoothing (preserves most details)
+ *   fc = 0.60 - 0.90: Minimal smoothing (may not remove enough noise)
+ *   fc > 0.90:        Very minimal filtering (close to Nyquist limit)
  *
  * Algorithm:
  *   1. Design 4th-order Butterworth filter (bilinear transform)
@@ -76,7 +87,7 @@ typedef struct {
  * Error handling:
  *   Returns NULL if:
  *   - n < 20 (too few points for reliable filtering)
- *   - cutoff_freq <= 0 or >= 0.5 (invalid cutoff)
+ *   - cutoff_freq <= 0 or >= 1.0 (invalid cutoff)
  *   - Memory allocation fails
  *   - Grid is excessively non-uniform (ratio > 20)
  */
@@ -93,7 +104,7 @@ ButterworthResult* butterworth_filtfilt(double *x, double *y, int n,
  *   n - Number of data points
  *
  * Returns:
- *   Recommended normalized cutoff frequency (0 < fc < 0.5)
+ *   Recommended normalized cutoff frequency (0 < fc < 1)
  *
  * Notes:
  *   - Conservative approach: prefers over-smoothing to under-smoothing

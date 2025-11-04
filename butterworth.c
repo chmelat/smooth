@@ -36,14 +36,16 @@ static double* pad_signal(double *y, int n, int pad_len, int *total_len);
  * where N = order (4 in our case), ωc = cutoff frequency
  *
  * Parameters:
- *   fc - Normalized cutoff frequency (0 < fc < 0.5)
+ *   fc - Normalized cutoff frequency (0 < fc < 1)
+ *        where fc = 1 corresponds to Nyquist frequency (fs/2)
  *   b  - Output numerator coefficients (5 elements)
  *   a  - Output denominator coefficients (5 elements, a[0]=1)
  */
 static void butterworth_coefficients(double fc, double *b, double *a)
 {
     /* Design 4th-order Butterworth filter using complex pole calculation
-     * Following scipy.signal.butter algorithm
+     * Following scipy.signal.butter algorithm with normalized frequency
+     * where fc = 1 corresponds to Nyquist frequency (not fs!)
      */
 
     int N = 4;  /* Filter order */
@@ -58,8 +60,11 @@ static void butterworth_coefficients(double fc, double *b, double *a)
         s_poles[k] = cexp(I * theta);  /* exp(j*θ) = cos(θ) + j*sin(θ) */
     }
 
-    /* Step 2: Prewarp the cutoff frequency for bilinear transform */
-    double wc = tan(M_PI * fc);
+    /* Step 2: Prewarp the cutoff frequency for bilinear transform
+     * Using π/2 × fc because fc is normalized to Nyquist (fc=1 means f_Nyquist)
+     * For fc in range (0,1): wc = tan(π/2 × fc)
+     */
+    double wc = tan(M_PI / 2.0 * fc);
 
     /* Step 3: Scale poles by cutoff frequency */
     for (int k = 0; k < N; k++) {
@@ -386,7 +391,8 @@ static double* pad_signal(double *y, int n, int pad_len, int *total_len)
 
 /* Automatic cutoff frequency estimation
  *
- * Simple heuristic: use 10% of Nyquist frequency as default
+ * Simple heuristic: use 20% of Nyquist frequency as default
+ * (where fc = 1 corresponds to Nyquist frequency)
  * TODO: For better estimation, could analyze power spectrum
  */
 double estimate_cutoff_frequency(double *x, double *y, int n)
@@ -396,8 +402,10 @@ double estimate_cutoff_frequency(double *x, double *y, int n)
     (void)y;
     (void)n;
 
-    /* Use conservative default: 10% of Nyquist frequency */
-    return 0.1;
+    /* Use conservative default: 20% of Nyquist frequency
+     * In the new convention where fc=1 is Nyquist, this means fc=0.2
+     */
+    return 0.2;
 }
 
 /* Main filtfilt function */
@@ -418,8 +426,9 @@ ButterworthResult* butterworth_filtfilt(double *x, double *y, int n,
     }
 
     /* Validate cutoff frequency */
-    if (fc <= 0.0 || fc >= 0.5) {
-        fprintf(stderr, "ERROR: Cutoff frequency must be in range (0, 0.5)\n");
+    if (fc <= 0.0 || fc >= 1.0) {
+        fprintf(stderr, "ERROR: Cutoff frequency must be in range (0, 1)\n");
+        fprintf(stderr, "       where fc = 1 corresponds to Nyquist frequency\n");
         fprintf(stderr, "       Got fc = %.4f\n", fc);
         return NULL;
     }
