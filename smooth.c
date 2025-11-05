@@ -66,10 +66,9 @@ int main(int argc, char **argv)
 
   progname = basename(argv[0]);
 
-/* None arguments */
+/* None arguments - default to stdin */
   if (argc == 1) {
-    usage();
-    exit (EXIT_FAILURE);
+    /* Will read from stdin below */
   }
 
 /* Options command line */
@@ -163,15 +162,16 @@ int main(int argc, char **argv)
     fprintf(stderr, "Warning: High polynomial degree (%d) may cause numerical instability\n", dp);
   }
 
-/* Argument - filename */  
-  if (argv[optind] == NULL) {
-    fprintf(stderr,"Data file missing!\n");
-    exit (EXIT_FAILURE);
+/* Argument - filename or stdin */
+  if (argv[optind] == NULL || strcmp(argv[optind], "-") == 0) {
+    /* Read from stdin */
+    fp = stdin;
+    filename = "stdin";
   }
-  else 
+  else {
     filename = argv[optind];
-
-  fp = decomment(filename);
+    fp = decomment(filename);
+  }
 
 /* Read data table from file */
   {
@@ -204,7 +204,9 @@ int main(int argc, char **argv)
       y[n] = ry; 
       n++;
     }
-    fclose(fp);
+    if (fp != stdin) {
+      fclose(fp);
+    }
   }
 
   if (n < sp && method != METHOD_TIKHONOV) {
@@ -386,7 +388,8 @@ int main(int argc, char **argv)
 static void usage(void)
 {
   fprintf(stderr,"Data smooth by approximation polynom from moving window of data (least square)\n");
-  fprintf(stderr, "Usage: %s [options] data_file\n" ,progname);
+  fprintf(stderr, "Usage: %s [options] [data_file|-]\n" ,progname);
+  fprintf(stderr, "If data_file is omitted or '-', reads from stdin\n");
   fprintf(stderr,"-h or -? for help\n");
 }
 
@@ -419,6 +422,8 @@ static void help(void)
     "  smooth -m 3 -f 0.1 data.txt           # Butterworth with fc=0.1",
     "  smooth -m 3 -f auto data.txt          # Butterworth with auto cutoff",
     "  smooth -g data.txt                    # Detailed grid analysis",
+    "  cat data.txt | smooth -m 1 -n 5       # Use as Unix filter (stdin -> stdout)",
+    "  smooth -m 2 -l 0.01 < input.txt       # Read from stdin with redirection",
     0
   };
   char **p = msg;

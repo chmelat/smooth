@@ -36,7 +36,20 @@ The goal of smoothing is to estimate `y_true` while suppressing `ε_i` and prese
 ### Program Structure
 
 ```bash
-./smooth [options] data_file
+./smooth [options] [data_file|-]
+```
+
+**Input Options:**
+- `data_file` - read data from file
+- `-` - read data from stdin (standard input)
+- omit argument - read data from stdin (default when no file specified)
+
+**Unix Filter Usage:**
+The program can be used as a standard Unix filter in pipe chains:
+```bash
+cat data.txt | smooth -m 1 -n 5 -p 2       # Pipe input
+smooth -m 2 -l 0.01 < input.txt > out.txt  # Redirection
+command | smooth -m 3 -f 0.15 | gnuplot    # Pipeline
 ```
 
 **Basic Parameters:**
@@ -61,6 +74,12 @@ The goal of smoothing is to estimate `y_true` while suppressing `ε_i` and prese
 ## What's New in Version 5.5
 
 ### Major Improvements
+
+**Unix Filter Support (NEW):**
+- **Standard input/output:** Program now works as a Unix filter
+- **Pipe chain integration:** Can be used in pipelines with other tools
+- **Flexible input:** Reads from stdin when no file specified or `-` argument used
+- **Backward compatible:** Original file-based usage still works as before
 
 **Butterworth Digital Filter (NEW):**
 - **4th-order low-pass Butterworth filter** with filtfilt (zero-phase filtering)
@@ -998,7 +1017,7 @@ The filter assumes uniform sampling when computing the cutoff frequency. For hig
 - **Smooth monotonic rolloff** - natural attenuation curve
 
 **Disadvantages:**
-- **Requires uniform/nearly-uniform grid** (ratio < 20)
+- **Requires uniform/nearly-uniform grid** (CV < 0.15 recommended)
 - **No derivative output** (Butterworth is smoothing-only)
 - **Less local adaptability** than polynomial methods
 - **Cutoff selection not automatic** (currently manual tuning needed)
@@ -1109,7 +1128,7 @@ The filter assumes uniform sampling when computing the cutoff frequency. For hig
 - **You're not sure which method to use** - Tikhonov with `-l auto` is safest!
 
 #### BUTTERWORTH - when:
-- **Grid is uniform or nearly-uniform (ratio < 20)** - essential requirement!
+- **Grid is uniform or nearly-uniform (CV < 0.15)** - essential requirement!
 - You want to **remove high-frequency noise** while keeping slow trends
 - You need **simple frequency-based smoothing** - just set cutoff frequency fc
 - You want **zero phase distortion** (no signal delay)
@@ -1206,10 +1225,10 @@ Example: h_avg = 0.1 sec → f_sample = 10 Hz
 5. Repeat until satisfied
 
 **GRID-DEPENDENT:**
-For non-uniform grids (ratio > 5):
+For non-uniform grids (CV > 0.05):
 - Results may be suboptimal
 - Consider using Tikhonov instead
-- If ratio > 20: automatically rejected
+- If CV > 0.15: use caution, Tikhonov recommended
 ```
 
 ---
@@ -1217,6 +1236,22 @@ For non-uniform grids (ratio > 5):
 ## Usage Examples
 
 ### Basic Syntax
+
+```bash
+# Read from file
+./smooth -m 0 -n 7 -p 2 data.txt
+
+# Read from stdin (pipe)
+cat data.txt | ./smooth -m 0 -n 7 -p 2
+
+# Read from stdin (explicit)
+./smooth -m 0 -n 7 -p 2 -
+
+# Read from stdin (redirection)
+./smooth -m 0 -n 7 -p 2 < data.txt
+```
+
+### Method Examples
 
 ```bash
 # Polynomial fitting (smoothed values only)
@@ -1313,6 +1348,42 @@ For non-uniform grids (ratio > 5):
 # "WARNING: Highly non-uniform grid detected!"
 # "GCV trace approximation may be less accurate."
 # In this case, try manual λ or check results visually.
+```
+
+### Unix Filter Examples
+
+The program can be seamlessly integrated into Unix pipelines:
+
+```bash
+# Simple pipe from cat
+cat noisy_data.txt | ./smooth -m 1 -n 5 -p 2 > smoothed.txt
+
+# Extract columns, smooth, and plot
+awk '{print $1, $3}' experiment.dat | ./smooth -m 2 -l auto | gnuplot -p plot.gp
+
+# Process multiple files
+for f in data_*.txt; do
+  cat "$f" | ./smooth -m 3 -f 0.15 > "smooth_$f"
+done
+
+# Filter out comments, smooth, extract columns
+grep -v '^#' raw.txt | ./smooth -m 2 -l 0.01 | awk '{print $1, $2}' > final.txt
+
+# Combine with other tools
+./generate_data | ./smooth -m 1 -n 7 -p 3 | ./analyze_results
+
+# Use in complex pipeline
+curl https://example.com/data.txt | \
+  grep -v '^#' | \
+  ./smooth -m 2 -l auto | \
+  awk '{if($2>threshold) print}' | \
+  sort -k2 -n > filtered_smooth.txt
+
+# Standard input/output redirection
+./smooth -m 0 -n 5 -p 2 < input.dat > output.dat 2> errors.log
+
+# Combine smoothing methods (not recommended, just for demo)
+cat data.txt | ./smooth -m 2 -l 0.1 | ./smooth -m 1 -n 5 -p 2
 ```
 
 ### Typical Workflow
@@ -1521,7 +1592,11 @@ The `smooth` program v5.5 provides four complementary smoothing methods in a mod
 
 ### Version 5.5 Highlights
 
-**New Addition:**
+**New Additions:**
+- **Unix filter support** - program can now read from stdin and work in pipe chains
+  - Seamless integration with Unix tools (cat, grep, awk, etc.)
+  - Standard input/output redirection support
+  - Backward compatible with file-based usage
 - **Butterworth low-pass filter (4th-order)** - classical DSP frequency filter with filtfilt for zero-phase smoothing
   - Removes high-frequency noise while preserving low-frequency trends
   - Simple cutoff frequency parameter fc controls smoothing strength
