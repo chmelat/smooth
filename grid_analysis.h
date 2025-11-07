@@ -42,20 +42,24 @@ typedef struct {
  *   - Warning messages are generated for highly non-uniform grids
  *   - Uniformity score: 1.0 = perfect, < 0.5 = poor
  */
-GridAnalysis* analyze_grid(double *x, int n, int store_spacings);
+GridAnalysis* analyze_grid(const double *x, int n, int store_spacings);
+
+#if 0  /* Currently unused function - commented out */
 
 /* Check if grid is uniform within tolerance
- * 
+ *
  * Parameters:
  *   x        - Array of x-coordinates
  *   n        - Number of points
  *   h_avg    - Output: average spacing (can be NULL)
  *   tolerance - Relative tolerance for uniformity (default: 1e-10)
- * 
+ *
  * Returns:
  *   1 if uniform, 0 if non-uniform
  */
-int is_uniform_grid(double *x, int n, double *h_avg, double tolerance);
+int is_uniform_grid(const double *x, int n, double *h_avg, double tolerance);
+
+#endif  /* End of unused function declaration */
 
 /* Get recommended method based on grid analysis
  * 
@@ -76,21 +80,8 @@ const char* get_grid_recommendation(GridAnalysis *analysis);
  */
 void print_grid_analysis(GridAnalysis *analysis, int verbose, const char *prefix);
 
-/* Calculate effective number of points for regularization
- * 
- * For highly non-uniform grids, the effective number of points
- * may be different from the actual number.
- * 
- * Parameters:
- *   analysis - Pointer to GridAnalysis structure
- * 
- * Returns:
- *   Effective number of points (may be fractional)
- */
-double effective_grid_points(GridAnalysis *analysis);
-
 /* Free allocated memory for GridAnalysis structure
- * 
+ *
  * Parameters:
  *   analysis - Pointer to GridAnalysis structure to be freed
  */
@@ -98,17 +89,34 @@ void free_grid_analysis(GridAnalysis *analysis);
 
 /* Utility functions */
 
+#if 0  /* Currently unused functions - commented out */
+
+/* Calculate effective number of points for regularization
+ *
+ * For highly non-uniform grids, the effective number of points
+ * may be different from the actual number.
+ *
+ * Parameters:
+ *   analysis - Pointer to GridAnalysis structure
+ *
+ * Returns:
+ *   Effective number of points (may be fractional)
+ */
+double effective_grid_points(GridAnalysis *analysis);
+
 /* Calculate optimal window size for given grid
- * 
+ *
  * Parameters:
  *   analysis    - Pointer to GridAnalysis structure
  *   min_window  - Minimum allowed window size
  *   max_window  - Maximum allowed window size
- * 
+ *
  * Returns:
  *   Recommended window size (always odd)
  */
 int optimal_window_size(GridAnalysis *analysis, int min_window, int max_window);
+
+#endif  /* End of unused function declarations */
 
 /* Check if adaptive methods should be used
  * 

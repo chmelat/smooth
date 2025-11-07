@@ -10,7 +10,7 @@
 #include "grid_analysis.h"
 
 /* Analyze grid uniformity and return detailed statistics */
-GridAnalysis* analyze_grid(double *x, int n, int store_spacings)
+GridAnalysis* analyze_grid(const double *x, int n, int store_spacings)
 {
     GridAnalysis *analysis;
     int i;
@@ -49,29 +49,29 @@ GridAnalysis* analyze_grid(double *x, int n, int store_spacings)
     }
     
     /* Calculate spacings and basic statistics */
-    analysis->h_min = 1e20;
+    analysis->h_min = INFINITY;
     analysis->h_max = 0.0;
-    analysis->h_avg = 0.0;
-    
+
     for (i = 0; i < n-1; i++) {
         double h = x[i+1] - x[i];
-        
+
         /* Check for non-monotonic data */
         if (h <= 0) {
             fprintf(stderr, "Error: Non-monotonic x data at index %d\n", i);
             free_grid_analysis(analysis);
             return NULL;
         }
-        
+
         if (store_spacings) {
             analysis->spacings[i] = h;
         }
-        
+
         if (h < analysis->h_min) analysis->h_min = h;
         if (h > analysis->h_max) analysis->h_max = h;
-        analysis->h_avg += h;
     }
-    analysis->h_avg /= (n-1);
+
+    /* Calculate average spacing from total range (numerically more stable) */
+    analysis->h_avg = (x[n-1] - x[0]) / (n-1);
     
     /* Calculate standard deviation */
     analysis->h_std = 0.0;
@@ -89,18 +89,20 @@ GridAnalysis* analyze_grid(double *x, int n, int store_spacings)
     /* Determine if grid is uniform */
     analysis->is_uniform = (analysis->cv < 1e-10) ? 1 : 0;
     
-    /* Calculate uniformity score (0-1 scale) */
+    /* Calculate uniformity score (0-1 scale) based on CV only */
     if (analysis->is_uniform) {
         analysis->uniformity_score = 1.0;
     } else {
-        /* Score based on coefficient of variation and ratio */
-        double cv_score = exp(-analysis->cv * 2.0);  /* Exponential decay */
-        double ratio_score = 1.0 / (1.0 + log(analysis->ratio_max_min));
-        analysis->uniformity_score = 0.7 * cv_score + 0.3 * ratio_score;
-        
-        /* Ensure score is in [0,1] */
-        if (analysis->uniformity_score < 0.0) analysis->uniformity_score = 0.0;
-        if (analysis->uniformity_score > 1.0) analysis->uniformity_score = 1.0;
+        /* Score based purely on coefficient of variation */
+        /* Exponential decay with factor 2.0 (empirically chosen):
+         *   CV=0.2 → score≈0.67 (acceptable)
+         *   CV=0.5 → score≈0.37 (moderate concern)
+         *   CV=1.0 → score≈0.14 (high concern)
+         * Using CV only is more appropriate for smoothing applications where
+         * isolated extreme intervals have minimal impact on overall results.
+         */
+        analysis->uniformity_score = exp(-analysis->cv * 2.0);
+        /* Note: exp(-cv*2.0) always returns value in (0,1], no clipping needed */
     }
     
     /* Detect clusters */
@@ -154,7 +156,8 @@ GridAnalysis* analyze_grid(double *x, int n, int store_spacings)
                 analysis->n_clusters);
         
         /* Append to existing warning if space permits */
-        if (strlen(analysis->warning_msg) + strlen(cluster_msg) < 510) {
+        size_t current_len = strlen(analysis->warning_msg);
+        if (current_len + strlen(cluster_msg) + 1 < sizeof(analysis->warning_msg)) {
             strcat(analysis->warning_msg, cluster_msg);
         }
     }
@@ -162,21 +165,23 @@ GridAnalysis* analyze_grid(double *x, int n, int store_spacings)
     return analysis;
 }
 
+#if 0  /* Commented out - not currently used */
+
 /* Check if grid is uniform within tolerance */
-int is_uniform_grid(double *x, int n, double *h_avg, double tolerance)
+int is_uniform_grid(const double *x, int n, double *h_avg, double tolerance)
 {
     int i;
     double h_local, h_mean;
-    
+
     if (n < 2) return 1;
-    
+
     /* Calculate average spacing */
     h_mean = (x[n-1] - x[0]) / (n - 1);
-    
+
     if (h_avg != NULL) {
         *h_avg = h_mean;
     }
-    
+
     /* Check uniformity */
     for (i = 1; i < n; i++) {
         h_local = x[i] - x[i-1];
@@ -184,9 +189,11 @@ int is_uniform_grid(double *x, int n, double *h_avg, double tolerance)
             return 0;
         }
     }
-    
+
     return 1;
 }
+
+#endif  /* End of unused function */
 
 /* Get recommended method based on grid analysis */
 const char* get_grid_recommendation(GridAnalysis *analysis)
@@ -251,23 +258,27 @@ void print_grid_analysis(GridAnalysis *analysis, int verbose, const char *prefix
     }
 }
 
+/* NOTE: Following functions are currently unused in the codebase but kept for potential future use */
+
+#if 0  /* Commented out - not currently used */
+
 /* Calculate effective number of points for regularization */
 double effective_grid_points(GridAnalysis *analysis)
 {
     if (analysis == NULL || analysis->n_points < 2) {
         return 1.0;
     }
-    
+
     /* For uniform grids, effective points = actual points */
     if (analysis->is_uniform) {
         return (double)analysis->n_points;
     }
-    
+
     /* For non-uniform grids, adjust based on uniformity score */
     /* This is a heuristic that reduces effective points for highly non-uniform grids */
     double base_points = (double)analysis->n_points;
     double adjustment = 0.7 + 0.3 * analysis->uniformity_score;
-    
+
     return base_points * adjustment;
 }
 
@@ -275,15 +286,15 @@ double effective_grid_points(GridAnalysis *analysis)
 int optimal_window_size(GridAnalysis *analysis, int min_window, int max_window)
 {
     int window;
-    
+
     if (analysis == NULL) {
         return min_window;
     }
-    
+
     /* Ensure odd window size */
     if (min_window % 2 == 0) min_window++;
     if (max_window % 2 == 0) max_window--;
-    
+
     if (analysis->is_uniform) {
         /* For uniform grids, use larger windows */
         window = (min_window + max_window) / 2;
@@ -292,16 +303,18 @@ int optimal_window_size(GridAnalysis *analysis, int min_window, int max_window)
         double factor = 0.3 + 0.7 * analysis->uniformity_score;
         window = min_window + (int)(factor * (max_window - min_window));
     }
-    
+
     /* Ensure odd */
     if (window % 2 == 0) window++;
-    
+
     /* Ensure within bounds */
     if (window < min_window) window = min_window;
     if (window > max_window) window = max_window;
-    
+
     return window;
 }
+
+#endif  /* End of unused functions */
 
 /* Check if adaptive methods should be used */
 int should_use_adaptive(GridAnalysis *analysis)
@@ -312,7 +325,6 @@ int should_use_adaptive(GridAnalysis *analysis)
     
     /* Recommend adaptive methods for poor uniformity */
     return (analysis->uniformity_score < 0.5 || 
-            analysis->ratio_max_min > 10.0 ||
             analysis->n_clusters > 0);
 }
 
