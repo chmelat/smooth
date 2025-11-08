@@ -6,6 +6,8 @@
 #ifndef BUTTERWORTH_H
 #define BUTTERWORTH_H
 
+#include "grid_analysis.h"
+
 /* Structure for Butterworth filter results */
 typedef struct {
     double *y_smooth;     /* Smoothed values */
@@ -35,6 +37,7 @@ typedef struct {
  *                 Typical range: 0.02 - 0.6
  *   auto_cutoff - If > 0, automatically determine cutoff from data
  *                 (overrides cutoff_freq parameter)
+ *   grid_info   - Grid analysis results (used for uniformity check and sample rate)
  *
  * Returns:
  *   Pointer to ButterworthResult structure containing:
@@ -92,7 +95,8 @@ typedef struct {
  *   - Grid is excessively non-uniform (ratio > 20)
  */
 ButterworthResult* butterworth_filtfilt(double *x, double *y, int n,
-                                        double cutoff_freq, int auto_cutoff);
+                                        double cutoff_freq, int auto_cutoff,
+                                        GridAnalysis *grid_info);
 
 /* Automatic cutoff frequency selection
  *

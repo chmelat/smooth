@@ -212,7 +212,8 @@ static void compute_functional(double *x, double *y, double *y_smooth, int n, do
     *total_functional = *data_term + *reg_term;
 }
 
-TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda)
+TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda,
+                                GridAnalysis *grid_info)
 {
     TikhonovResult *result;
     double *AB, *b;
@@ -222,30 +223,22 @@ TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda)
     int info;
     int inc = 1;
     char uplo = 'U';
-    
+
     if (x == NULL || y == NULL || n < 1 || lambda < 0) {
         fprintf(stderr, "Error: Invalid input parameters\n");
         return NULL;
     }
-    
+
     for (int i = 1; i < n; i++) {
         if (x[i] <= x[i-1]) {
             fprintf(stderr, "Error: x array must be strictly increasing\n");
             return NULL;
         }
     }
-    
-    /* Grid analysis - used for discretization method selection and warnings */
-    GridAnalysis *grid_info = analyze_grid(x, n, 0);
-    if (grid_info && grid_info->reliability_warning) {
-        printf("# Grid analysis:\n");
-        print_grid_analysis(grid_info, 0, "# ");
-    }
 
     result = (TikhonovResult *)malloc(sizeof(TikhonovResult));
     if (!result) {
         fprintf(stderr, "Error: Memory allocation failed\n");
-        free_grid_analysis(grid_info);
         return NULL;
     }
 
@@ -256,7 +249,6 @@ TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda)
 
     if (!result->y_smooth || !result->y_deriv) {
         free_tikhonov_result(result);
-        free_grid_analysis(grid_info);
         return NULL;
     }
 
@@ -267,16 +259,12 @@ TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda)
         free(AB);
         free(b);
         free_tikhonov_result(result);
-        free_grid_analysis(grid_info);
         return NULL;
     }
 
     dcopy_(&n, y, &inc, b, &inc);
 
     build_band_matrix(x, n, lambda, AB, ldab, kd, grid_info);
-
-    /* Free grid_info after use */
-    free_grid_analysis(grid_info);
     
     dpbsv_(&uplo, &n, &kd, &nrhs, AB, &ldab, b, &n, &info);
     
@@ -311,7 +299,7 @@ static double compute_gcv_score_robust(double *x, double *y, int n, double lambd
     double trace_H;
     double gcv_score;
     
-    result = tikhonov_smooth(x, y, n, lambda);
+    result = tikhonov_smooth(x, y, n, lambda, NULL);
     if (result == NULL) {
         return 1e20;
     }
@@ -392,7 +380,7 @@ static double find_lambda_lcurve(double *x, double *y, int n, double *lambda_ran
     
     /* Compute L-curve points */
     for (int i = 0; i < n_lambda; i++) {
-        TikhonovResult *result = tikhonov_smooth(x, y, n, lambda_range[i]);
+        TikhonovResult *result = tikhonov_smooth(x, y, n, lambda_range[i], NULL);
         if (result) {
             rss_vals[i] = log(result->data_term);
             reg_vals[i] = log(result->regularization_term);
@@ -440,20 +428,18 @@ static double find_lambda_lcurve(double *x, double *y, int n, double *lambda_ran
 }
 
 /* Enhanced lambda selection with multiple methods */
-double find_optimal_lambda_gcv(double *x, double *y, int n)
+double find_optimal_lambda_gcv(double *x, double *y, int n, GridAnalysis *grid_info)
 {
     double best_lambda = 0.01;
     double best_gcv = 1e20;
-    
+
     if (n < 3) {
         fprintf(stderr, "Warning: Too few points for GCV (n=%d)\n", n);
         return best_lambda;
     }
 
-    /* Check grid uniformity using grid_analysis */
-    GridAnalysis *grid_info = analyze_grid(x, n, 0);
     if (!grid_info) {
-        fprintf(stderr, "Warning: Grid analysis failed\n");
+        fprintf(stderr, "Warning: Grid info not available\n");
         return best_lambda;
     }
 
@@ -464,8 +450,6 @@ double find_optimal_lambda_gcv(double *x, double *y, int n)
         printf("# GCV trace approximation may be less accurate.\n");
         printf("# Consider using L-curve method or manual lambda selection.\n");
     }
-
-    free_grid_analysis(grid_info);
     
     printf("# Format: λ | Functional | RSS | tr(H) (ratio) | GCV\n");
     
@@ -538,9 +522,9 @@ double find_optimal_lambda_gcv(double *x, double *y, int n)
     }
     
     printf("# Optimal λ: %.6e (GCV=%.3e)\n", best_lambda, best_gcv);
-    
+
     /* Final check */
-    TikhonovResult *final = tikhonov_smooth(x, y, n, best_lambda);
+    TikhonovResult *final = tikhonov_smooth(x, y, n, best_lambda, NULL);
     if (final) {
         double reg_ratio = final->regularization_term / final->total_functional;
         printf("# Balance: Data=%.1f%%, Regularization=%.1f%%\n", 

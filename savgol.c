@@ -137,10 +137,10 @@ void savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, doubl
 }
 
 /* Main Savitzky-Golay smoothing function - OPTIMIZED */
-SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int poly_degree)
+SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int poly_degree,
+                            GridAnalysis *grid_info)
 {
     SavgolResult *result;
-    GridAnalysis *grid_info;
     int i, k;
     int offset;
     double h_avg;
@@ -186,11 +186,10 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
             return NULL;
         }
     }
-    
-    /* CRITICAL: Check grid uniformity - SG method requires uniform grid */
-    grid_info = analyze_grid(x, n, 0);
+
+    /* Check grid_info is available */
     if (grid_info == NULL) {
-        fprintf(stderr, "Error: Grid analysis failed\n");
+        fprintf(stderr, "Error: Grid info not available\n");
         return NULL;
     }
     
@@ -217,19 +216,17 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
         fprintf(stderr, "     (Local fitting, less sensitive to spacing)\n");
         fprintf(stderr, "  3. Resample your data to uniform grid before smoothing\n");
         fprintf(stderr, "\n");
-        
-        free_grid_analysis(grid_info);
+
         return NULL;
     }
-    
+
     /* Grid is sufficiently uniform - proceed with SG filtering */
     if (grid_info->cv > 0.01) {
         /* Grid is uniform enough but not perfectly uniform - just warn */
         printf("# Savitzky-Golay: Grid is nearly uniform (CV=%.4f)\n", grid_info->cv);
     }
-    
+
     h_avg = grid_info->h_avg;
-    free_grid_analysis(grid_info);
     
     offset = window_size / 2;
     

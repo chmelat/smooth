@@ -6,6 +6,8 @@
 #ifndef SAVGOL_H
 #define SAVGOL_H
 
+#include "grid_analysis.h"
+
 /* Structure for Savitzky-Golay results */
 typedef struct {
     double *y_smooth;     /* Smoothed values */
@@ -29,6 +31,7 @@ typedef struct {
  *   n            - Number of data points
  *   window_size  - Size of sliding window (must be odd, >= 3)
  *   poly_degree  - Degree of approximating polynomial (0 to 6)
+ *   grid_info    - Grid analysis results (used for uniformity check)
  * 
  * Returns:
  *   Pointer to SavgolResult structure containing smoothed values and derivatives
@@ -70,7 +73,8 @@ typedef struct {
  *   SavgolResult *result = savgol_smooth(x, y, 6, 5, 2);
  *   // Returns NULL with error message suggesting Tikhonov method
  */
-SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int poly_degree);
+SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int poly_degree,
+                            GridAnalysis *grid_info);
 
 /* Calculate Savitzky-Golay coefficients
  * 

@@ -214,20 +214,28 @@ int main(int argc, char **argv)
     exit (EXIT_FAILURE);
   }
 
-  /* Perform grid uniformity analysis if requested */
+  /* Perform grid uniformity analysis (always done before smoothing) */
+  GridAnalysis *grid_info = analyze_grid(x, n, 0);  /* store_spacings=0 - no histogram needed */
+  if (grid_info == NULL) {
+    fprintf(stderr, "Error: Grid analysis failed\n");
+    free(x);
+    free(y);
+    exit(EXIT_FAILURE);
+  }
+
+  /* If -g flag: show detailed analysis and exit (no smoothing) */
   if (show_grid_analysis) {
-    GridAnalysis *grid_info = analyze_grid(x, n, 0);  /* store_spacings=0 - no histogram needed */
-    if (grid_info) {
-      print_grid_analysis(grid_info, 1, "# ");  /* verbose=1 - basic stats + recommendations only */
-      free_grid_analysis(grid_info);
-    } else {
-      fprintf(stderr, "Warning: Grid analysis failed\n");
-    }
-    
-    /* Clean up and exit - grid analysis only, no smoothing */
+    print_grid_analysis(grid_info, 1, "# ");  /* verbose=1 - basic stats + recommendations only */
+    free_grid_analysis(grid_info);
     free(x);
     free(y);
     return EXIT_SUCCESS;
+  }
+
+  /* Show warnings if grid has reliability concerns */
+  if (grid_info->reliability_warning) {
+    printf("# Grid analysis warnings:\n");
+    print_grid_analysis(grid_info, 0, "# ");  /* verbose=0 - warnings only */
   }
 
   /* Process data according to selected method */
@@ -238,12 +246,12 @@ int main(int argc, char **argv)
         
         /* Find optimal lambda if requested */
         if (auto_lambda) {
-          lambda = find_optimal_lambda_gcv(x, y, n);
+          lambda = find_optimal_lambda_gcv(x, y, n, grid_info);
           printf("# Automatic lambda selection using GCV: lambda = %.6e\n", lambda);
         }
 
         /* Apply Tikhonov smoothing */
-        result = tikhonov_smooth(x, y, n, lambda);
+        result = tikhonov_smooth(x, y, n, lambda, grid_info);
 
         if (result == NULL) {
           fprintf(stderr, "Tikhonov smoothing failed!\n");
@@ -281,7 +289,7 @@ int main(int argc, char **argv)
       {
         SavgolResult *result;
         
-        result = savgol_smooth(x, y, n, sp, dp);
+        result = savgol_smooth(x, y, n, sp, dp, grid_info);
         
         if (result == NULL) {
           fprintf(stderr, "Savitzky-Golay smoothing failed!\n");
@@ -318,7 +326,7 @@ int main(int argc, char **argv)
         }
 
         /* Apply Butterworth filtfilt */
-        result = butterworth_filtfilt(x, y, n, cutoff_freq, auto_cutoff);
+        result = butterworth_filtfilt(x, y, n, cutoff_freq, auto_cutoff, grid_info);
 
         if (result == NULL) {
           fprintf(stderr, "Butterworth filtering failed!\n");
@@ -378,6 +386,7 @@ int main(int argc, char **argv)
   }
 
   /* Clean up */
+  free_grid_analysis(grid_info);
   free(x);
   free(y);
 

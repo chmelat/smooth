@@ -410,11 +410,18 @@ double estimate_cutoff_frequency(double *x, double *y, int n)
 
 /* Main filtfilt function */
 ButterworthResult* butterworth_filtfilt(double *x, double *y, int n,
-                                        double cutoff_freq, int auto_cutoff)
+                                        double cutoff_freq, int auto_cutoff,
+                                        GridAnalysis *grid_info)
 {
     /* Input validation */
     if (x == NULL || y == NULL || n < 20) {
         fprintf(stderr, "ERROR: Invalid input (need at least 20 points)\n");
+        return NULL;
+    }
+
+    /* Check grid_info is available */
+    if (grid_info == NULL) {
+        fprintf(stderr, "Error: Grid info not available\n");
         return NULL;
     }
 
@@ -433,25 +440,18 @@ ButterworthResult* butterworth_filtfilt(double *x, double *y, int n,
         return NULL;
     }
 
-    /* CRITICAL: Check grid uniformity - Butterworth filter requires uniform grid */
-    GridAnalysis *grid = analyze_grid(x, n, 0);
-    if (grid == NULL) {
-        fprintf(stderr, "Error: Grid analysis failed\n");
-        return NULL;
-    }
-
     /* Check if grid is sufficiently uniform for Butterworth filter */
-    if (grid->cv > UNIFORMITY_CV_THRESHOLD) {
+    if (grid_info->cv > UNIFORMITY_CV_THRESHOLD) {
         fprintf(stderr, "\n");
         fprintf(stderr, "========================================\n");
         fprintf(stderr, "ERROR: Butterworth filter not suitable for non-uniform grid!\n");
         fprintf(stderr, "========================================\n");
         fprintf(stderr, "Grid analysis:\n");
-        fprintf(stderr, "  Coefficient of variation (CV) = %.4f\n", grid->cv);
+        fprintf(stderr, "  Coefficient of variation (CV) = %.4f\n", grid_info->cv);
         fprintf(stderr, "  Threshold for uniformity = %.4f\n", UNIFORMITY_CV_THRESHOLD);
         fprintf(stderr, "  h_min = %.6e, h_max = %.6e, h_avg = %.6e\n",
-                grid->h_min, grid->h_max, grid->h_avg);
-        fprintf(stderr, "  Ratio h_max/h_min = %.2f\n", grid->ratio_max_min);
+                grid_info->h_min, grid_info->h_max, grid_info->h_avg);
+        fprintf(stderr, "  Ratio h_max/h_min = %.2f\n", grid_info->ratio_max_min);
         fprintf(stderr, "\n");
         fprintf(stderr, "The Butterworth filter assumes uniformly spaced data points.\n");
         fprintf(stderr, "Your data has significant spacing variation.\n");
@@ -462,18 +462,16 @@ ButterworthResult* butterworth_filtfilt(double *x, double *y, int n,
         fprintf(stderr, "  2. Resample your data to uniform grid before filtering\n");
         fprintf(stderr, "\n");
 
-        free_grid_analysis(grid);
         return NULL;
     }
 
     /* Grid is sufficiently uniform - proceed with filtering */
-    if (grid->cv > 0.01) {
+    if (grid_info->cv > 0.01) {
         /* Grid is uniform enough but not perfectly uniform - just warn */
-        printf("# Butterworth: Grid is nearly uniform (CV=%.4f)\n", grid->cv);
+        printf("# Butterworth: Grid is nearly uniform (CV=%.4f)\n", grid_info->cv);
     }
 
-    double sample_rate = 1.0 / grid->h_avg;
-    free_grid_analysis(grid);
+    double sample_rate = 1.0 / grid_info->h_avg;
 
     /* Allocate result structure */
     ButterworthResult *result = (ButterworthResult*)malloc(sizeof(ButterworthResult));

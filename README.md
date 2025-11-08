@@ -75,6 +75,12 @@ command | smooth -m 3 -f 0.15 | gnuplot    # Pipeline
 
 ### Major Improvements
 
+**Performance Optimization (NEW):**
+- **Centralized grid analysis:** Grid uniformity is now analyzed once at program startup
+- **Efficient parameter passing:** Analysis results are shared across all smoothing methods
+- **Consistent warnings:** Grid uniformity warnings displayed before method selection
+- **Improved architecture:** Cleaner separation between analysis and smoothing operations
+
 **Unix Filter Support (NEW):**
 - **Standard input/output:** Program now works as a Unix filter
 - **Pipe chain integration:** Can be used in pipelines with other tools
@@ -1431,6 +1437,8 @@ cat data.txt | ./smooth -m 2 -l 0.1 | ./smooth -m 1 -n 5 -p 2
 
 The `grid_analysis` module provides comprehensive analysis of input data and helps optimize smoothing parameters.
 
+**Architecture (v5.5):** Grid analysis is performed once at program startup (after data loading) and the results are shared across all smoothing methods. This eliminates redundant computation while ensuring all methods have access to consistent grid uniformity information. Methods that require uniform grids (Savitzky-Golay, Butterworth) receive pre-computed analysis results and can immediately reject unsuitable data with detailed recommendations.
+
 ### Main Functions
 
 ```c
@@ -1593,6 +1601,11 @@ The `smooth` program v5.5 provides four complementary smoothing methods in a mod
 ### Version 5.5 Highlights
 
 **New Additions:**
+- **Performance optimization** - centralized grid analysis performed once at startup
+  - Eliminates 2-4 redundant grid analyses per run
+  - Results efficiently shared across all smoothing methods
+  - Consistent warnings displayed before method selection
+  - Cleaner architecture with better separation of concerns
 - **Unix filter support** - program can now read from stdin and work in pipe chains
   - Seamless integration with Unix tools (cat, grep, awk, etc.)
   - Standard input/output redirection support
@@ -1659,7 +1672,7 @@ Each method has a strong mathematical foundation and is optimized for specific d
 
 ---
 
-**Document revision:** 2025-11-04
+**Document revision:** 2025-11-08
 **Program version:** smooth v5.5
 **Dependencies:** LAPACK, BLAS
 **License:** See source files
