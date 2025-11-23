@@ -235,7 +235,7 @@ int main(int argc, char **argv)
   /* Show warnings if grid has reliability concerns */
   if (grid_info->reliability_warning) {
     printf("# Grid analysis warnings:\n");
-    print_grid_analysis(grid_info, 0, "# ");  /* verbose=0 - warnings only */
+    print_grid_analysis(grid_info, 0, "# ");  /* verbose=0 - basic statistics + warnings */
   }
 
   /* Process data according to selected method */

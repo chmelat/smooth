@@ -1,7 +1,8 @@
-/*  Polynomial fitting for data smoothing
- *  Implementation of least squares polynomial approximation
- *  V2.0/2025-05-28/ Updated to use LAPACK/BLAS instead of lib_matrix
- *  V1.0/2025-05-27/ Extracted from smooth.c
+/* Polynomial fitting for data smoothing
+ * Implementation of least squares polynomial approximation
+ * V2.1/2025-11-23/ Fixes: sx array size, performance opt, robust error handling
+ * V2.0/2025-05-28/ Updated to use LAPACK/BLAS instead of lib_matrix
+ * V1.0/2025-05-27/ Extracted from smooth.c
  */
 
 #include <stdio.h>
@@ -11,26 +12,12 @@
 #include "polyfit.h"
 
 #ifndef DPMAX  
-#define DPMAX 12  /* Maximum degree of approximation polynomial - configurable */
+#define DPMAX 12  /* Maximum degree of approximation polynomial */
 #endif
 
 /* LAPACK function declarations */
 extern void dposv_(char *uplo, int *n, int *nrhs, double *a, int *lda, 
                    double *b, int *ldb, int *info);
-
-/* Local function declarations */
-static double power(double x, int n);
-
-/* Power function x^n */
-static double power(double x, int n)
-{
-    double p = 1;
-    
-    while (n-- > 0)
-        p *= x;
-    
-    return p;
-}
 
 /* Main polynomial fitting function */
 PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int poly_degree)
@@ -38,7 +25,11 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
     PolyfitResult *result;
     double *C;  /* Matrix of normal equations (stored column-major for LAPACK) */
     double *B;  /* Right-hand side vector */
-    double sx[DPMAX+3], sy[DPMAX+1];
+    
+    /* FIX 1: sx must hold sums of powers up to 2*poly_degree */
+    double sx[2 * DPMAX + 1]; 
+    double sy[DPMAX + 1];
+    
     int i, j, k;
     int offset;
     int matrix_size;
@@ -63,8 +54,8 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
     }
 
     if (poly_degree > 6) {
-    fprintf(stderr, "Warning: High polynomial degree (%d) may cause numerical instability\n", poly_degree);
-}
+        fprintf(stderr, "Warning: High polynomial degree (%d) may cause numerical instability\n", poly_degree);
+    }
     
     if (n < window_size) {
         fprintf(stderr, "Error: Not enough data points (n=%d < window_size=%d)\n", n, window_size);
@@ -94,7 +85,7 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
     result->window_size = window_size;
     result->y_smooth = (double *)calloc(n, sizeof(double));
     result->y_deriv = (double *)calloc(n, sizeof(double));
-    result->coeffs = NULL;  /* Not used in current implementation */
+    result->coeffs = NULL;
     
     if (result->y_smooth == NULL || result->y_deriv == NULL) {
         fprintf(stderr, "Error: Memory allocation failed for result arrays\n");
@@ -117,25 +108,31 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
     /* Process each point in the interior */
     for (i = offset; i < n - offset; i++) {
         /* Initialize sums */
-        for (k = 0; k < poly_degree + 3; k++)
+        /* FIX 1: Clear correct range for sx */
+        for (k = 0; k <= 2 * poly_degree; k++)
             sx[k] = 0;
-        for (k = 0; k < poly_degree + 1; k++)
+        for (k = 0; k <= poly_degree; k++)
             sy[k] = 0;
         
         /* Compute sums for normal equations */
         for (j = i - offset; j <= i + offset; j++) {
             double dx = x[j] - x[i];
+            double p_dx = 1.0; /* Accumulator for powers of dx */
             
-            for (k = 0; k < poly_degree + 3; k++)
-                sx[k] += power(dx, k);
-            
-            for (k = 0; k < poly_degree + 1; k++)
-                sy[k] += y[j] * power(dx, k);
+            /* FIX 2: Optimized loop removing repeated power() calls */
+            for (k = 0; k <= 2 * poly_degree; k++) {
+                sx[k] += p_dx;
+                
+                /* sy needs powers only up to poly_degree */
+                if (k <= poly_degree) {
+                    sy[k] += y[j] * p_dx;
+                }
+                
+                p_dx *= dx; /* Increment power for next iteration */
+            }
         }
         
         /* Build matrix of coefficients and right-hand side */
-        /* Matrix C is symmetric, so we only need to fill upper triangle */
-        /* LAPACK uses column-major storage */
         {
             int i2, j2;
             for (j2 = 0; j2 <= poly_degree; j2++) {
@@ -145,27 +142,24 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
                 }
             }
             
-            /* Copy right-hand side */
             for (i2 = 0; i2 <= poly_degree; i2++)
                 B[i2] = sy[i2];
         }
         
-        /* Solve linear system using LAPACK */
-        /* dposv solves A*X = B for symmetric positive definite matrix A */
+        /* Solve linear system using LAPACK (Cholesky factorization) */
         dposv_(&uplo, &matrix_size, &nrhs, C, &matrix_size, B, &matrix_size, &info);
         
+        /* FIX 4: Robust error handling (Simple Fallback) */
         if (info != 0) {
-            fprintf(stderr, "Error: LAPACK dposv failed with info = %d at point %d\n", info, i);
-            if (info > 0) {
-                fprintf(stderr, "Matrix is not positive definite (leading minor %d)\n", info);
-            }
-            free(C);
-            free(B);
-            free_polyfit_result(result);
-            return NULL;
+            /* Matrix is singular or not PD. Fallback: Copy original value, derivative 0 */
+            /* This prevents the whole smoothing process from aborting due to one bad window */
+            result->y_smooth[i] = y[i];
+            result->y_deriv[i] = 0.0; 
+            continue; /* Skip boundary processing for this invalid point */
         }
         
         /* Store smoothed value and derivative at center point */
+        /* B[0] is c0 (value), B[1] is c1 (first derivative) */
         result->y_smooth[i] = B[0];
         result->y_deriv[i] = (poly_degree > 0) ? B[1] : 0.0;
         
@@ -174,13 +168,15 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
             for (k = 0; k < offset; k++) {
                 double dx = x[k] - x[offset];
                 double fi = 0, dfi = 0;
+                double p_dx = 1.0;
                 int m;
                 
-                for (m = 0; m <= poly_degree; m++)
-                    fi += B[m] * power(dx, m);
-                
-                for (m = 1; m <= poly_degree; m++)
-                    dfi += m * B[m] * power(dx, m - 1);
+                /* FIX 2: Optimization for boundary reconstruction too */
+                for (m = 0; m <= poly_degree; m++) {
+                    fi += B[m] * p_dx;
+                    if (m > 0) dfi += m * B[m] * (p_dx / dx); /* dx^(m-1) */
+                    p_dx *= dx;
+                }
                 
                 result->y_smooth[k] = fi;
                 result->y_deriv[k] = dfi;
@@ -192,13 +188,15 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
             for (k = 0; k < offset; k++) {
                 double dx = x[n - offset + k] - x[n - offset - 1];
                 double fi = 0, dfi = 0;
+                double p_dx = 1.0;
                 int m;
                 
-                for (m = 0; m <= poly_degree; m++)
-                    fi += B[m] * power(dx, m);
-                
-                for (m = 1; m <= poly_degree; m++)
-                    dfi += m * B[m] * power(dx, m - 1);
+                /* FIX 2: Optimization for boundary reconstruction too */
+                for (m = 0; m <= poly_degree; m++) {
+                    fi += B[m] * p_dx;
+                    if (m > 0) dfi += m * B[m] * (p_dx / dx);
+                    p_dx *= dx;
+                }
                 
                 result->y_smooth[n - offset + k] = fi;
                 result->y_deriv[n - offset + k] = dfi;

@@ -49,13 +49,20 @@ static double factorial(int n)
     return result;
 }
 
-/* Calculate Savitzky-Golay filter coefficients */
+/* Calculate Savitzky-Golay filter coefficients
+ * REFACTORED: Uses stack allocation for better readability and safety
+ */
 void savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, double *c)
 {
     int i, j;
-    double *a;
-    double *A;
-    double *B;
+    
+    /* Maximální velikosti polí dle DPMAX (definovano v savgol.c jako 12) 
+     * Max velikost matice: (12+1)^2 = 169 double hodnot (~1.3 kB) -> bezpečné pro stack
+     */
+    double A[(DPMAX + 1) * (DPMAX + 1)];
+    double B[DPMAX + 1];
+    double a[2 * DPMAX + 1];
+    
     int matrix_size;
     int info;
     int nrhs = 1;
@@ -67,25 +74,24 @@ void savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, doubl
         return;
     }
     
+    /* Dodatečná kontrola proti přetečení statického pole */
+    if (poly_degree > DPMAX) {
+        fprintf(stderr, "Error: Polynomial degree %d exceeds compiled limit DPMAX (%d)\n", 
+                poly_degree, DPMAX);
+        return;
+    }
+    
     if (nl + nr < poly_degree) {
         fprintf(stderr, "Error: Not enough points for polynomial degree\n");
         return;
     }
     
+    /* Nulování paměti (náhrada za calloc) */
+    memset(A, 0, sizeof(A));
+    memset(B, 0, sizeof(B));
+    memset(a, 0, sizeof(a));
+    
     matrix_size = poly_degree + 1;
-    
-    /* Allocate matrices and arrays */
-    A = (double*)malloc(matrix_size * matrix_size * sizeof(double));
-    B = (double*)malloc(matrix_size * sizeof(double));
-    a = (double*)calloc(2 * poly_degree + 1, sizeof(double));
-    
-    if (A == NULL || B == NULL || a == NULL) {
-        fprintf(stderr, "Error: Memory allocation failed in savgol_coefficients\n");
-        free(A);
-        free(B);
-        free(a);
-        return;
-    }
     
     /* Fill 'a' array with the moments of the data positions */
     for (i = 0; i <= 2 * poly_degree; i++) {
@@ -101,8 +107,6 @@ void savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, doubl
         
         if (j == deriv_order)
             B[j] = factorial(deriv_order);
-        else
-            B[j] = 0.0;
     }
     
     /* Solve the linear system using LAPACK */
@@ -110,12 +114,6 @@ void savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, doubl
     
     if (info != 0) {
         fprintf(stderr, "Error: LAPACK dposv failed with info = %d in savgol_coefficients\n", info);
-        if (info > 0) {
-            fprintf(stderr, "Matrix is not positive definite (leading minor %d)\n", info);
-        }
-        free(A);
-        free(B);
-        free(a);
         return;
     }
     
@@ -129,11 +127,6 @@ void savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, doubl
         
         c[i] = sum;
     }
-    
-    /* Clean up */
-    free(a);
-    free(A);
-    free(B);
 }
 
 /* Main Savitzky-Golay smoothing function - OPTIMIZED */

@@ -1,6 +1,7 @@
-/*  Grid uniformity analysis
- *  Implementation of grid analysis utilities
- *  V1.0/2025-05-27/ Extracted from tikhonov.c for general use
+/* Grid uniformity analysis
+ * Implementation of grid analysis utilities
+ * V2.0/2025-11-23/ Single-pass optimization, safe strings, macros
+ * V1.0/2025-05-27/ Extracted from tikhonov.c
  */
 
 #include <stdio.h>
@@ -9,11 +10,29 @@
 #include <math.h>
 #include "grid_analysis.h"
 
-/* Analyze grid uniformity and return detailed statistics */
+/* Configuration Thresholds */
+#define THRESH_CV_UNIFORM       1e-10 /* Tolerance for perfect uniformity */
+#define THRESH_CV_NOTICEABLE    0.2   /* CV level where non-uniformity is noted */
+#define THRESH_CV_HIGH          0.5   /* CV level suggesting adaptive methods */
+#define THRESH_CV_SEVERE        1.0   /* CV level indicating unreliable data */
+
+#define CLUSTER_RATIO_SMALL     0.1   /* Factor of avg for "small" gap */
+#define CLUSTER_RATIO_LARGE     10.0  /* Factor of avg for "large" gap */
+#define UNIFORMITY_DECAY_FACTOR 2.0   /* For score calculation: exp(-CV * factor) */
+
+/* Helper for safe string appending */
+static void append_warning(char *buffer, size_t size, const char *msg) {
+    size_t len = strlen(buffer);
+    if (len < size - 1) {
+        snprintf(buffer + len, size - len, "%s", msg);
+    }
+}
+
 GridAnalysis* analyze_grid(const double *x, int n, int store_spacings)
 {
     GridAnalysis *analysis;
     int i;
+    double h_prev = 0.0; /* Stores spacing from previous iteration for cluster detection */
     
     /* Input validation */
     if (x == NULL || n < 1) {
@@ -23,7 +42,7 @@ GridAnalysis* analyze_grid(const double *x, int n, int store_spacings)
     /* Allocate analysis structure */
     analysis = (GridAnalysis *)calloc(1, sizeof(GridAnalysis));
     if (analysis == NULL) {
-        fprintf(stderr, "Memory allocation failed in analyze_grid\n");
+        fprintf(stderr, "Error: Memory allocation failed in analyze_grid\n");
         return NULL;
     }
     
@@ -42,158 +61,119 @@ GridAnalysis* analyze_grid(const double *x, int n, int store_spacings)
     if (store_spacings) {
         analysis->spacings = (double *)malloc((n-1) * sizeof(double));
         if (analysis->spacings == NULL) {
-            fprintf(stderr, "Memory allocation failed for spacings array\n");
+            fprintf(stderr, "Error: Memory allocation failed for spacings array\n");
             free(analysis);
             return NULL;
         }
     }
     
-    /* Calculate spacings and basic statistics */
+    /* * OPTIMIZATION: Calculate h_avg first (O(1)). 
+     * This allows us to calculate STD and everything else in a single pass.
+     */
+    analysis->h_avg = (x[n-1] - x[0]) / (n-1);
+    
+    /* Initialize accumulators */
     analysis->h_min = INFINITY;
     analysis->h_max = 0.0;
-
+    double sum_sq_diff = 0.0;
+    
+    /* * MAIN LOOP (Single Pass) 
+     * Calculates: Min, Max, STD, Spacings, and Clusters
+     */
     for (i = 0; i < n-1; i++) {
-        double h = x[i+1] - x[i];
+        double h_curr = x[i+1] - x[i];
 
         /* Check for non-monotonic data */
-        if (h <= 0) {
-            fprintf(stderr, "Error: Non-monotonic x data at index %d\n", i);
+        if (h_curr <= 0) {
+            fprintf(stderr, "Error: Non-monotonic x data at index %d (dx=%g)\n", i, h_curr);
             free_grid_analysis(analysis);
             return NULL;
         }
 
+        /* 1. Store spacing if requested */
         if (store_spacings) {
-            analysis->spacings[i] = h;
+            analysis->spacings[i] = h_curr;
         }
 
-        if (h < analysis->h_min) analysis->h_min = h;
-        if (h > analysis->h_max) analysis->h_max = h;
+        /* 2. Min/Max updates */
+        if (h_curr < analysis->h_min) analysis->h_min = h_curr;
+        if (h_curr > analysis->h_max) analysis->h_max = h_curr;
+
+        /* 3. Standard Deviation accumulation */
+        double dev = h_curr - analysis->h_avg;
+        sum_sq_diff += dev * dev;
+
+        /* 4. Cluster Detection */
+        /* Logic: A cluster boundary is a small gap followed by a large gap */
+        if (i > 0) {
+            if (h_prev < CLUSTER_RATIO_SMALL * analysis->h_avg && 
+                h_curr > CLUSTER_RATIO_LARGE * analysis->h_avg) {
+                analysis->n_clusters++;
+            }
+        }
+        
+        h_prev = h_curr; /* Save for next iteration */
     }
 
-    /* Calculate average spacing from total range (numerically more stable) */
-    analysis->h_avg = (x[n-1] - x[0]) / (n-1);
-    
-    /* Calculate standard deviation */
-    analysis->h_std = 0.0;
-    for (i = 0; i < n-1; i++) {
-        double h = x[i+1] - x[i];
-        double dev = h - analysis->h_avg;
-        analysis->h_std += dev * dev;
-    }
-    analysis->h_std = sqrt(analysis->h_std / (n-1));
-    
-    /* Calculate uniformity metrics */
+    /* Finalize statistics */
+    analysis->h_std = sqrt(sum_sq_diff / (n-1));
     analysis->ratio_max_min = analysis->h_max / analysis->h_min;
     analysis->cv = analysis->h_std / analysis->h_avg;
     
-    /* Determine if grid is uniform */
-    analysis->is_uniform = (analysis->cv < 1e-10) ? 1 : 0;
+    /* Determine uniformity */
+    analysis->is_uniform = (analysis->cv < THRESH_CV_UNIFORM) ? 1 : 0;
     
-    /* Calculate uniformity score (0-1 scale) based on CV only */
     if (analysis->is_uniform) {
         analysis->uniformity_score = 1.0;
     } else {
-        /* Score based purely on coefficient of variation */
-        /* Exponential decay with factor 2.0 (empirically chosen):
-         *   CV=0.2 → score≈0.67 (acceptable)
-         *   CV=0.5 → score≈0.37 (moderate concern)
-         *   CV=1.0 → score≈0.14 (high concern)
-         * Using CV only is more appropriate for smoothing applications where
-         * isolated extreme intervals have minimal impact on overall results.
-         */
-        analysis->uniformity_score = exp(-analysis->cv * 2.0);
-        /* Note: exp(-cv*2.0) always returns value in (0,1], no clipping needed */
+        analysis->uniformity_score = exp(-analysis->cv * UNIFORMITY_DECAY_FACTOR);
     }
     
-    /* Detect clusters */
-    analysis->n_clusters = 0;
-    for (i = 0; i < n-2; i++) {
-        double h1 = x[i+1] - x[i];
-        double h2 = x[i+2] - x[i+1];
-        
-        /* Detect abrupt changes in spacing */
-        if (h1 < 0.1 * analysis->h_avg && h2 > 10.0 * analysis->h_avg) {
-            analysis->n_clusters++;
-        }
-    }
-    
-    /* Assess reliability and generate warnings */
+    /* Assess reliability and generate warnings using SAFE string handling */
     analysis->reliability_warning = 0;
     analysis->warning_msg[0] = '\0';
+    
+    char temp_msg[256]; /* Temp buffer for formatted parts */
 
-    /* Non-uniformity warnings based on CV (more robust metric) */
-    if (analysis->cv > 1.0) {
+    if (analysis->cv > THRESH_CV_SEVERE) {
         analysis->reliability_warning = 1;
-        sprintf(analysis->warning_msg,
+        snprintf(temp_msg, sizeof(temp_msg),
                 "SEVERE grid non-uniformity detected: CV = %.2f\n"
                 "This may lead to unreliable smoothing results!\n"
                 "Consider resampling data to a more uniform grid.",
                 analysis->cv);
+        append_warning(analysis->warning_msg, sizeof(analysis->warning_msg), temp_msg);
     }
-    else if (analysis->cv > 0.5) {
+    else if (analysis->cv > THRESH_CV_HIGH) {
         analysis->reliability_warning = 1;
-        sprintf(analysis->warning_msg,
+        snprintf(temp_msg, sizeof(temp_msg),
                 "HIGH grid non-uniformity: CV = %.2f\n"
                 "Adaptive methods are strongly recommended.\n"
                 "Consider using smaller regularization parameters.",
                 analysis->cv);
+        append_warning(analysis->warning_msg, sizeof(analysis->warning_msg), temp_msg);
     }
-    else if (analysis->cv > 0.2) {
+    else if (analysis->cv > THRESH_CV_NOTICEABLE) {
         analysis->reliability_warning = 1;
-        sprintf(analysis->warning_msg,
+        snprintf(temp_msg, sizeof(temp_msg),
                 "Significant spacing variation detected: CV = %.2f\n"
                 "Adaptive methods may improve results.",
                 analysis->cv);
+        append_warning(analysis->warning_msg, sizeof(analysis->warning_msg), temp_msg);
     }
     
-    /* Check for clustering */
+    /* Append cluster warning if needed */
     if (analysis->n_clusters > 0) {
         analysis->reliability_warning = 1;
-        char cluster_msg[256];
-        sprintf(cluster_msg, 
+        snprintf(temp_msg, sizeof(temp_msg), 
                 "\nWARNING: %d abrupt spacing changes detected (possible data clustering).\n"
                 "Standard methods may over-smooth clustered regions.", 
                 analysis->n_clusters);
-        
-        /* Append to existing warning if space permits */
-        size_t current_len = strlen(analysis->warning_msg);
-        if (current_len + strlen(cluster_msg) + 1 < sizeof(analysis->warning_msg)) {
-            strcat(analysis->warning_msg, cluster_msg);
-        }
+        append_warning(analysis->warning_msg, sizeof(analysis->warning_msg), temp_msg);
     }
     
     return analysis;
 }
-
-#if 0  /* Commented out - not currently used */
-
-/* Check if grid is uniform within tolerance */
-int is_uniform_grid(const double *x, int n, double *h_avg, double tolerance)
-{
-    int i;
-    double h_local, h_mean;
-
-    if (n < 2) return 1;
-
-    /* Calculate average spacing */
-    h_mean = (x[n-1] - x[0]) / (n - 1);
-
-    if (h_avg != NULL) {
-        *h_avg = h_mean;
-    }
-
-    /* Check uniformity */
-    for (i = 1; i < n; i++) {
-        h_local = x[i] - x[i-1];
-        if (fabs(h_local - h_mean) > tolerance * fabs(h_mean)) {
-            return 0;
-        }
-    }
-
-    return 1;
-}
-
-#endif  /* End of unused function */
 
 /* Get recommended method based on grid analysis */
 const char* get_grid_recommendation(GridAnalysis *analysis)
@@ -205,6 +185,7 @@ const char* get_grid_recommendation(GridAnalysis *analysis)
     if (analysis->is_uniform) {
         return "Grid is uniform - all methods suitable";
     }
+    /* Note: Using scores roughly derived from CV thresholds */
     else if (analysis->uniformity_score > 0.8) {
         return "Grid is nearly uniform - standard methods work well";
     }
@@ -257,64 +238,6 @@ void print_grid_analysis(GridAnalysis *analysis, int verbose, const char *prefix
         }
     }
 }
-
-/* NOTE: Following functions are currently unused in the codebase but kept for potential future use */
-
-#if 0  /* Commented out - not currently used */
-
-/* Calculate effective number of points for regularization */
-double effective_grid_points(GridAnalysis *analysis)
-{
-    if (analysis == NULL || analysis->n_points < 2) {
-        return 1.0;
-    }
-
-    /* For uniform grids, effective points = actual points */
-    if (analysis->is_uniform) {
-        return (double)analysis->n_points;
-    }
-
-    /* For non-uniform grids, adjust based on uniformity score */
-    /* This is a heuristic that reduces effective points for highly non-uniform grids */
-    double base_points = (double)analysis->n_points;
-    double adjustment = 0.7 + 0.3 * analysis->uniformity_score;
-
-    return base_points * adjustment;
-}
-
-/* Calculate optimal window size for given grid */
-int optimal_window_size(GridAnalysis *analysis, int min_window, int max_window)
-{
-    int window;
-
-    if (analysis == NULL) {
-        return min_window;
-    }
-
-    /* Ensure odd window size */
-    if (min_window % 2 == 0) min_window++;
-    if (max_window % 2 == 0) max_window--;
-
-    if (analysis->is_uniform) {
-        /* For uniform grids, use larger windows */
-        window = (min_window + max_window) / 2;
-    } else {
-        /* For non-uniform grids, adjust based on uniformity */
-        double factor = 0.3 + 0.7 * analysis->uniformity_score;
-        window = min_window + (int)(factor * (max_window - min_window));
-    }
-
-    /* Ensure odd */
-    if (window % 2 == 0) window++;
-
-    /* Ensure within bounds */
-    if (window < min_window) window = min_window;
-    if (window > max_window) window = max_window;
-
-    return window;
-}
-
-#endif  /* End of unused functions */
 
 /* Check if adaptive methods should be used */
 int should_use_adaptive(GridAnalysis *analysis)

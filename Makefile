@@ -58,7 +58,7 @@ build: CFLAGS = $(WFLAGS) $(OPT)
 build: $(PROGRAM)
 
 # Debug build
-debug: CFLAGS = $(WFLAGS) -g -O0
+debug: CFLAGS = $(WFLAGS) $(DBG)
 debug: clean $(PROGRAM)
 	@echo "Built with debug information"
 
@@ -142,12 +142,17 @@ $(PROGRAM): $(OBJ) Makefile
 	@echo "Build complete"
 
 # Compile source files
-%.o: %.c $(HEAD) Makefile
+%.o: %.c Makefile
 	@echo "Compiling $<..."
 	$(CC) $(LIBINCLUDE) $(CFLAGS) $(DBG) -c $<
 
 # Explicit dependencies
-smooth.o: smooth.c decomment.h revision.h Makefile
+smooth.o: smooth.c decomment.h revision.h tikhonov.h polyfit.h savgol.h butterworth.h grid_analysis.h Makefile
+tikhonov.o: tikhonov.c tikhonov.h grid_analysis.h Makefile
+polyfit.o: polyfit.c polyfit.h Makefile
+savgol.o: savgol.c savgol.h Makefile
+butterworth.o: butterworth.c butterworth.h Makefile
+grid_analysis.o: grid_analysis.c grid_analysis.h Makefile
 decomment.o: decomment.c decomment.h Makefile
 
 #
