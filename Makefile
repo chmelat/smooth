@@ -16,6 +16,13 @@ SRC = smooth.c decomment.c tikhonov.c polyfit.c savgol.c butterworth.c grid_anal
 OBJ = $(SRC:.c=.o)
 HEAD = decomment.h revision.h tikhonov.h polyfit.h savgol.h butterworth.h grid_analysis.h
 
+# Test files
+TEST_DIR = tests
+TEST_SRC = $(TEST_DIR)/test_main.c $(TEST_DIR)/test_grid_analysis.c $(TEST_DIR)/unity.c
+TEST_OBJ = $(TEST_SRC:.c=.o)
+TEST_MODULES = grid_analysis.o  # Modules being tested (without main program)
+TEST_RUNNER = $(TEST_DIR)/test_runner
+
 # C compiler and flags
 CC = clang
 # Standard optimization level (production)
@@ -48,7 +55,7 @@ LIBPATH = -L$(LIBDIR)
 LIB = -llapack -lblas $(MEMCHECK) -lm
 
 # PHONY targets (not corresponding to files)
-.PHONY: all build debug memcheck install install-user uninstall uninstall-user clean dist check help
+.PHONY: all build debug memcheck install install-user uninstall uninstall-user clean dist check help test test-clean test-valgrind
 
 # Default target
 all: build
@@ -98,6 +105,47 @@ clean:
 	rm -f *.o $(PROGRAM)
 	@echo "Clean complete"
 
+# ============================================================================
+# TESTING TARGETS
+# ============================================================================
+
+# Build and run unit tests
+# Kompiluje testovací suite a spustí všechny testy
+test: $(TEST_RUNNER)
+	@echo ""
+	@echo "Running unit tests..."
+	@echo ""
+	./$(TEST_RUNNER)
+	@echo ""
+
+# Build test runner
+# Linkuje testovací program s testovanými moduly
+$(TEST_RUNNER): $(TEST_OBJ) $(TEST_MODULES)
+	@echo "Linking test runner..."
+	$(CC) $(TEST_OBJ) $(TEST_MODULES) $(LIB) -o $(TEST_RUNNER)
+	@echo "Test build complete"
+
+# Compile test sources
+# Kompiluje testovací soubory s Unity frameworkem
+$(TEST_DIR)/%.o: $(TEST_DIR)/%.c
+	@echo "Compiling test $<..."
+	$(CC) $(WFLAGS) -I. -I$(TEST_DIR) -DUNITY_INCLUDE_DOUBLE -c $< -o $@
+
+# Run tests with Valgrind (memory leak detection)
+# Spustí testy s kontrolou memory leaks
+test-valgrind: $(TEST_RUNNER)
+	@echo "Running tests with Valgrind..."
+	valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes ./$(TEST_RUNNER)
+
+# Clean test files
+# Vyčistí testovací objekty a binary
+test-clean:
+	@echo "Cleaning test files..."
+	rm -f $(TEST_DIR)/*.o $(TEST_RUNNER)
+	@echo "Test clean complete"
+
+# ============================================================================
+
 # Create source package
 dist:
 	@echo "Creating distribution package..."
@@ -124,6 +172,11 @@ help:
 	@echo "  dist          : Create source distribution package"
 	@echo "  help          : Display this help message"
 	@echo ""
+	@echo "Testing targets:"
+	@echo "  test          : Build and run unit tests"
+	@echo "  test-valgrind : Run tests with Valgrind memory checking"
+	@echo "  test-clean    : Remove test object files and test runner"
+	@echo ""
 	@echo "Environment variables:"
 	@echo "  LIBDIR        : Library directory (default: $(HOME)/lib)"
 	@echo "  INCDIR        : Include directory (default: $(HOME)/include)"
@@ -132,6 +185,8 @@ help:
 	@echo "Example usage:"
 	@echo "  make                  - Build the program"
 	@echo "  make debug            - Build with debug information"
+	@echo "  make test             - Run unit tests"
+	@echo "  make test-valgrind    - Check for memory leaks in tests"
 	@echo "  make install-user     - Install to user's bin directory"
 	@echo "  LIBDIR=/opt/lib make  - Use custom library path"
 
