@@ -53,10 +53,15 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
         return NULL;
     }
 
+    if (poly_degree >= window_size) {
+        fprintf(stderr, "Error: Polynomial degree must be less than window size\n");
+        return NULL;
+    }
+
     if (poly_degree > 6) {
         fprintf(stderr, "Warning: High polynomial degree (%d) may cause numerical instability\n", poly_degree);
     }
-    
+
     if (n < window_size) {
         fprintf(stderr, "Error: Not enough data points (n=%d < window_size=%d)\n", n, window_size);
         return NULL;

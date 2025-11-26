@@ -22,6 +22,30 @@ void test_grid_null_pointer(void);
 void test_grid_large_dataset(void);
 void test_grid_with_outlier(void);
 
+// Testy pro polyfit.c
+void test_polyfit_smooth_constant_data(void);
+void test_polyfit_smooth_linear_data(void);
+void test_polyfit_smooth_quadratic_data(void);
+
+// Testy pro polyfit.c - Edge cases
+void test_polyfit_edge_case_n_equals_w(void);
+void test_polyfit_edge_case_n_less_than_w(void);
+void test_polyfit_edge_case_n_equals_p_plus_1(void);
+void test_polyfit_edge_case_large_n(void);
+void test_polyfit_edge_case_high_poly_degree(void);
+void test_polyfit_edge_case_large_window(void);
+void test_polyfit_edge_case_min_window(void);
+void test_polyfit_edge_case_null_pointers(void);
+void test_polyfit_edge_case_invalid_sizes(void);
+void test_polyfit_edge_case_even_window(void);
+void test_polyfit_edge_case_p_greater_or_equal_w(void);
+
+// Testy pro polyfit.c - Noise handling
+void test_polyfit_constant_with_noise(void);
+void test_polyfit_linear_with_noise(void);
+void test_polyfit_quadratic_with_noise(void);
+void test_polyfit_noise_reduction_quality(void);
+
 /* ============================================================================
  * MAIN FUNKCE - SPOUŠTÍ VŠECHNY TESTY
  * ============================================================================
@@ -70,6 +94,38 @@ int main(void) {
 
     printf("\n--- Performance tests ---\n");
     RUN_TEST(test_grid_large_dataset);
+
+    printf("\n");
+    printf("========================================\n");
+    printf("Running tests for polyfit module\n");
+    printf("========================================\n\n");
+    printf("--- Functionality tests for constant data - polynoms dg. 0..2 ---\n");
+    RUN_TEST(test_polyfit_smooth_constant_data);
+
+    printf("\n--- Functionality tests for linear data - polynoms dg. 1..3 ---\n");
+    RUN_TEST(test_polyfit_smooth_linear_data);
+
+    printf("\n--- Functionality tests for quadratic data - polynoms dg. 2..4 ---\n");
+    RUN_TEST(test_polyfit_smooth_quadratic_data);
+
+    printf("\n--- Edge case tests for polyfit module ---\n");
+    RUN_TEST(test_polyfit_edge_case_n_equals_w);
+    RUN_TEST(test_polyfit_edge_case_n_less_than_w);
+    RUN_TEST(test_polyfit_edge_case_n_equals_p_plus_1);
+    RUN_TEST(test_polyfit_edge_case_large_n);
+    RUN_TEST(test_polyfit_edge_case_high_poly_degree);
+    RUN_TEST(test_polyfit_edge_case_large_window);
+    RUN_TEST(test_polyfit_edge_case_min_window);
+    RUN_TEST(test_polyfit_edge_case_null_pointers);
+    RUN_TEST(test_polyfit_edge_case_invalid_sizes);
+    RUN_TEST(test_polyfit_edge_case_even_window);
+    RUN_TEST(test_polyfit_edge_case_p_greater_or_equal_w);
+
+    printf("\n--- Noise handling tests for polyfit module ---\n");
+    RUN_TEST(test_polyfit_constant_with_noise);
+    RUN_TEST(test_polyfit_linear_with_noise);
+    RUN_TEST(test_polyfit_quadratic_with_noise);
+    RUN_TEST(test_polyfit_noise_reduction_quality);
 
     /* V budoucnu můžeme přidat další test suity:
      *
