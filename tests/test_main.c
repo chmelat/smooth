@@ -46,6 +46,35 @@ void test_polyfit_linear_with_noise(void);
 void test_polyfit_quadratic_with_noise(void);
 void test_polyfit_noise_reduction_quality(void);
 
+// Testy pro polyfit.c - Non-uniform grid
+void test_polyfit_nonuniform_grid_constant(void);
+void test_polyfit_nonuniform_grid_linear(void);
+void test_polyfit_nonuniform_grid_quadratic(void);
+
+// Testy pro savgol.c - Basic functionality
+void test_savgol_smooth_constant_data(void);
+void test_savgol_smooth_linear_data(void);
+void test_savgol_smooth_quadratic_data(void);
+
+// Testy pro savgol.c - Edge cases
+void test_savgol_edge_case_n_equals_w(void);
+void test_savgol_edge_case_n_less_than_w(void);
+void test_savgol_edge_case_large_n(void);
+void test_savgol_edge_case_high_poly_degree(void);
+void test_savgol_edge_case_large_window(void);
+void test_savgol_edge_case_min_window(void);
+void test_savgol_edge_case_null_pointers(void);
+void test_savgol_edge_case_even_window(void);
+void test_savgol_edge_case_p_greater_or_equal_w(void);
+
+// Testy pro savgol.c - Noise handling
+void test_savgol_constant_with_noise(void);
+void test_savgol_linear_with_noise(void);
+void test_savgol_quadratic_with_noise(void);
+
+// Testy pro savgol.c - Grid uniformity
+void test_savgol_rejects_nonuniform_grid(void);
+
 /* ============================================================================
  * MAIN FUNKCE - SPOUŠTÍ VŠECHNY TESTY
  * ============================================================================
@@ -126,6 +155,44 @@ int main(void) {
     RUN_TEST(test_polyfit_linear_with_noise);
     RUN_TEST(test_polyfit_quadratic_with_noise);
     RUN_TEST(test_polyfit_noise_reduction_quality);
+
+    printf("\n--- Non-uniform grid tests for polyfit module ---\n");
+    RUN_TEST(test_polyfit_nonuniform_grid_constant);
+    RUN_TEST(test_polyfit_nonuniform_grid_linear);
+    RUN_TEST(test_polyfit_nonuniform_grid_quadratic);
+
+    printf("\n");
+    printf("========================================\n");
+    printf("Running tests for savgol module\n");
+    printf("========================================\n\n");
+
+    printf("--- Functionality tests for constant data - polynoms dg. 0..2 ---\n");
+    RUN_TEST(test_savgol_smooth_constant_data);
+
+    printf("\n--- Functionality tests for linear data - polynoms dg. 1..3 ---\n");
+    RUN_TEST(test_savgol_smooth_linear_data);
+
+    printf("\n--- Functionality tests for quadratic data - polynoms dg. 2..4 ---\n");
+    RUN_TEST(test_savgol_smooth_quadratic_data);
+
+    printf("\n--- Edge case tests for savgol module ---\n");
+    RUN_TEST(test_savgol_edge_case_n_equals_w);
+    RUN_TEST(test_savgol_edge_case_n_less_than_w);
+    RUN_TEST(test_savgol_edge_case_large_n);
+    RUN_TEST(test_savgol_edge_case_high_poly_degree);
+    RUN_TEST(test_savgol_edge_case_large_window);
+    RUN_TEST(test_savgol_edge_case_min_window);
+    RUN_TEST(test_savgol_edge_case_null_pointers);
+    RUN_TEST(test_savgol_edge_case_even_window);
+    RUN_TEST(test_savgol_edge_case_p_greater_or_equal_w);
+
+    printf("\n--- Noise handling tests for savgol module ---\n");
+    RUN_TEST(test_savgol_constant_with_noise);
+    RUN_TEST(test_savgol_linear_with_noise);
+    RUN_TEST(test_savgol_quadratic_with_noise);
+
+    printf("\n--- Grid uniformity tests for savgol module ---\n");
+    RUN_TEST(test_savgol_rejects_nonuniform_grid);
 
     /* V budoucnu můžeme přidat další test suity:
      *

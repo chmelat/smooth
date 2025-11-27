@@ -18,9 +18,9 @@ HEAD = decomment.h revision.h tikhonov.h polyfit.h savgol.h butterworth.h grid_a
 
 # Test files
 TEST_DIR = tests
-TEST_SRC = $(TEST_DIR)/test_main.c $(TEST_DIR)/test_grid_analysis.c $(TEST_DIR)/test_polyfit.c $(TEST_DIR)/unity.c
+TEST_SRC = $(TEST_DIR)/test_main.c $(TEST_DIR)/test_grid_analysis.c $(TEST_DIR)/test_polyfit.c $(TEST_DIR)/test_savgol.c $(TEST_DIR)/unity.c
 TEST_OBJ = $(TEST_SRC:.c=.o)
-TEST_MODULES = grid_analysis.o polyfit.o # Modules being tested (without main program)
+TEST_MODULES = grid_analysis.o polyfit.o savgol.o # Modules being tested (without main program)
 TEST_RUNNER = $(TEST_DIR)/test_runner
 
 # C compiler and flags
