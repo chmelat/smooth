@@ -8,6 +8,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Current version:** 5.7.1 (2025-11-23)
 
+## Documentation Guidelines
+
+### README.md Character Restrictions
+
+**IMPORTANT:** The README.md file uses Unicode mathematical symbols but **restricts non-mathematical special characters** for PDF conversion compatibility.
+
+**Allowed characters:**
+- **Mathematical symbols:** All Greek letters (λ, ω, π, Σ, ε, μ, θ, etc.)
+- **Mathematical operators:** ², ³, ⁴, ₀, ₁, ₂, ∫, ∂, √, ±, ×, ≈, ≥, ≤, ·
+- **Standard ASCII:** Letters, numbers, punctuation
+
+**Prohibited characters (use ASCII alternatives):**
+- **Box-drawing:** Use `|-`, `-`, `|`, `+-`, `=` instead of ├ ─ │ └ ━
+- **Checkmarks/warnings:** Use `[OK]`, `[X]`, `[WARNING]` instead of ✓ ✗ ⚠️
+- **Arrows:** Use `->`, `==>` instead of → ⟹
+- **Ellipsis:** Use `...` instead of ⋮ ⋱
+
+**Reason:** DejaVu fonts used for PDF generation support mathematical Unicode but have limited support for decorative box-drawing characters. This restriction ensures README.md converts cleanly to PDF while preserving all mathematical notation.
+
+**When editing README.md:** Do not introduce box-drawing characters, special arrows, or decorative Unicode. Use ASCII art alternatives.
+
 ## Build System
 
 ```bash

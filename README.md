@@ -109,23 +109,23 @@ The `smooth` project now features a comprehensive unit testing framework using t
 Total: 41+ unit tests across 3 modules
 
 grid_analysis.c: 7 tests
-  ✓ Perfectly uniform grids
-  ✓ Non-uniform grids
-  ✓ Edge cases (minimum points, null pointers)
-  ✓ Large datasets (1M+ points)
-  ✓ Grid with outliers
+  [OK] Perfectly uniform grids
+  [OK] Non-uniform grids
+  [OK] Edge cases (minimum points, null pointers)
+  [OK] Large datasets (1M+ points)
+  [OK] Grid with outliers
 
 polyfit.c: 18 tests
-  ✓ Basic functionality (constant, linear, quadratic)
-  ✓ Edge cases (boundary conditions, invalid parameters)
-  ✓ Noise reduction quality
-  ✓ Non-uniform grid handling
+  [OK] Basic functionality (constant, linear, quadratic)
+  [OK] Edge cases (boundary conditions, invalid parameters)
+  [OK] Noise reduction quality
+  [OK] Non-uniform grid handling
 
 savgol.c: 16 tests
-  ✓ Basic functionality (polynomial reproduction)
-  ✓ Edge cases (window size, polynomial degree limits)
-  ✓ Noise handling (Gaussian noise filtering)
-  ✓ Grid uniformity enforcement (rejection of CV > 0.05)
+  [OK] Basic functionality (polynomial reproduction)
+  [OK] Edge cases (window size, polynomial degree limits)
+  [OK] Noise handling (Gaussian noise filtering)
+  [OK] Grid uniformity enforcement (rejection of CV > 0.05)
 ```
 
 **Testing Best Practices Implemented:**
@@ -220,7 +220,7 @@ For polynomial coefficients, we solve a system of linear equations:
 ```
 [Σ(x-x_i)⁰    Σ(x-x_i)¹    ...  Σ(x-x_i)^p  ] [a_0]   [Σy(x-x_i)⁰]
 [Σ(x-x_i)¹    Σ(x-x_i)²    ...  Σ(x-x_i)^{p+1}] [a_1] = [Σy(x-x_i)¹]
-[    ⋮            ⋮        ⋱        ⋮        ] [ ⋮ ]   [    ⋮     ]
+[    ...            ...        ...        ...        ] [ ... ]   [    ...     ]
 [Σ(x-x_i)^p Σ(x-x_i)^{p+1} ... Σ(x-x_i)^{2p}] [a_p]   [Σy(x-x_i)^p]
 ```
 
@@ -382,7 +382,7 @@ We solve a system of linear equations:
 ```
 [1   -n_L    (-n_L)²   ...  (-n_L)^p  ] [c_{-n_L}]   [δ_{0,d}·0!]
 [1  -n_L+1  (-n_L+1)²  ... (-n_L+1)^p ] [c_{-n_L+1}] = [δ_{1,d}·1!]
-[⋮     ⋮        ⋮      ⋱       ⋮      ] [    ⋮    ]   [    ⋮     ]
+[...     ...        ...      ...       ...      ] [    ...    ]   [    ...     ]
 [1    n_R     n_R²     ...    n_R^p   ] [  c_{n_R} ]   [δ_{p,d}·p!]
 ```
 
@@ -453,7 +453,7 @@ Tikhonov regularization solves the ill-posed inverse smoothing problem using a v
 **Continuous formulation:**
 ```
 J[u] = ∫(y(x) - u(x))² dx + λ∫(u''(x))² dx
-       ︸━━━━━━━━━━━━━━━━━━     ︸━━━━━━━━━━━━━
+       _==================     _=============
        Data fidelity term      Smoothness penalty
 ```
 
@@ -478,7 +478,7 @@ The parameter λ is the **heart of Tikhonov regularization** - it controls the b
 λ = 0:     No smoothing, u = y (exact data fit)
            J[u] = ||y - u||² only
 
-λ → ∞:     Maximum smoothing, u → straight line
+λ -> ∞:     Maximum smoothing, u -> straight line
            J[u] ≈ λ||D²u||² dominates
 
 λ optimal: Balanced between data fit and smoothness
@@ -493,9 +493,9 @@ The minimization of J[u] leads to:
 ```
 
 **Effect of λ on the solution:**
-- **Small λ (< 0.01):** Matrix ≈ I → solution u ≈ y (minimal smoothing)
-- **Large λ (> 1.0):** Matrix ≈ λD^TD → strong curvature penalty (heavy smoothing)
-- **Optimal λ:** Matrix components balanced → noise removed, signal preserved
+- **Small λ (< 0.01):** Matrix ≈ I -> solution u ≈ y (minimal smoothing)
+- **Large λ (> 1.0):** Matrix ≈ λD^TD -> strong curvature penalty (heavy smoothing)
+- **Optimal λ:** Matrix components balanced -> noise removed, signal preserved
 
 #### Frequency Domain Interpretation
 
@@ -507,14 +507,14 @@ In Fourier space, Tikhonov acts as a low-pass filter:
 where ω is spatial frequency. 
 
 **Effect:**
-- **Low frequencies (slow variations):** Ĥ ≈ 1 → preserved
-- **High frequencies (noise, rapid variations):** Ĥ ≈ 1/(λω⁴) → attenuated
-- **Cutoff frequency:** ω_c ∝ λ^(-1/4)
+- **Low frequencies (slow variations):** Ĥ ≈ 1 -> preserved
+- **High frequencies (noise, rapid variations):** Ĥ ≈ 1/(λω⁴) -> attenuated
+- **Cutoff frequency:** ω_c ~ λ^(-1/4)
 
 **This means:**
 ```
-Larger λ  → Lower cutoff → More aggressive low-pass filtering → Smoother result
-Smaller λ → Higher cutoff → Less filtering → Result closer to data
+Larger λ  -> Lower cutoff -> More aggressive low-pass filtering -> Smoother result
+Smaller λ -> Higher cutoff -> Less filtering -> Result closer to data
 ```
 
 #### Practical Guidelines for λ Selection
@@ -577,10 +577,10 @@ For highly non-uniform grids (CV > 0.2):
 
 The effective regularization strength depends on grid spacing:
 ```
-Effective strength ∝ λ / h²_avg
+Effective strength ~ λ / h²_avg
 
-Same λ on finer grid   → weaker smoothing
-Same λ on coarser grid → stronger smoothing
+Same λ on finer grid   -> weaker smoothing
+Same λ on coarser grid -> stronger smoothing
 ```
 
 For dimensional consistency, λ has units [Length²].
@@ -593,8 +593,8 @@ For dimensional consistency, λ has units [Length²].
 ```
 CV = coefficient of variation (h_std / h_avg)
 
-CV < 0.15:  Nearly uniform    → Average Coefficient Method
-CV ≥ 0.15:  Highly non-uniform → Local Spacing Method
+CV < 0.15:  Nearly uniform    -> Average Coefficient Method
+CV ≥ 0.15:  Highly non-uniform -> Local Spacing Method
 ```
 
 #### Method 1: Average Coefficient (for CV < 0.15)
@@ -707,7 +707,7 @@ J[u] = ||y - u||² + λ||D²u||²
 The minimum of functional J[u] satisfies the Euler-Lagrange equation:
 
 ```
-∂J/∂u_i = 0  ⟹  -2(y_i - u_i) + 2λ(D^T D u)_i = 0
+∂J/∂u_i = 0  ==>  -2(y_i - u_i) + 2λ(D^T D u)_i = 0
 ```
 
 which leads to the linear system:
@@ -853,8 +853,8 @@ The Butterworth filter is a classical **low-pass frequency filter** in digital s
 - **Passes low frequencies:** Slow variations in your data pass through unchanged
 - **Blocks high frequencies:** Rapid fluctuations (noise) are removed
 - **The cutoff frequency (fc)** determines the boundary between "low" and "high"
-  - Lower fc → more aggressive smoothing (removes more detail)
-  - Higher fc → gentler smoothing (preserves more detail)
+  - Lower fc -> more aggressive smoothing (removes more detail)
+  - Higher fc -> gentler smoothing (preserves more detail)
 
 The filter is characterized by a **maximally flat magnitude response** in the passband and provides zero phase distortion when implemented as filtfilt.
 
@@ -908,8 +908,8 @@ z_poles = (2 + s_poles_scaled) / (2 - s_poles_scaled)
 ```
 
 The bilinear transformation maps:
-- Left half of s-plane → inside unit circle in z-plane
-- jω axis → unit circle in z-plane
+- Left half of s-plane -> inside unit circle in z-plane
+- jω axis -> unit circle in z-plane
 - Preserves stability
 
 **Step 4: Biquad Cascade**
@@ -929,9 +929,9 @@ The **filtfilt** (forward-backward filtering) eliminates phase distortion:
 
 **Algorithm:**
 1. **Pad signal:** Reflect signal at boundaries (3×order length)
-2. **Forward filter:** Apply H(z) from left to right → y_fwd
+2. **Forward filter:** Apply H(z) from left to right -> y_fwd
 3. **Reverse:** y_rev = reverse(y_fwd)
-4. **Backward filter:** Apply H(z) to y_rev → y_bwd
+4. **Backward filter:** Apply H(z) to y_rev -> y_bwd
 5. **Reverse back:** y_final = reverse(y_bwd)
 6. **Extract:** Remove padding to get final result
 
@@ -998,8 +998,8 @@ The cutoff frequency `fc` is **normalized** to the sampling rate and is the **mo
 
 **Simple explanation:**
 - `fc` controls how much smoothing you get
-- **Smaller fc (e.g., 0.05)** → heavy smoothing, only very slow trends preserved
-- **Larger fc (e.g., 0.30)** → light smoothing, more detail preserved
+- **Smaller fc (e.g., 0.05)** -> heavy smoothing, only very slow trends preserved
+- **Larger fc (e.g., 0.30)** -> light smoothing, more detail preserved
 - Valid range: `0 < fc < 0.5` (Nyquist limit)
 
 **Technical details:**
@@ -1013,8 +1013,8 @@ where:
 
 **Nyquist Constraint:** `0 < fc < 0.5`
 - `fc = 0.5` corresponds to Nyquist frequency (f_sample/2) - maximum possible
-- Higher fc → less filtering (more high frequencies pass)
-- Lower fc → more filtering (smoother result)
+- Higher fc -> less filtering (more high frequencies pass)
+- Lower fc -> more filtering (smoother result)
 
 **Physical Interpretation:**
 
@@ -1155,27 +1155,27 @@ The filter assumes uniform sampling when computing the cutoff frequency. For hig
 | Noise robustness | *** | **** | ***** | ***** |
 | Derivative quality | ***** | ***** | *** | N/A |
 | Boundary behavior | ** | *** | **** | *** |
-| Non-uniform grids | *** | ✗ | ***** | ** |
+| Non-uniform grids | *** | [X] | ***** | ** |
 | Ease of use (v5.5) | **** | **** | ***** | **** |
 | Parameter selection | Manual | Manual | Auto (GCV) | Manual |
 | Frequency control | No | No | No | Yes |
 | Phase distortion | N/A | N/A | N/A | Zero |
 
-**Key:** ✗ = Not suitable (automatically rejected)
+**Key:** [X] = Not suitable (automatically rejected)
 
 ### Grid Type Compatibility
 
 | Grid Type | POLYFIT | SAVGOL | TIKHONOV | BUTTERWORTH |
 |-----------|---------|--------|----------|-------------|
-| Perfectly uniform (CV < 0.01) | ✓ | ✓ | ✓ | ✓ |
-| Nearly uniform (CV < 0.05) | ✓ | ⚠️ | ✓ | ✓ |
-| Moderately non-uniform (0.05 < CV < 0.2) | ✓ | ✗ | ✓ | ⚠️ |
-| Highly non-uniform (CV > 0.2) | ⚠️ | ✗ | ✓ | ⚠️ |
+| Perfectly uniform (CV < 0.01) | [OK] | [OK] | [OK] | [OK] |
+| Nearly uniform (CV < 0.05) | [OK] | [WARNING] | [OK] | [OK] |
+| Moderately non-uniform (0.05 < CV < 0.2) | [OK] | [X] | [OK] | [WARNING] |
+| Highly non-uniform (CV > 0.2) | [WARNING] | [X] | [OK] | [WARNING] |
 
 **Legend:**
-- ✓ = Recommended
-- ⚠️ = Usable with caution
-- ✗ = Rejected or not recommended
+- [OK] = Recommended
+- [WARNING] = Usable with caution
+- [X] = Rejected or not recommended
 - \* = Uses local spacing method automatically
 
 ---
@@ -1300,8 +1300,8 @@ Full range: 0 < fc < 0.5 (Nyquist limit)
 fc = f_cutoff / f_sample
 where f_sample = 1 / h_avg
 
-Example: h_avg = 0.1 sec → f_sample = 10 Hz
-         fc = 0.2 → f_cutoff = 2 Hz (removes freq > 2 Hz)
+Example: h_avg = 0.1 sec -> f_sample = 10 Hz
+         fc = 0.2 -> f_cutoff = 2 Hz (removes freq > 2 Hz)
 
 **ITERATIVE REFINEMENT:**
 1. Start with fc = 0.15 or fc = 0.20
@@ -1583,26 +1583,26 @@ typedef struct {
 
 ```
 CV < 0.01:   Perfectly uniform - all methods work optimally
-             → POLYFIT, SAVGOL, TIKHONOV all excellent
+             -> POLYFIT, SAVGOL, TIKHONOV all excellent
 
 CV < 0.05:   Nearly uniform - SAVGOL works with warning
-             → SAVGOL may show warning but works
-             → POLYFIT and TIKHONOV work fine
+             -> SAVGOL may show warning but works
+             -> POLYFIT and TIKHONOV work fine
 
 0.05 ≤ CV < 0.15: Moderately non-uniform
-             → SAVGOL rejected automatically
-             → POLYFIT usable
-             → TIKHONOV uses average coefficient method
+             -> SAVGOL rejected automatically
+             -> POLYFIT usable
+             -> TIKHONOV uses average coefficient method
 
 0.15 ≤ CV < 0.20: Non-uniform
-             → SAVGOL rejected
-             → POLYFIT usable with caution
-             → TIKHONOV uses local spacing method
+             -> SAVGOL rejected
+             -> POLYFIT usable with caution
+             -> TIKHONOV uses local spacing method
 
 CV ≥ 0.20:   Highly non-uniform
-             → SAVGOL rejected
-             → POLYFIT with caution
-             → TIKHONOV uses local spacing method (warning issued)
+             -> SAVGOL rejected
+             -> POLYFIT with caution
+             -> TIKHONOV uses local spacing method (warning issued)
 
 TIKHONOV METHOD SELECTION:
 CV < 0.15:  Uses average coefficient method (robust, efficient)
@@ -1671,23 +1671,23 @@ gcc -Wall -Wextra -pedantic -o smooth smooth.c polyfit.c savgol.c \
 
 ```
 smooth/
-├── smooth.c           # Main program (v5.5: added Butterworth)
-├── polyfit.c/h        # Polynomial fitting module
-├── savgol.c/h         # Savitzky-Golay module (v5.3: with uniformity check)
-├── tikhonov.c/h       # Tikhonov module (v5.4: hybrid implementation)
-├── butterworth.c/h    # Butterworth filter module (v5.5: new)
-├── grid_analysis.c/h  # Grid analysis module
-├── decomment.c/h      # Comment removal utility
-├── revision.h         # Program version
-├── Makefile           # Build system with test targets
-├── README.md          # This documentation
-└── tests/             # Unit testing framework (v5.6+: Unity tests)
-    ├── unity.c/h                # Unity testing framework
-    ├── unity_internals.h        # Unity internals
-    ├── test_main.c              # Test runner (41+ tests)
-    ├── test_grid_analysis.c     # Grid analysis tests (7 tests)
-    ├── test_polyfit.c           # Polyfit module tests (18 tests)
-    └── test_savgol.c            # Savgol module tests (16 tests)
+|--- smooth.c           # Main program (v5.5: added Butterworth)
+|--- polyfit.c/h        # Polynomial fitting module
+|--- savgol.c/h         # Savitzky-Golay module (v5.3: with uniformity check)
+|--- tikhonov.c/h       # Tikhonov module (v5.4: hybrid implementation)
+|--- butterworth.c/h    # Butterworth filter module (v5.5: new)
+|--- grid_analysis.c/h  # Grid analysis module
+|--- decomment.c/h      # Comment removal utility
+|--- revision.h         # Program version
+|--- Makefile           # Build system with test targets
+|--- README.md          # This documentation
++--- tests/             # Unit testing framework (v5.6+: Unity tests)
+    |--- unity.c/h                # Unity testing framework
+    |--- unity_internals.h        # Unity internals
+    |--- test_main.c              # Test runner (41+ tests)
+    |--- test_grid_analysis.c     # Grid analysis tests (7 tests)
+    |--- test_polyfit.c           # Polyfit module tests (18 tests)
+    +--- test_savgol.c            # Savgol module tests (16 tests)
 ```
 
 ---
@@ -1749,27 +1749,27 @@ The `smooth` project has evolved from a functional scientific tool to a **produc
 
 ```
 Is your grid uniform (CV < 0.05)?
-├─ YES: Multiple good options:
-│   ├─ SAVGOL: Best for polynomial signals with derivatives
-│   │   smooth -m 1 -n 9 -p 3 -d data.txt
-│   ├─ BUTTERWORTH: Best for frequency-domain interpretation
-│   │   smooth -m 3 -f 0.15 data.txt
-│   └─ TIKHONOV: Universal choice with auto parameters
-│       smooth -m 2 -l auto -d data.txt
-│
-└─ NO (non-uniform): Use TIKHONOV for correct handling
+|-- YES: Multiple good options:
+|   |-- SAVGOL: Best for polynomial signals with derivatives
+|   |   smooth -m 1 -n 9 -p 3 -d data.txt
+|   |-- BUTTERWORTH: Best for frequency-domain interpretation
+|   |   smooth -m 3 -f 0.15 data.txt
+|   +-- TIKHONOV: Universal choice with auto parameters
+|       smooth -m 2 -l auto -d data.txt
+|
++-- NO (non-uniform): Use TIKHONOV for correct handling
     smooth -m 2 -l auto -d data.txt
 
 Need frequency-domain control?
-└─ Use BUTTERWORTH (requires uniform grid)
++-- Use BUTTERWORTH (requires uniform grid)
     smooth -m 3 -f 0.15 data.txt
 
 Need local adaptability?
-└─ Use POLYFIT regardless of grid
++-- Use POLYFIT regardless of grid
     smooth -m 0 -n 7 -p 2 -d data.txt
 
 Not sure?
-└─ Use TIKHONOV with automatic λ - safest choice!
++-- Use TIKHONOV with automatic λ - safest choice!
     smooth -m 2 -l auto -d data.txt
 ```
 
