@@ -8,8 +8,6 @@ VERSION=$(shell grep '^#define VERSION' revision.h | sed 's/.*"\(.*\)".*/\1/')
 
 # Installation directories
 PREFIX = /usr/local
-# Use this for user installation: $(HOME)
-USER_PREFIX = $(HOME)
 
 # Files
 SRC = smooth.c decomment.c tikhonov.c polyfit.c savgol.c butterworth.c grid_analysis.c
@@ -30,9 +28,6 @@ OPT = -O2
 # Warning flags
 WFLAGS = -Wall -Wextra -pedantic
 
-# Debug flags (uncomment for debugging)
-# DBG = -g -O0
-
 # Memory checking tools
 # For memory leak detection (uncomment to use)
 # MEMCHECK = -lefence
@@ -44,9 +39,7 @@ LIBDIR ?= $(HOME)/lib
 INCDIR ?= $(HOME)/include
 BINDIR ?= $(HOME)/bin
 
-# System-wide installation paths
-SYS_LIBDIR = $(PREFIX)/lib
-SYS_INCDIR = $(PREFIX)/include
+# System-wide installation path
 SYS_BINDIR = $(PREFIX)/bin
 
 # Libraries
@@ -65,7 +58,7 @@ build: CFLAGS = $(WFLAGS) $(OPT)
 build: $(PROGRAM)
 
 # Debug build
-debug: CFLAGS = $(WFLAGS) $(DBG)
+debug: CFLAGS = $(WFLAGS) -g -O0
 debug: clean $(PROGRAM)
 	@echo "Built with debug information"
 
@@ -102,7 +95,7 @@ uninstall-user:
 # Clean generated files
 clean:
 	@echo "Cleaning up..."
-	rm -f *.o $(PROGRAM)
+	rm -f *.o *.d $(PROGRAM)
 	@echo "Clean complete"
 
 # ============================================================================
@@ -125,11 +118,14 @@ $(TEST_RUNNER): $(TEST_OBJ) $(TEST_MODULES)
 	$(CC) $(TEST_OBJ) $(TEST_MODULES) $(LIB) -o $(TEST_RUNNER)
 	@echo "Test build complete"
 
-# Compile test sources
+# Compile test sources with automatic dependency generation
 # Kompiluje testovací soubory s Unity frameworkem
 $(TEST_DIR)/%.o: $(TEST_DIR)/%.c
 	@echo "Compiling test $<..."
-	$(CC) $(WFLAGS) -I. -I$(TEST_DIR) -DUNITY_INCLUDE_DOUBLE -c $< -o $@
+	$(CC) $(WFLAGS) -I. -I$(TEST_DIR) -DUNITY_INCLUDE_DOUBLE -MMD -MP -c $< -o $@
+
+# Include test dependencies
+-include $(TEST_OBJ:.o=.d)
 
 # Run tests with Valgrind (memory leak detection)
 # Spustí testy s kontrolou memory leaks
@@ -141,7 +137,7 @@ test-valgrind: $(TEST_RUNNER)
 # Vyčistí testovací objekty a binary
 test-clean:
 	@echo "Cleaning test files..."
-	rm -f $(TEST_DIR)/*.o $(TEST_RUNNER)
+	rm -f $(TEST_DIR)/*.o $(TEST_DIR)/*.d $(TEST_RUNNER)
 	@echo "Test clean complete"
 
 # ============================================================================
@@ -193,22 +189,17 @@ help:
 # Link the program
 $(PROGRAM): $(OBJ) Makefile
 	@echo "Linking $(PROGRAM)..."
-	$(CC) $(LIBPATH) $(OBJ) $(DBG) $(LIB) -o $(PROGRAM)
+	$(CC) $(CFLAGS) $(LIBPATH) $(OBJ) $(LIB) -o $(PROGRAM)
 	@echo "Build complete"
 
-# Compile source files
+# Compile source files with automatic dependency generation
 %.o: %.c Makefile
 	@echo "Compiling $<..."
-	$(CC) $(LIBINCLUDE) $(CFLAGS) $(DBG) -c $<
+	$(CC) $(LIBINCLUDE) $(CFLAGS) -MMD -MP -c $< -o $@
 
-# Explicit dependencies
-smooth.o: smooth.c decomment.h revision.h tikhonov.h polyfit.h savgol.h butterworth.h grid_analysis.h Makefile
-tikhonov.o: tikhonov.c tikhonov.h grid_analysis.h Makefile
-polyfit.o: polyfit.c polyfit.h Makefile
-savgol.o: savgol.c savgol.h Makefile
-butterworth.o: butterworth.c butterworth.h Makefile
-grid_analysis.o: grid_analysis.c grid_analysis.h Makefile
-decomment.o: decomment.c decomment.h Makefile
+# Include automatically generated dependencies (if they exist)
+# Note: Explicit dependencies are no longer needed - compiler generates them automatically in .d files
+-include $(OBJ:.o=.d)
 
 #
 # End
