@@ -1,5 +1,7 @@
 /*  Savitzky-Golay filter for data smoothing
  *  OPTIMIZED Implementation with pre-computed coefficients
+ *  V2.4/2025-11-28/ FIXED: Allow deriv_order > poly_degree (returns zero coefficients)
+ *  V2.3/2025-11-28/ FIXED: savgol_coefficients returns error code, output zeroed on error
  *  V2.2/2025-10-14/ FIXED: Pre-compute coefficients once, massive speedup!
  *  V2.1/2025-10-04/ Added uniform grid check
  *  V2.0/2025-05-28/ Updated to use LAPACK/BLAS
@@ -51,8 +53,9 @@ static double factorial(int n)
 
 /* Calculate Savitzky-Golay filter coefficients
  * REFACTORED: Uses stack allocation for better readability and safety
+ * Returns: 0 on success, -1 on error
  */
-void savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, double *c)
+int savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, double *c)
 {
     int i, j;
     
@@ -67,23 +70,40 @@ void savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, doubl
     int info;
     int nrhs = 1;
     char uplo = 'U';
+    int n_coeff = nl + nr + 1;
     
-    /* Input validation */
-    if (c == NULL || poly_degree < 0 || deriv_order < 0 || deriv_order > poly_degree) {
+    /* Input validation - initialize output array first for safety */
+    if (c == NULL) {
+        fprintf(stderr, "Error: NULL output array in savgol_coefficients\n");
+        return -1;
+    }
+    
+    /* Zero output array FIRST - ensures defined state even on error */
+    memset(c, 0, n_coeff * sizeof(double));
+
+    /* Validate basic parameter constraints */
+    if (poly_degree < 0 || deriv_order < 0) {
         fprintf(stderr, "Error: Invalid parameters for savgol_coefficients\n");
-        return;
+        return -1;
+    }
+
+    /* Special case: derivative order exceeds polynomial degree
+     * Mathematically, derivative of degree-p polynomial with deriv_order > p is zero
+     * Return zero coefficients (already done above) */
+    if (deriv_order > poly_degree) {
+        return 0;  /* Success with zero coefficients */
     }
     
     /* Dodatečná kontrola proti přetečení statického pole */
     if (poly_degree > DPMAX) {
         fprintf(stderr, "Error: Polynomial degree %d exceeds compiled limit DPMAX (%d)\n", 
                 poly_degree, DPMAX);
-        return;
+        return -1;
     }
     
     if (nl + nr < poly_degree) {
         fprintf(stderr, "Error: Not enough points for polynomial degree\n");
-        return;
+        return -1;
     }
     
     /* Nulování paměti (náhrada za calloc) */
@@ -114,7 +134,8 @@ void savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, doubl
     
     if (info != 0) {
         fprintf(stderr, "Error: LAPACK dposv failed with info = %d in savgol_coefficients\n", info);
-        return;
+        /* Output array already zeroed at start */
+        return -1;
     }
     
     /* Compute the filter coefficients using the solution */
@@ -127,6 +148,8 @@ void savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, doubl
         
         c[i] = sum;
     }
+    
+    return 0;  /* Success */
 }
 
 /* Main Savitzky-Golay smoothing function - OPTIMIZED */
@@ -258,8 +281,21 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
     }
     
     /* Compute coefficients ONCE for symmetric window (central points) */
-    savgol_coefficients(offset, offset, poly_degree, 0, c_func);   /* Function */
-    savgol_coefficients(offset, offset, poly_degree, 1, c_deriv); /* Derivative */
+    if (savgol_coefficients(offset, offset, poly_degree, 0, c_func) != 0) {
+        fprintf(stderr, "Error: Failed to compute function coefficients\n");
+        free(c_func);
+        free(c_deriv);
+        free_savgol_result(result);
+        return NULL;
+    }
+    
+    if (savgol_coefficients(offset, offset, poly_degree, 1, c_deriv) != 0) {
+        fprintf(stderr, "Error: Failed to compute derivative coefficients\n");
+        free(c_func);
+        free(c_deriv);
+        free_savgol_result(result);
+        return NULL;
+    }
     
     /* ========================================================================
      * Process central points using pre-computed coefficients - FAST!
@@ -309,22 +345,34 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
         c_bound_deriv = (double *)calloc(n_coeff, sizeof(double));
         
         if (c_bound_func && c_bound_deriv) {
-            savgol_coefficients(left_pts, right_pts, poly_degree, 0, c_bound_func);
-            savgol_coefficients(left_pts, right_pts, poly_degree, 1, c_bound_deriv);
+            int coef_ok = 1;
             
-            double val = 0.0;
-            double deriv = 0.0;
-            
-            for (k = 0; k < n_coeff; k++) {
-                int idx = i - left_pts + k;
-                if (idx >= 0 && idx < n) {
-                    val += c_bound_func[k] * y[idx];
-                    deriv += c_bound_deriv[k] * y[idx];
-                }
+            if (savgol_coefficients(left_pts, right_pts, poly_degree, 0, c_bound_func) != 0) {
+                coef_ok = 0;
+            }
+            if (coef_ok && savgol_coefficients(left_pts, right_pts, poly_degree, 1, c_bound_deriv) != 0) {
+                coef_ok = 0;
             }
             
-            result->y_smooth[i] = val;
-            result->y_deriv[i] = deriv / h_avg;
+            if (coef_ok) {
+                double val = 0.0;
+                double deriv = 0.0;
+                
+                for (k = 0; k < n_coeff; k++) {
+                    int idx = i - left_pts + k;
+                    if (idx >= 0 && idx < n) {
+                        val += c_bound_func[k] * y[idx];
+                        deriv += c_bound_deriv[k] * y[idx];
+                    }
+                }
+                
+                result->y_smooth[i] = val;
+                result->y_deriv[i] = deriv / h_avg;
+            } else {
+                /* Coefficient computation failed - use original value */
+                result->y_smooth[i] = y[i];
+                result->y_deriv[i] = 0.0;
+            }
         } else {
             result->y_smooth[i] = y[i];
             result->y_deriv[i] = 0.0;
@@ -356,22 +404,34 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
         c_bound_deriv = (double *)calloc(n_coeff, sizeof(double));
         
         if (c_bound_func && c_bound_deriv) {
-            savgol_coefficients(left_pts, right_pts, poly_degree, 0, c_bound_func);
-            savgol_coefficients(left_pts, right_pts, poly_degree, 1, c_bound_deriv);
+            int coef_ok = 1;
             
-            double val = 0.0;
-            double deriv = 0.0;
-            
-            for (k = 0; k < n_coeff; k++) {
-                int idx = i - left_pts + k;
-                if (idx >= 0 && idx < n) {
-                    val += c_bound_func[k] * y[idx];
-                    deriv += c_bound_deriv[k] * y[idx];
-                }
+            if (savgol_coefficients(left_pts, right_pts, poly_degree, 0, c_bound_func) != 0) {
+                coef_ok = 0;
+            }
+            if (coef_ok && savgol_coefficients(left_pts, right_pts, poly_degree, 1, c_bound_deriv) != 0) {
+                coef_ok = 0;
             }
             
-            result->y_smooth[i] = val;
-            result->y_deriv[i] = deriv / h_avg;
+            if (coef_ok) {
+                double val = 0.0;
+                double deriv = 0.0;
+                
+                for (k = 0; k < n_coeff; k++) {
+                    int idx = i - left_pts + k;
+                    if (idx >= 0 && idx < n) {
+                        val += c_bound_func[k] * y[idx];
+                        deriv += c_bound_deriv[k] * y[idx];
+                    }
+                }
+                
+                result->y_smooth[i] = val;
+                result->y_deriv[i] = deriv / h_avg;
+            } else {
+                /* Coefficient computation failed - use original value */
+                result->y_smooth[i] = y[i];
+                result->y_deriv[i] = 0.0;
+            }
         } else {
             result->y_smooth[i] = y[i];
             result->y_deriv[i] = 0.0;
