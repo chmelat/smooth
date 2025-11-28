@@ -1,5 +1,7 @@
 /* Tikhonov regularization for data smoothing
  * Hybrid version: combines best of old and new approaches
+ * V4.7/2025-11-28/ Fixed boundary condition asymmetry in Local Spacing Method
+ * V4.6/2025-11-28/ Fixed critical bugs: discretization consistency, functional computation
  * V4.5/2025-11-21/ Refactored memory management (goto pattern)
  * V4.4/2025-10-13/ Fixed discretization for non-uniform grids
  */
@@ -25,6 +27,63 @@ extern void dcopy_(int *n, double *x, int *incx, double *y, int *incy);
 /* CV threshold for selecting discretization method */
 #define CV_THRESHOLD 0.15
 
+/* ============================================================================
+ * FIX 1.1: Unified discretization method selection
+ * 
+ * This enum and helper function ensure consistent method selection
+ * across build_band_matrix() and compute_functional().
+ * ============================================================================
+ */
+typedef enum {
+    DISCRETIZATION_AVERAGE,  /* Average coefficient method - for near-uniform grids */
+    DISCRETIZATION_LOCAL     /* Local spacing method - for non-uniform grids */
+} DiscretizationMethod;
+
+/* Select discretization method based on grid properties
+ * 
+ * Parameters:
+ *   grid_info - Grid analysis results (can be NULL)
+ *   x         - Array of x-coordinates (used as fallback if grid_info is NULL)
+ *   n         - Number of points
+ * 
+ * Returns:
+ *   DISCRETIZATION_AVERAGE for near-uniform grids (CV < 0.15)
+ *   DISCRETIZATION_LOCAL for non-uniform grids
+ */
+static DiscretizationMethod select_discretization_method(GridAnalysis *grid_info, 
+                                                          const double *x, int n)
+{
+    double cv;
+    
+    if (grid_info != NULL) {
+        cv = grid_info->cv;
+    } else {
+        /* Fallback: compute CV from x array */
+        if (n < 2) {
+            return DISCRETIZATION_AVERAGE;
+        }
+        
+        double h_sum = 0.0;
+        double h_sq_sum = 0.0;
+        
+        for (int i = 1; i < n; i++) {
+            double h = x[i] - x[i-1];
+            h_sum += h;
+            h_sq_sum += h * h;
+        }
+        
+        double h_avg = h_sum / (n - 1);
+        double h_var = h_sq_sum / (n - 1) - h_avg * h_avg;
+        
+        if (h_var < 0.0) h_var = 0.0;  /* Numerical safety */
+        double h_std = sqrt(h_var);
+        
+        cv = (h_avg > 1e-15) ? (h_std / h_avg) : 0.0;
+    }
+    
+    return (cv < CV_THRESHOLD) ? DISCRETIZATION_AVERAGE : DISCRETIZATION_LOCAL;
+}
+
 /* Build band matrix with hybrid discretization */
 static void build_band_matrix(double *x, int n, double lambda, double *AB, int ldab, int kd,
                               GridAnalysis *grid_info)
@@ -43,10 +102,10 @@ static void build_band_matrix(double *x, int n, double lambda, double *AB, int l
 
     if (lambda <= 0.0 || n < 3) return;
 
-    /* Select discretization method based on CV */
-    int use_average_coef = (grid_info && grid_info->cv < CV_THRESHOLD);
+    /* FIX 1.1: Use unified method selection */
+    DiscretizationMethod method = select_discretization_method(grid_info, x, n);
 
-    if (use_average_coef) {
+    if (method == DISCRETIZATION_AVERAGE) {
         /* Average Coefficient Method */
         double h_avg_squared = 0.0;
         for (int i = 1; i < n; i++) {
@@ -82,13 +141,32 @@ static void build_band_matrix(double *x, int n, double lambda, double *AB, int l
             AB[0 + (j+1)*ldab] += -w / h_right;
         }
         
-        /* Boundary conditions */
-        double h_first = x[1] - x[0];
-        AB[kd + 0*ldab] += lambda / (h_first * h_first);
-        AB[0 + 1*ldab] += -lambda / (h_first * h_first);
+        /* FIX 3.2: Symmetric boundary conditions
+         * 
+         * Natural boundary conditions penalize (u')² at boundaries.
+         * For left boundary:  λ * ((u_1 - u_0) / h_0)²
+         * For right boundary: λ * ((u_{n-1} - u_{n-2}) / h_{n-2})²
+         * 
+         * The Hessian of each term contributes to a 2x2 block:
+         *   [+1/h²  -1/h²]
+         *   [-1/h²  +1/h²]
+         * 
+         * Both diagonal AND off-diagonal elements must be set for symmetry.
+         */
         
+        /* Left boundary: affects elements [0,0], [0,1], and [1,1] */
+        double h_first = x[1] - x[0];
+        double bc_left = lambda / (h_first * h_first);
+        AB[kd + 0*ldab] += bc_left;          /* K[0,0] */
+        AB[0 + 1*ldab] += -bc_left;          /* K[0,1] (superdiagonal) */
+        AB[kd + 1*ldab] += bc_left;          /* K[1,1] - contribution from boundary */
+        
+        /* Right boundary: affects elements [n-2,n-2], [n-2,n-1], and [n-1,n-1] */
         double h_last = x[n-1] - x[n-2];
-        AB[kd + (n-1)*ldab] += lambda / (h_last * h_last);
+        double bc_right = lambda / (h_last * h_last);
+        AB[kd + (n-2)*ldab] += bc_right;     /* K[n-2,n-2] - contribution from boundary */
+        AB[0 + (n-1)*ldab] += -bc_right;     /* K[n-2,n-1] (superdiagonal) - WAS MISSING! */
+        AB[kd + (n-1)*ldab] += bc_right;     /* K[n-1,n-1] */
     }
 }
 
@@ -118,78 +196,102 @@ static void compute_derivatives(double *x, double *y_smooth, int n, double *y_de
     y_deriv[n-1] = (y_smooth[n-1] - y_smooth[n-2]) / (x[n-1] - x[n-2]);
 }
 
+/* ============================================================================
+ * FIX 1.2 & 1.3: Corrected functional computation
+ * 
+ * Changes:
+ * - Uses unified select_discretization_method() for consistency with build_band_matrix
+ * - Always computes reg_term when lambda > 0 and n >= 3 (no dead code paths)
+ * - Fixed boundary second derivative computation using proper one-sided formulas
+ * ============================================================================
+ */
 static void compute_functional(double *x, double *y, double *y_smooth, int n, double lambda,
+                              GridAnalysis *grid_info,
                               double *data_term, double *reg_term, double *total_functional)
 {
+    /* Data fidelity term: ||y - u||² */
     *data_term = 0.0;
     for (int i = 0; i < n; i++) {
         double residual = y[i] - y_smooth[i];
         *data_term += residual * residual;
     }
     
+    /* Regularization term: λ||D²u||² */
     *reg_term = 0.0;
     
     if (lambda > 0.0 && n >= 3) {
-        /* NOTE: This logic duplicates build_band_matrix logic. 
-         * Ensure these stay synchronized! */
-        double h_min = x[1] - x[0];
-        double h_max = h_min;
+        /* FIX 1.1: Use unified method selection - same as build_band_matrix */
+        DiscretizationMethod method = select_discretization_method(grid_info, x, n);
         
-        for (int i = 1; i < n; i++) {
-            double h = x[i] - x[i-1];
-            if (h < h_min) h_min = h;
-            if (h > h_max) h_max = h;
-        }
-        
-        double ratio = h_max / h_min;
-        
-        if (ratio < (1.0/CV_THRESHOLD) && CV_THRESHOLD < 0.5) { /* Approximate check to match CV logic */
-             /* Logic simplified for cleaner reading, strictly mirrors build_band_matrix recommended */
-             /* ... (Implementation skipped for brevity, assuming original logic was correct) ... */
-             /* Note: In production, consider calculating u^T * K * u where K is the stiffness matrix */
-             /* Re-using the original implementation logic here: */
-             
-            if (ratio < 2.5) { /* Fallback threshold if CV not available */
-                /* Average coefficient method approximation */
-                for (int i = 1; i < n-1; i++) {
-                    double h_left = x[i] - x[i-1];
-                    double h_right = x[i+1] - x[i];
-                    double h_harm = 2.0 * h_left * h_right / (h_left + h_right);
-                    double d2u = (y_smooth[i-1] - 2.0*y_smooth[i] + y_smooth[i+1]) / (h_harm * h_harm);
-                    *reg_term += d2u * d2u;
-                }
-                 /* Boundaries */
-                double h_start = x[1] - x[0];
-                double d2u_left = (y_smooth[1] - y_smooth[0]) / (h_start * h_start);
-                *reg_term += 0.5 * d2u_left * d2u_left;
-                
-                double h_end = x[n-1] - x[n-2];
-                double d2u_right = (y_smooth[n-1] - y_smooth[n-2]) / (h_end * h_end);
-                *reg_term += 0.5 * d2u_right * d2u_right;
-            } else {
-                /* Local spacing method */
-                for (int i = 1; i < n-1; i++) {
-                    double h_left = x[i] - x[i-1];
-                    double h_right = x[i+1] - x[i];
-                    double h_sum = h_left + h_right;
-                    
-                    double d2u = (2.0 / h_sum) * (
-                        y_smooth[i-1] / h_left - 
-                        y_smooth[i] * (1.0/h_left + 1.0/h_right) + 
-                        y_smooth[i+1] / h_right
-                    );
-                    *reg_term += d2u * d2u * h_sum / 2.0;
-                }
-                /* Boundaries */
-                double h_start = x[1] - x[0];
-                double d2u_left = (y_smooth[1] - y_smooth[0]) / (h_start * h_start);
-                *reg_term += d2u_left * d2u_left * h_start / 2.0;
-                
-                double h_end = x[n-1] - x[n-2];
-                double d2u_right = (y_smooth[n-1] - y_smooth[n-2]) / (h_end * h_end);
-                *reg_term += d2u_right * d2u_right * h_end / 2.0;
+        if (method == DISCRETIZATION_AVERAGE) {
+            /* Average coefficient method */
+            
+            /* Interior points: standard second difference with harmonic mean spacing */
+            for (int i = 1; i < n-1; i++) {
+                double h_left = x[i] - x[i-1];
+                double h_right = x[i+1] - x[i];
+                double h_harm = 2.0 * h_left * h_right / (h_left + h_right);
+                double d2u = (y_smooth[i-1] - 2.0*y_smooth[i] + y_smooth[i+1]) / (h_harm * h_harm);
+                *reg_term += d2u * d2u;
             }
+            
+            /* FIX 1.3: Boundary terms using proper one-sided second derivatives
+             * 
+             * For natural boundary conditions (u'' = 0 at boundaries), the penalty
+             * at boundaries should be based on the actual curvature near the boundary.
+             * 
+             * Left boundary: use forward second difference with first 3 points
+             * d²u/dx² ≈ (u[2] - 2*u[1] + u[0]) / h²  (for uniform h)
+             * For non-uniform: use weighted formula
+             */
+            double h0 = x[1] - x[0];
+            double h1 = x[2] - x[1];
+            
+            /* One-sided second derivative at left boundary (using points 0,1,2) */
+            double d2u_left = 2.0 * (h1*y_smooth[0] - (h0+h1)*y_smooth[1] + h0*y_smooth[2]) 
+                              / (h0 * h1 * (h0 + h1));
+            *reg_term += 0.5 * d2u_left * d2u_left;
+            
+            /* One-sided second derivative at right boundary (using points n-3, n-2, n-1) */
+            double hm1 = x[n-1] - x[n-2];
+            double hm2 = x[n-2] - x[n-3];
+            double d2u_right = 2.0 * (hm2*y_smooth[n-1] - (hm1+hm2)*y_smooth[n-2] + hm1*y_smooth[n-3])
+                               / (hm1 * hm2 * (hm1 + hm2));
+            *reg_term += 0.5 * d2u_right * d2u_right;
+            
+        } else {
+            /* Local spacing method */
+            
+            /* Interior points */
+            for (int i = 1; i < n-1; i++) {
+                double h_left = x[i] - x[i-1];
+                double h_right = x[i+1] - x[i];
+                double h_sum = h_left + h_right;
+                
+                /* Second derivative with non-uniform spacing */
+                double d2u = (2.0 / h_sum) * (
+                    y_smooth[i-1] / h_left - 
+                    y_smooth[i] * (1.0/h_left + 1.0/h_right) + 
+                    y_smooth[i+1] / h_right
+                );
+                /* Weight by local interval length for integration */
+                *reg_term += d2u * d2u * h_sum / 2.0;
+            }
+            
+            /* FIX 1.3: Boundary terms with correct one-sided second derivatives */
+            double h0 = x[1] - x[0];
+            double h1 = x[2] - x[1];
+            double d2u_left = 2.0 * (h1*y_smooth[0] - (h0+h1)*y_smooth[1] + h0*y_smooth[2])
+                              / (h0 * h1 * (h0 + h1));
+            *reg_term += d2u_left * d2u_left * h0 / 2.0;
+            
+            double hm1 = x[n-1] - x[n-2];
+            double hm2 = x[n-2] - x[n-3];
+            double d2u_right = 2.0 * (hm2*y_smooth[n-1] - (hm1+hm2)*y_smooth[n-2] + hm1*y_smooth[n-3])
+                               / (hm1 * hm2 * (hm1 + hm2));
+            *reg_term += d2u_right * d2u_right * hm1 / 2.0;
         }
+        
         *reg_term *= lambda;
     }
     
@@ -286,7 +388,9 @@ TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda,
     
     /* Post-processing */
     compute_derivatives(x, result->y_smooth, n, result->y_deriv);
-    compute_functional(x, y, result->y_smooth, n, lambda,
+    
+    /* FIX 1.1: Pass grid_info to compute_functional for consistent method selection */
+    compute_functional(x, y, result->y_smooth, n, lambda, grid_info,
                       &result->data_term, &result->regularization_term, 
                       &result->total_functional);
     
@@ -305,16 +409,16 @@ error:
 }
 
 /* Improved GCV with trace(H) penalty to avoid over-fitting */
-static double compute_gcv_score_robust(double *x, double *y, int n, double lambda, int verbose)
+static double compute_gcv_score_robust(double *x, double *y, int n, double lambda, 
+                                       GridAnalysis *grid_info, int verbose)
 {
     TikhonovResult *result;
     double rss = 0.0;
     double trace_H;
     double gcv_score;
     
-    /* No grid_info passed here, so it uses default (likely uniform assumption inside if NULL)
-     * or recalculates. The robust check below handles the warning. */
-    result = tikhonov_smooth(x, y, n, lambda, NULL);
+    /* FIX: Pass grid_info for consistent discretization */
+    result = tikhonov_smooth(x, y, n, lambda, grid_info);
     
     if (result == NULL) {
         return 1e20;
@@ -348,8 +452,7 @@ static double compute_gcv_score_robust(double *x, double *y, int n, double lambd
         }
         
         if (ratio > 2.0 && verbose) {
-            /* Only print once per major call usually, but verbose flag controls it */
-            /* printf("# WARNING: ... \n"); Commented out to reduce spam during optimization */
+            printf("# Note: Trace(H) approximation less accurate for non-uniform grid (ratio=%.2f)\n", ratio);
         }
     } else {
         /* Fast approximation for large datasets */
@@ -383,7 +486,8 @@ static double compute_gcv_score_robust(double *x, double *y, int n, double lambd
 }
 
 /* L-curve method: find corner of L-curve (RSS vs Regularization) */
-static double find_lambda_lcurve(double *x, double *y, int n, double *lambda_range, int n_lambda)
+static double find_lambda_lcurve(double *x, double *y, int n, double *lambda_range, int n_lambda,
+                                 GridAnalysis *grid_info)
 {
     /* Safe allocation with goto cleanup */
     double *rss_vals = NULL;
@@ -401,13 +505,19 @@ static double find_lambda_lcurve(double *x, double *y, int n, double *lambda_ran
     
     /* Compute L-curve points */
     for (int i = 0; i < n_lambda; i++) {
-        TikhonovResult *result = tikhonov_smooth(x, y, n, lambda_range[i], NULL);
+        /* FIX: Pass grid_info for consistent discretization */
+        TikhonovResult *result = tikhonov_smooth(x, y, n, lambda_range[i], grid_info);
         if (result) {
-            rss_vals[i] = log(result->data_term);
-            reg_vals[i] = log(result->regularization_term);
+            /* FIX: Guard against log(0) - use small epsilon */
+            double dt = (result->data_term > 1e-300) ? result->data_term : 1e-300;
+            double rt = (result->regularization_term > 1e-300) ? result->regularization_term : 1e-300;
+            rss_vals[i] = log(dt);
+            reg_vals[i] = log(rt);
             free_tikhonov_result(result);
         } else {
-            rss_vals[i] = reg_vals[i] = 0.0;
+            /* Mark invalid points */
+            rss_vals[i] = 0.0;
+            reg_vals[i] = 0.0;
         }
     }
     
@@ -416,6 +526,11 @@ static double find_lambda_lcurve(double *x, double *y, int n, double *lambda_ran
     int best_idx = n_lambda / 2;
     
     for (int i = 1; i < n_lambda - 1; i++) {
+        /* Skip invalid points */
+        if (rss_vals[i-1] == 0.0 || rss_vals[i] == 0.0 || rss_vals[i+1] == 0.0) {
+            continue;
+        }
+        
         double dx1 = rss_vals[i] - rss_vals[i-1];
         double dx2 = rss_vals[i+1] - rss_vals[i];
         double dy1 = reg_vals[i] - reg_vals[i-1];
@@ -461,7 +576,9 @@ double find_optimal_lambda_gcv(double *x, double *y, int n, GridAnalysis *grid_i
 
     printf("# GCV optimization for n=%d points\n", n);
     if (grid_info) {
-        printf("# Grid CV = %.3f\n", grid_info->cv);
+        printf("# Grid CV = %.3f, using %s method\n", 
+               grid_info->cv,
+               (grid_info->cv < CV_THRESHOLD) ? "AVERAGE" : "LOCAL");
         if (grid_info->cv > 0.2) {
             printf("# WARNING: Highly non-uniform grid detected. Trace approximation less accurate.\n");
         }
@@ -473,14 +590,14 @@ double find_optimal_lambda_gcv(double *x, double *y, int n, GridAnalysis *grid_i
         int n_lambdas = sizeof(lambdas) / sizeof(lambdas[0]);
         
         for (int i = 0; i < n_lambdas; i++) {
-            double gcv = compute_gcv_score_robust(x, y, n, lambdas[i], 1);
+            double gcv = compute_gcv_score_robust(x, y, n, lambdas[i], grid_info, 1);
             if (gcv < best_gcv) {
                 best_gcv = gcv;
                 best_lambda = lambdas[i];
             }
         }
         
-        double lambda_lcurve = find_lambda_lcurve(x, y, n, lambdas, n_lambdas);
+        double lambda_lcurve = find_lambda_lcurve(x, y, n, lambdas, n_lambdas, grid_info);
         printf("# L-curve suggests λ = %.6e\n", lambda_lcurve);
         
         if (fabs(log10(lambda_lcurve) - log10(best_lambda)) > 0.5) {
@@ -498,7 +615,7 @@ double find_optimal_lambda_gcv(double *x, double *y, int n, GridAnalysis *grid_i
             double log_lambda = log10(lambda_min) + (log10(lambda_max) - log10(lambda_min)) * i / (n_points - 1);
             double lambda_test = pow(10.0, log_lambda);
             
-            double gcv = compute_gcv_score_robust(x, y, n, lambda_test, 1);
+            double gcv = compute_gcv_score_robust(x, y, n, lambda_test, grid_info, 1);
             
             if (gcv < best_gcv) {
                 best_gcv = gcv;
@@ -514,7 +631,7 @@ double find_optimal_lambda_gcv(double *x, double *y, int n, GridAnalysis *grid_i
                 double lambda_test = best_lambda * factor;
                 
                 if (lambda_test > lambda_min && lambda_test < lambda_max) {
-                    double gcv = compute_gcv_score_robust(x, y, n, lambda_test, 1);
+                    double gcv = compute_gcv_score_robust(x, y, n, lambda_test, grid_info, 1);
                     if (gcv < best_gcv) {
                         best_gcv = gcv;
                         best_lambda = lambda_test;
