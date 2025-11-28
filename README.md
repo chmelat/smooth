@@ -1,7 +1,7 @@
 # Methods for Smoothing Experimental Data in the smooth Program
 
 **Technical Documentation**
-Version 5.5 | November 4, 2025
+Version 5.8.1 | November 28, 2025
 
 ---
 
@@ -68,6 +68,86 @@ command | smooth -m 3 -f 0.15 | gnuplot    # Pipeline
 **Note on derivatives:** From version 5.1, first derivative output is optional. Without the `-d` switch, the program outputs only smoothed values. With the `-d` switch, it outputs both smoothed values and first derivatives.
 
 **Note on grid analysis:** The `-g` flag (added in version 5.2) provides detailed grid uniformity statistics helpful for understanding your data and choosing appropriate smoothing parameters.
+
+---
+
+## What's New in Version 5.8
+
+### Comprehensive Testing Framework (v5.6 - v5.8.1)
+
+**Major Achievement: Production-Ready Testing Infrastructure**
+
+The `smooth` project now features a comprehensive unit testing framework using the **Unity testing framework**, ensuring code reliability and correctness across all major modules.
+
+**Version 5.8.1 (2025-11-28):**
+- **Savitzky-Golay module tests** - 16 comprehensive tests:
+  - 3 basic functionality tests (constant, linear, quadratic functions)
+  - 9 edge case tests (boundary conditions, invalid inputs, extreme parameters)
+  - 3 noise handling tests (Gaussian noise on various polynomial signals)
+  - 1 grid uniformity test (validates rejection of non-uniform grids)
+- **Numerical stability improvements** in polyfit module
+- **Bug fixes** in tikhonov module
+- **Makefile enhancements** for better build system
+
+**Version 5.7.1 (2025-11-23):**
+- **Polynomial fitting module tests** - 18 comprehensive tests:
+  - 3 basic functionality tests
+  - 11 edge case tests
+  - 4 noise handling tests
+  - 3 non-uniform grid tests
+- Small bug fixes in polyfit module
+
+**Version 5.6 (Earlier):**
+- **Grid analysis module tests** - 7 comprehensive tests:
+  - Basic functionality tests
+  - Edge case tests
+  - Performance tests
+- First implementation of Unity testing framework
+
+**Test Coverage Summary:**
+```
+Total: 41+ unit tests across 3 modules
+
+grid_analysis.c: 7 tests
+  ✓ Perfectly uniform grids
+  ✓ Non-uniform grids
+  ✓ Edge cases (minimum points, null pointers)
+  ✓ Large datasets (1M+ points)
+  ✓ Grid with outliers
+
+polyfit.c: 18 tests
+  ✓ Basic functionality (constant, linear, quadratic)
+  ✓ Edge cases (boundary conditions, invalid parameters)
+  ✓ Noise reduction quality
+  ✓ Non-uniform grid handling
+
+savgol.c: 16 tests
+  ✓ Basic functionality (polynomial reproduction)
+  ✓ Edge cases (window size, polynomial degree limits)
+  ✓ Noise handling (Gaussian noise filtering)
+  ✓ Grid uniformity enforcement (rejection of CV > 0.05)
+```
+
+**Testing Best Practices Implemented:**
+- AAA pattern (Arrange-Act-Assert) for all tests
+- Comprehensive edge case coverage
+- Memory leak testing with Valgrind integration
+- Numerical tolerance handling for floating-point comparisons
+- Automatic test runner with clear reporting
+
+**Running Tests:**
+```bash
+make test           # Run all unit tests
+make test-valgrind  # Run tests with memory leak detection
+make test-clean     # Clean test artifacts
+```
+
+**Benefits:**
+- **Code confidence:** Every commit is validated against 41+ test cases
+- **Regression prevention:** Tests catch breaking changes immediately
+- **Documentation:** Tests serve as executable specifications
+- **Refactoring safety:** Can improve code structure with confidence
+- **Bug detection:** Found and fixed multiple edge case bugs during test development
 
 ---
 
@@ -1535,9 +1615,14 @@ CV ≥ 0.15:  Uses local spacing method (more accurate for non-uniform grids)
 
 ### Requirements
 
+**Runtime:**
 - C compiler (gcc, clang)
 - LAPACK and BLAS libraries
-- Make (optional)
+- Make (optional, but recommended)
+
+**Development/Testing:**
+- Unity testing framework (included in `tests/` directory)
+- Valgrind (optional, for memory leak detection)
 
 ### Compilation using Make
 
@@ -1548,14 +1633,26 @@ make
 # Debug build
 make debug
 
-# Clean
+# Run unit tests (v5.6+)
+make test
+
+# Run tests with Valgrind (memory leak detection)
+make test-valgrind
+
+# Clean build artifacts
 make clean
+
+# Clean test artifacts
+make test-clean
 
 # Install to user's home directory
 make install-user
 
 # Install to system (requires root)
 make install
+
+# Show all available targets
+make help
 ```
 
 ### Manual Compilation
@@ -1579,55 +1676,72 @@ smooth/
 ├── savgol.c/h         # Savitzky-Golay module (v5.3: with uniformity check)
 ├── tikhonov.c/h       # Tikhonov module (v5.4: hybrid implementation)
 ├── butterworth.c/h    # Butterworth filter module (v5.5: new)
-├── grid_analysis.c/h  # Grid analysis
-├── decomment.c/h      # Comment removal
+├── grid_analysis.c/h  # Grid analysis module
+├── decomment.c/h      # Comment removal utility
 ├── revision.h         # Program version
-├── Makefile           # Build system
-└── README.md          # This documentation
+├── Makefile           # Build system with test targets
+├── README.md          # This documentation
+└── tests/             # Unit testing framework (v5.6+: Unity tests)
+    ├── unity.c/h                # Unity testing framework
+    ├── unity_internals.h        # Unity internals
+    ├── test_main.c              # Test runner (41+ tests)
+    ├── test_grid_analysis.c     # Grid analysis tests (7 tests)
+    ├── test_polyfit.c           # Polyfit module tests (18 tests)
+    └── test_savgol.c            # Savgol module tests (16 tests)
 ```
 
 ---
 
 ## Conclusion
 
-The `smooth` program v5.5 provides four complementary smoothing methods in a modular architecture with advanced input data analysis:
+The `smooth` program v5.8.1 provides four complementary smoothing methods in a modular architecture with advanced input data analysis and comprehensive testing:
 
 - **POLYFIT** - local polynomial approximation using least squares method
 - **SAVGOL** - optimal linear filter with pre-computed coefficients (uniform grids only)
 - **TIKHONOV** - global variational method with hybrid automatic discretization
-- **BUTTERWORTH** - digital low-pass filter with zero-phase filtfilt (NEW in v5.5)
+- **BUTTERWORTH** - digital low-pass filter with zero-phase filtfilt
 - **GRID_ANALYSIS** - automatic analysis and method recommendation
 
-### Version 5.5 Highlights
+### Version 5.8.1 Highlights
 
-**New Additions:**
-- **Performance optimization** - centralized grid analysis performed once at startup
-  - Eliminates 2-4 redundant grid analyses per run
-  - Results efficiently shared across all smoothing methods
-  - Consistent warnings displayed before method selection
-  - Cleaner architecture with better separation of concerns
-- **Unix filter support** - program can now read from stdin and work in pipe chains
-  - Seamless integration with Unix tools (cat, grep, awk, etc.)
-  - Standard input/output redirection support
-  - Backward compatible with file-based usage
-- **Butterworth low-pass filter (4th-order)** - classical DSP frequency filter with filtfilt for zero-phase smoothing
-  - Removes high-frequency noise while preserving low-frequency trends
-  - Simple cutoff frequency parameter fc controls smoothing strength
-  - Complex number implementation for precise pole calculation
-  - Scipy-compatible algorithm (follows scipy.signal.butter)
-  - Maximally flat frequency response in passband
-  - Robust initial conditions via lfilter_zi algorithm using LAPACK dgesv
-  - Correct companion matrix implementation ensures accuracy
-  - Frequency-domain control with normalized cutoff parameter
+**Major Achievement: Production-Ready Code Quality**
 
-### Previous Version 5.4 Improvements
+The `smooth` project has evolved from a functional scientific tool to a **production-ready, thoroughly tested** codebase with 41+ unit tests ensuring reliability and correctness.
 
-1. **Tikhonov hybrid implementation** - automatic selection between average coefficient (ratio < 2.5) and local spacing (ratio ≥ 2.5) methods
-2. **Harmonic mean** - more accurate interval averaging for nearly-uniform grids
-3. **Fixed boundary conditions** - corrected missing superdiagonal element
-4. **Enhanced GCV** - over-fitting penalty and L-curve backup for large datasets
-5. **Better diagnostics** - functional balance reporting, λ selection guidance
-6. **Grid analysis with `-g`** - detailed uniformity statistics for parameter optimization
+**New in v5.8.1 (2025-11-28):**
+- **Comprehensive unit testing** - 41+ tests across 3 critical modules (grid_analysis, polyfit, savgol)
+- **Unity testing framework** - industry-standard testing with AAA pattern, edge case coverage, and memory leak detection
+- **Numerical stability improvements** - enhanced polyfit module for better numerical accuracy
+- **Bug fixes** - resolved issues in tikhonov module discovered during testing
+- **Enhanced build system** - Makefile with dedicated test targets (test, test-valgrind, test-clean)
+- **Test coverage:**
+  - grid_analysis: 7 tests (uniform/non-uniform grids, edge cases, large datasets)
+  - polyfit: 18 tests (functionality, edge cases, noise handling, non-uniform grids)
+  - savgol: 16 tests (functionality, edge cases, noise handling, grid uniformity)
+
+**Reliability Benefits:**
+- Every commit validated against 41+ test cases
+- Regression prevention through automated testing
+- Memory leak detection via Valgrind integration
+- Edge case coverage for robust production use
+- Executable documentation through tests
+
+### Previous Major Version Highlights
+
+**Version 5.5 Improvements:**
+- Performance optimization with centralized grid analysis
+- Unix filter support for pipe chains
+- Butterworth low-pass filter (4th-order) with filtfilt
+- Scipy-compatible algorithms
+- Zero-phase filtering capability
+
+**Version 5.4 Improvements:**
+1. Tikhonov hybrid implementation - automatic discretization selection
+2. Harmonic mean for accurate interval averaging
+3. Fixed boundary conditions in tikhonov module
+4. Enhanced GCV with over-fitting penalty
+5. Better diagnostics and functional balance reporting
+6. Grid analysis with `-g` flag for detailed statistics
 
 ### When to Use Each Method
 
@@ -1663,6 +1777,7 @@ Each method has a strong mathematical foundation and is optimized for specific d
 
 ### Best Practices
 
+**For Users:**
 1. **Always check grid first:** Use `-g` flag to understand your data
 2. **Start with automatic:** Use `-l auto` for Tikhonov, let GCV find optimal λ
 3. **Check functional balance:** Look for 30-70% split between data and regularization terms
@@ -1670,9 +1785,16 @@ Each method has a strong mathematical foundation and is optimized for specific d
 5. **Use derivatives wisely:** Add `-d` only when needed - cleaner output without it
 6. **Understand the trade-off:** More smoothing (larger λ) = more noise reduction but less detail
 
+**For Developers:**
+7. **Run tests before committing:** Always run `make test` to verify no regressions
+8. **Check for memory leaks:** Use `make test-valgrind` to ensure clean memory management
+9. **Write tests for new features:** Follow AAA pattern (Arrange-Act-Assert) used in existing tests
+10. **Maintain test coverage:** Add edge cases and ensure numerical tolerances are appropriate
+
 ---
 
-**Document revision:** 2025-11-08
-**Program version:** smooth v5.5
+**Document revision:** 2025-11-28
+**Program version:** smooth v5.8.1
 **Dependencies:** LAPACK, BLAS
+**Testing framework:** Unity (included in tests/)
 **License:** See source files
