@@ -420,7 +420,7 @@ static void help(void)
     "-g\tShow detailed grid uniformity analysis",
     "\nMethods:",
     "  polyfit     - Local polynomial fitting (least squares)",
-    "  savgol      - Savitzky-Golay filter for better derivatives",
+    "  savgol      - Savitzky-Golay filter for better performance at uniform grids",
     "  tikhonov    - Global smoothing with regularization (correct for non-uniform grids)",
     "  butterworth - Digital Butterworth low-pass filter with filtfilt (zero-phase)",
     "\nExamples:",
