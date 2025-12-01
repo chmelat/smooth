@@ -75,6 +75,43 @@ void test_savgol_quadratic_with_noise(void);
 // Testy pro savgol.c - Grid uniformity
 void test_savgol_rejects_nonuniform_grid(void);
 
+// Testy pro tikhonov.c - Mathematical correctness
+void test_tikhonov_constant_function(void);
+void test_tikhonov_linear_function(void);
+void test_tikhonov_quadratic_function(void);
+void test_tikhonov_sine_function(void);
+void test_tikhonov_with_noise_constant(void);
+void test_tikhonov_with_noise_linear(void);
+void test_tikhonov_lambda_effect(void);
+
+// Testy pro tikhonov.c - Discretization methods
+void test_tikhonov_uniform_grid_average_method(void);
+void test_tikhonov_nonuniform_grid_local_method(void);
+void test_tikhonov_discretization_threshold_cv015(void);
+void test_tikhonov_grid_info_null_fallback(void);
+
+// Testy pro tikhonov.c - GCV optimization
+void test_gcv_optimal_lambda_constant_with_noise(void);
+void test_gcv_optimal_lambda_quadratic_with_noise(void);
+void test_gcv_trace_penalty_overfitting(void);
+
+// Testy pro tikhonov.c - Edge cases
+void test_tikhonov_minimum_points_n3(void);
+void test_tikhonov_minimum_points_n2(void);
+void test_tikhonov_lambda_zero(void);
+void test_tikhonov_lambda_very_large(void);
+void test_tikhonov_invalid_inputs(void);
+void test_tikhonov_large_dataset(void);
+
+// Testy pro tikhonov.c - Functional diagnostics
+void test_tikhonov_functional_computation_consistency(void);
+void test_tikhonov_functional_discretization_consistency(void);
+void test_tikhonov_boundary_conditions_natural(void);
+
+// Testy pro tikhonov.c - Memory management
+void test_tikhonov_memory_allocation_success(void);
+void test_tikhonov_memory_error_handling(void);
+
 /* ============================================================================
  * MAIN FUNKCE - SPOUŠTÍ VŠECHNY TESTY
  * ============================================================================
@@ -194,17 +231,47 @@ int main(void) {
     printf("\n--- Grid uniformity tests for savgol module ---\n");
     RUN_TEST(test_savgol_rejects_nonuniform_grid);
 
-    /* V budoucnu můžeme přidat další test suity:
-     *
-     * printf("\n--- Savitzky-Golay tests ---\n");
-     * RUN_TEST(test_savgol_constant);
-     * RUN_TEST(test_savgol_linear);
-     * ...
-     *
-     * printf("\n--- Tikhonov tests ---\n");
-     * RUN_TEST(test_tikhonov_lambda_zero);
-     * ...
-     */
+    printf("\n");
+    printf("========================================\n");
+    printf("Running tests for tikhonov module\n");
+    printf("========================================\n\n");
+
+    printf("--- Mathematical correctness tests ---\n");
+    RUN_TEST(test_tikhonov_constant_function);
+    RUN_TEST(test_tikhonov_linear_function);
+    RUN_TEST(test_tikhonov_quadratic_function);
+    RUN_TEST(test_tikhonov_sine_function);
+    RUN_TEST(test_tikhonov_with_noise_constant);
+    RUN_TEST(test_tikhonov_with_noise_linear);
+    RUN_TEST(test_tikhonov_lambda_effect);
+
+    printf("\n--- Discretization method tests ---\n");
+    RUN_TEST(test_tikhonov_uniform_grid_average_method);
+    RUN_TEST(test_tikhonov_nonuniform_grid_local_method);
+    RUN_TEST(test_tikhonov_discretization_threshold_cv015);
+    RUN_TEST(test_tikhonov_grid_info_null_fallback);
+
+    printf("\n--- GCV optimization tests ---\n");
+    RUN_TEST(test_gcv_optimal_lambda_constant_with_noise);
+    RUN_TEST(test_gcv_optimal_lambda_quadratic_with_noise);
+    RUN_TEST(test_gcv_trace_penalty_overfitting);
+
+    printf("\n--- Edge case tests ---\n");
+    RUN_TEST(test_tikhonov_minimum_points_n3);
+    RUN_TEST(test_tikhonov_minimum_points_n2);
+    RUN_TEST(test_tikhonov_lambda_zero);
+    RUN_TEST(test_tikhonov_lambda_very_large);
+    RUN_TEST(test_tikhonov_invalid_inputs);
+    RUN_TEST(test_tikhonov_large_dataset);
+
+    printf("\n--- Functional diagnostics tests ---\n");
+    RUN_TEST(test_tikhonov_functional_computation_consistency);
+    RUN_TEST(test_tikhonov_functional_discretization_consistency);
+    RUN_TEST(test_tikhonov_boundary_conditions_natural);
+
+    printf("\n--- Memory management tests ---\n");
+    RUN_TEST(test_tikhonov_memory_allocation_success);
+    RUN_TEST(test_tikhonov_memory_error_handling);
 
     /* UNITY_END() ukončí Unity framework a vrátí výsledek
      * Návratová hodnota:

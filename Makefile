@@ -16,9 +16,9 @@ HEAD = decomment.h revision.h tikhonov.h polyfit.h savgol.h butterworth.h grid_a
 
 # Test files
 TEST_DIR = tests
-TEST_SRC = $(TEST_DIR)/test_main.c $(TEST_DIR)/test_grid_analysis.c $(TEST_DIR)/test_polyfit.c $(TEST_DIR)/test_savgol.c $(TEST_DIR)/unity.c
+TEST_SRC = $(TEST_DIR)/test_main.c $(TEST_DIR)/test_grid_analysis.c $(TEST_DIR)/test_polyfit.c $(TEST_DIR)/test_savgol.c $(TEST_DIR)/test_tikhonov.c $(TEST_DIR)/unity.c
 TEST_OBJ = $(TEST_SRC:.c=.o)
-TEST_MODULES = grid_analysis.o polyfit.o savgol.o # Modules being tested (without main program)
+TEST_MODULES = grid_analysis.o polyfit.o savgol.o tikhonov.o # Modules being tested (without main program)
 TEST_RUNNER = $(TEST_DIR)/test_runner
 
 # C compiler and flags
@@ -48,7 +48,7 @@ LIBPATH = -L$(LIBDIR)
 LIB = -llapack -lblas $(MEMCHECK) -lm
 
 # PHONY targets (not corresponding to files)
-.PHONY: all build debug memcheck install install-user uninstall uninstall-user clean dist check help test test-clean test-valgrind
+.PHONY: all build debug memcheck install install-user uninstall uninstall-user clean dist check help test test-valgrind
 
 # Default target
 all: build
@@ -92,10 +92,11 @@ uninstall-user:
 	rm -f $(BINDIR)/$(PROGRAM)
 	@echo "User uninstallation complete"
 
-# Clean generated files
+# Clean generated files (including test artifacts)
 clean:
 	@echo "Cleaning up..."
 	rm -f *.o *.d $(PROGRAM)
+	rm -f $(TEST_DIR)/*.o $(TEST_DIR)/*.d $(TEST_RUNNER)
 	@echo "Clean complete"
 
 # ============================================================================
@@ -132,13 +133,6 @@ $(TEST_DIR)/%.o: $(TEST_DIR)/%.c
 test-valgrind: $(TEST_RUNNER)
 	@echo "Running tests with Valgrind..."
 	valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes ./$(TEST_RUNNER)
-
-# Clean test files
-# Vyčistí testovací objekty a binary
-test-clean:
-	@echo "Cleaning test files..."
-	rm -f $(TEST_DIR)/*.o $(TEST_DIR)/*.d $(TEST_RUNNER)
-	@echo "Test clean complete"
 
 # ============================================================================
 

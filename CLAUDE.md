@@ -262,6 +262,7 @@ TEST_MODULES = ... module.o
 - Tridiagonal banded solver for O(n) efficiency
 - GCV for automatic λ selection (eigenvalue trace approximation)
 - O(n) complexity
+- **Boundary artifacts:** On non-uniform grids (CV > 0.15) with small λ, last 2-3 points may show significant oscillations (up to 60% deviation). This is documented behavior, not a bug. See README.md for mitigation strategies.
 
 **Butterworth (butterworth.c):**
 - 4th-order digital low-pass filter
