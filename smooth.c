@@ -63,6 +63,7 @@ int main(int argc, char **argv)
   int auto_cutoff = 0;
   int show_derivative = 0;
   int show_grid_analysis = 0;
+  int y_column = 2;  /* Default: second column (1=first, 2=second, etc.) */
 
   progname = basename(argv[0]);
 
@@ -72,7 +73,7 @@ int main(int argc, char **argv)
   }
 
 /* Options command line */
-  while ( (ch = getopt(argc, argv, "n:p:m:l:f:dgh?")) != -1 ) {
+  while ( (ch = getopt(argc, argv, "n:p:m:l:f:k:dgh?")) != -1 ) {
     switch (ch) {
       case 'n':
         sp = atoi(optarg);
@@ -129,6 +130,13 @@ int main(int argc, char **argv)
           }
         }
         break;
+      case 'k':
+        y_column = atoi(optarg);
+        if (y_column < 1) {
+          fprintf(stderr, "Column number must be >= 1!\n");
+          exit(EXIT_FAILURE);
+        }
+        break;
       case 'd':
         show_derivative = 1;
         break;
@@ -175,35 +183,89 @@ int main(int argc, char **argv)
 
 /* Read data table from file */
   {
-    double rx, ry;
-    while (fscanf(fp,"%lf %lf",&rx,&ry) != EOF) {
+    char line[4096];
+    int line_number = 0;
+
+    while (fgets(line, sizeof(line), fp) != NULL) {
+      line_number++;
+
+      /* Parse all columns from the line */
+      double values[100];  /* Support up to 100 columns */
+      int col_count = 0;
+      char *ptr = line;
+      char *endptr;
+
+      /* Skip leading whitespace */
+      while (*ptr == ' ' || *ptr == '\t') ptr++;
+
+      /* Skip empty lines */
+      if (*ptr == '\n' || *ptr == '\0') continue;
+
+      /* Parse all numeric values on the line */
+      while (*ptr != '\n' && *ptr != '\0' && col_count < 100) {
+        errno = 0;
+        values[col_count] = strtod(ptr, &endptr);
+
+        /* Check if parsing was successful */
+        if (ptr == endptr || errno != 0) {
+          break;  /* Not a number, stop parsing this line */
+        }
+
+        col_count++;
+        ptr = endptr;
+
+        /* Skip whitespace between columns */
+        while (*ptr == ' ' || *ptr == '\t') ptr++;
+      }
+
+      /* Check if we have enough columns */
+      if (col_count < 1) {
+        /* No valid numbers found, skip this line */
+        continue;
+      }
+
+      if (col_count < y_column) {
+        fprintf(stderr, "Error: Line %d has only %d column(s), but column %d was requested for y-data\n",
+                line_number, col_count, y_column);
+        free(x);
+        free(y);
+        if (fp != stdin) fclose(fp);
+        exit(EXIT_FAILURE);
+      }
+
+      /* Reallocate arrays if needed */
       if (n == abuf) {
         abuf += BUF;
-        
+
         /* Safe realloc for x */
         double *temp_x = (double *)realloc(x, abuf*sizeof(double));
         if (temp_x == NULL) {
           free(x);
           free(y);
           fprintf(stderr,"No memory for data table!\n");
+          if (fp != stdin) fclose(fp);
           exit(EXIT_FAILURE);
         }
         x = temp_x;
-        
+
         /* Safe realloc for y */
         double *temp_y = (double *)realloc(y, abuf*sizeof(double));
         if (temp_y == NULL) {
           free(x);
           free(y);
           fprintf(stderr,"No memory for data table!\n");
+          if (fp != stdin) fclose(fp);
           exit(EXIT_FAILURE);
         }
         y = temp_y;
       }
-      x[n] = rx;
-      y[n] = ry; 
+
+      /* Store x from first column and y from specified column */
+      x[n] = values[0];           /* Always first column for x */
+      y[n] = values[y_column - 1]; /* User specifies 1-indexed, array is 0-indexed */
       n++;
     }
+
     if (fp != stdin) {
       fclose(fp);
     }
@@ -416,6 +478,8 @@ static void help(void)
     "\tRange: 0 < fc < 1, where fc = f_cutoff / f_Nyquist",
     "\t(fc = 1 corresponds to Nyquist frequency = f_sample/2)",
     "\tUse '-f auto' for automatic cutoff selection",
+    "-k\tColumn number for y-data (default 2), x-data always from column 1",
+    "\tColumns are numbered starting from 1",
     "-d\tShow first derivative in output (not available for Butterworth)",
     "-g\tShow detailed grid uniformity analysis",
     "\nMethods:",
@@ -430,6 +494,7 @@ static void help(void)
     "  smooth -m 2 -l auto -d data.txt       # Tikhonov with auto lambda and derivatives",
     "  smooth -m 3 -f 0.1 data.txt           # Butterworth with fc=0.1",
     "  smooth -m 3 -f auto data.txt          # Butterworth with auto cutoff",
+    "  smooth -k 3 -m 2 -l auto data.txt     # Use 3rd column for y-data",
     "  smooth -g data.txt                    # Detailed grid analysis",
     "  cat data.txt | smooth -m 1 -n 5       # Use as Unix filter (stdin -> stdout)",
     "  smooth -m 2 -l 0.01 < input.txt       # Read from stdin with redirection",

@@ -47,9 +47,6 @@ make test-valgrind
 # Clean build artifacts
 make clean
 
-# Clean test artifacts
-make test-clean
-
 # Install to user's ~/bin
 make install-user
 
@@ -367,7 +364,6 @@ void free_method_result(MethodResult *result) {
 
 **Suggested improvements:**
 - Automatic cutoff frequency selection for Butterworth (currently returns fixed 0.1)
-- More unit tests: savgol, tikhonov, butterworth modules
 - Integration tests (full pipeline)
 - Performance benchmarks framework
 - Coverage reporting (gcov/lcov)
