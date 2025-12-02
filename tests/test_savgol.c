@@ -6,6 +6,8 @@
 #include "unity.h"           // Unity testing framework
 #include "../savgol.h"       // Modul který testujeme
 #include "../grid_analysis.h" // Pro analýzu mřížky
+#include "grid_helpers.h"    // Helper functions for grid creation
+#include "test_helpers.h"    // Helper functions for statistics and signal processing
 #include <math.h>            // Pro fabs() - absolutní hodnota
 #include <stdlib.h>          // Pro malloc(), free(), rand(), srand()
 #include <time.h>            // Pro time() - seed pro rand()
@@ -283,8 +285,8 @@ void test_savgol_edge_case_large_n(void) {
   TEST_ASSERT_NOT_NULL(x);
   TEST_ASSERT_NOT_NULL(y);
 
+  create_uniform_grid(x, N_LARGE, 0.0, 0.01);
   for (int i = 0; i < N_LARGE; i++) {
-    x[i] = i * 0.01;
     y[i] = 5.0 + 3.0 * x[i];  // Lineární funkce
   }
 
@@ -549,18 +551,14 @@ void test_savgol_constant_with_noise(void) {
   double y_noisy[N_NOISE];
 
   // Konstantní funkce y = 5.0
+  create_uniform_grid(x, N_NOISE, 0.0, 0.1);
   for (int i = 0; i < N_NOISE; i++) {
-    x[i] = i * 0.1;
     y[i] = 5.0;
   }
 
   // Přidej šum
-  srand(12345);  // Fixní seed
   double noise_amplitude = 0.3;
-  for (int i = 0; i < N_NOISE; i++) {
-    double noise = noise_amplitude * ((double)rand() / RAND_MAX * 2.0 - 1.0);
-    y_noisy[i] = y[i] + noise;
-  }
+  add_noise(y, y_noisy, N_NOISE, noise_amplitude, 12345);
 
   int W = 11;
   int P = 0;
@@ -612,18 +610,14 @@ void test_savgol_linear_with_noise(void) {
   double y_noisy[N_NOISE];
 
   // Lineární funkce y = 2.0 + 0.5*x
+  create_uniform_grid(x, N_NOISE, 0.0, 0.1);
   for (int i = 0; i < N_NOISE; i++) {
-    x[i] = i * 0.1;
     y[i] = 2.0 + 0.5 * x[i];
   }
 
   // Přidej šum
-  srand(23456);
   double noise_amplitude = 0.4;
-  for (int i = 0; i < N_NOISE; i++) {
-    double noise = noise_amplitude * ((double)rand() / RAND_MAX * 2.0 - 1.0);
-    y_noisy[i] = y[i] + noise;
-  }
+  add_noise(y, y_noisy, N_NOISE, noise_amplitude, 23456);
 
   int W = 11;
   int P = 1;
@@ -676,19 +670,15 @@ void test_savgol_quadratic_with_noise(void) {
   double dy[N_NOISE];
 
   // Kvadratická funkce y = 1.0 + 0.2*x + 0.3*x²
+  create_uniform_grid(x, N_NOISE, 0.0, 0.1);
   for (int i = 0; i < N_NOISE; i++) {
-    x[i] = i * 0.1;
     y[i] = 1.0 + 0.2 * x[i] + 0.3 * x[i] * x[i];
     dy[i] = 0.2 + 0.6 * x[i];
   }
 
   // Přidej šum
-  srand(34567);
   double noise_amplitude = 0.5;
-  for (int i = 0; i < N_NOISE; i++) {
-    double noise = noise_amplitude * ((double)rand() / RAND_MAX * 2.0 - 1.0);
-    y_noisy[i] = y[i] + noise;
-  }
+  add_noise(y, y_noisy, N_NOISE, noise_amplitude, 34567);
 
   int W = 13;
   int P = 2;
@@ -740,15 +730,7 @@ void test_savgol_rejects_nonuniform_grid(void) {
   double y[N_NONUNIF];
 
   // Vytvoř neuniformní mřížku s výraznou variabilitou
-  x[0] = 0.0;
-  for (int i = 1; i < N_NONUNIF; i++) {
-    // Střídání hustých a řídkých oblastí
-    if (i % 2 == 0) {
-      x[i] = x[i-1] + 0.05;  // Husté
-    } else {
-      x[i] = x[i-1] + 0.15;  // Řídké
-    }
-  }
+  create_alternating_grid(x, N_NONUNIF, 0.0, 0.05, 0.15);
 
   // Konstantní y hodnoty
   for (int i = 0; i < N_NONUNIF; i++) {

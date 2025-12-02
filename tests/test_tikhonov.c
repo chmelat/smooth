@@ -6,6 +6,8 @@
 #include "unity.h"
 #include "../tikhonov.h"
 #include "../grid_analysis.h"
+#include "grid_helpers.h"
+#include "test_helpers.h"
 #include <math.h>
 #include <stdlib.h>
 #include <time.h>
@@ -29,48 +31,11 @@
  * ============================================================================
  */
 
-/* Vytvoří uniformní grid */
-static void create_uniform_grid(double *x, int n, double spacing) {
-    for (int i = 0; i < n; i++) {
-        x[i] = i * spacing;
-    }
-}
-
-/* Vytvoří neuniformní grid pomocí sin² funkce */
-static void create_nonuniform_grid(double *x, int n) {
-    x[0] = 0.0;
-    for (int i = 1; i < n; i++) {
-        double sin_i = sin((double)i);
-        x[i] = x[i-1] + 0.1 * sin_i * sin_i + 0.05;  // Variabilní spacing
-    }
-}
-
-/* Vypočítá standard deviation */
-static double compute_std_dev(double *data, int n) {
-    double mean = 0.0;
-    for (int i = 0; i < n; i++) {
-        mean += data[i];
-    }
-    mean /= n;
-
-    double variance = 0.0;
-    for (int i = 0; i < n; i++) {
-        double diff = data[i] - mean;
-        variance += diff * diff;
-    }
-    variance /= n;
-
-    return sqrt(variance);
-}
-
-/* Přidá Gaussovský šum (uniformní aproximace) */
-static void add_noise(double *y, double *y_noisy, int n, double amplitude, unsigned int seed) {
-    srand(seed);
-    for (int i = 0; i < n; i++) {
-        double noise = amplitude * ((double)rand() / RAND_MAX * 2.0 - 1.0);
-        y_noisy[i] = y[i] + noise;
-    }
-}
+/* Note: Helper functions are now provided by grid_helpers.h and test_helpers.h:
+ * Grid creation: create_uniform_grid(), create_sin_squared_grid(), etc.
+ * Statistics: calculate_mean(), calculate_std(), calculate_variance(), etc.
+ * Signal processing: add_noise()
+ */
 
 /* ============================================================================
  * A. MATHEMATICAL CORRECTNESS TESTS
@@ -84,7 +49,7 @@ void test_tikhonov_constant_function(void) {
     double x[N], y[N];
     const double constant = 5.0;
 
-    create_uniform_grid(x, N, 0.1);
+    create_uniform_grid(x, N, 0.0, 0.1);
     for (int i = 0; i < N; i++) {
         y[i] = constant;
     }
@@ -127,7 +92,7 @@ void test_tikhonov_linear_function(void) {
     const double a = 2.0;
     const double b = 0.5;
 
-    create_uniform_grid(x, N, 0.1);
+    create_uniform_grid(x, N, 0.0, 0.1);
     for (int i = 0; i < N; i++) {
         y[i] = a + b * x[i];
     }
@@ -167,7 +132,7 @@ void test_tikhonov_quadratic_function(void) {
     const double b = 0.2;
     const double c = 0.3;
 
-    create_uniform_grid(x, N, 0.1);
+    create_uniform_grid(x, N, 0.0, 0.1);
     for (int i = 0; i < N; i++) {
         y[i] = a + b * x[i] + c * x[i] * x[i];
     }
@@ -205,7 +170,7 @@ void test_tikhonov_sine_function(void) {
     #define N 100
     double x[N], y[N];
 
-    create_uniform_grid(x, N, 0.1);
+    create_uniform_grid(x, N, 0.0, 0.1);
     for (int i = 0; i < N; i++) {
         y[i] = sin(x[i]);
     }
@@ -257,7 +222,7 @@ void test_tikhonov_with_noise_constant(void) {
     const double constant = 10.0;
     const double noise_amplitude = 1.0;
 
-    create_uniform_grid(x, N, 0.05);
+    create_uniform_grid(x, N, 0.0, 0.05);
     for (int i = 0; i < N; i++) {
         y[i] = constant;
     }
@@ -306,7 +271,7 @@ void test_tikhonov_with_noise_linear(void) {
     const double b = 0.5;
     const double noise_amplitude = 0.5;
 
-    create_uniform_grid(x, N, 0.1);
+    create_uniform_grid(x, N, 0.0, 0.1);
     for (int i = 0; i < N; i++) {
         y[i] = a + b * x[i];
     }
@@ -328,8 +293,8 @@ void test_tikhonov_with_noise_linear(void) {
         residuals_smooth[i] = result->y_smooth[i] - y[i];
     }
 
-    double std_noisy = compute_std_dev(residuals_noisy, N);
-    double std_smooth = compute_std_dev(residuals_smooth, N);
+    double std_noisy = calculate_std(residuals_noisy, N);
+    double std_smooth = calculate_std(residuals_smooth, N);
 
     /* Vyhlazení by mělo snížit std deviation */
     TEST_ASSERT_LESS_THAN_DOUBLE(std_noisy / 2.0, std_smooth);
@@ -354,7 +319,7 @@ void test_tikhonov_lambda_effect(void) {
     #define N 50
     double x[N], y[N], y_noisy[N];
 
-    create_uniform_grid(x, N, 0.1);
+    create_uniform_grid(x, N, 0.0, 0.1);
     for (int i = 0; i < N; i++) {
         y[i] = 1.0 + 0.5 * x[i] * x[i];
     }
@@ -408,7 +373,7 @@ void test_tikhonov_uniform_grid_average_method(void) {
     double x[N], y[N];
 
     /* Perfektně uniformní grid (CV < 0.01) */
-    create_uniform_grid(x, N, 0.1);
+    create_uniform_grid(x, N, 0.0, 0.1);
 
     /* Parabola */
     for (int i = 0; i < N; i++) {
@@ -462,13 +427,7 @@ void test_tikhonov_nonuniform_grid_local_method(void) {
     double x[N], y[N];
 
     /* Vytvořit neuniformní grid s CV > 0.15 */
-    x[0] = 0.0;
-    for (int i = 1; i < N; i++) {
-        /* Variabilní spacing pro dosažení CV > 0.15 */
-        double base_spacing = 0.1;
-        double variation = 0.025 * sin(i * 0.4);  /* Větší variace ±0.025 */
-        x[i] = x[i-1] + base_spacing + variation;
-    }
+    create_sinusoidal_grid(x, N, 0.0, 0.1, 0.025, 0.4);
 
     /* Gaussian: y = 10 * exp(-(x-5)²/8) */
     /* Tato funkce přirozeně splňuje y''(0) ≈ 0, y''(10) ≈ 0 */
@@ -582,7 +541,7 @@ void test_tikhonov_grid_info_null_fallback(void) {
     #define N 50
     double x[N], y[N];
 
-    create_uniform_grid(x, N, 0.1);
+    create_uniform_grid(x, N, 0.0, 0.1);
     for (int i = 0; i < N; i++) {
         y[i] = 5.0 + 0.2 * x[i];
     }
@@ -617,7 +576,7 @@ void test_gcv_optimal_lambda_constant_with_noise(void) {
     double x[N], y[N], y_noisy[N];
     const double constant = 7.5;
 
-    create_uniform_grid(x, N, 0.05);
+    create_uniform_grid(x, N, 0.0, 0.05);
     for (int i = 0; i < N; i++) {
         y[i] = constant;
     }
@@ -657,7 +616,7 @@ void test_gcv_optimal_lambda_quadratic_with_noise(void) {
     #define N 80
     double x[N], y[N], y_noisy[N];
 
-    create_uniform_grid(x, N, 0.1);
+    create_uniform_grid(x, N, 0.0, 0.1);
     for (int i = 0; i < N; i++) {
         y[i] = 1.0 + 0.5 * x[i] + 0.2 * x[i] * x[i];
     }
@@ -694,7 +653,7 @@ void test_gcv_trace_penalty_overfitting(void) {
     #define N 20  // Malý dataset
     double x[N], y[N], y_noisy[N];
 
-    create_uniform_grid(x, N, 0.2);
+    create_uniform_grid(x, N, 0.0, 0.2);
     for (int i = 0; i < N; i++) {
         y[i] = 5.0;
     }
@@ -777,7 +736,7 @@ void test_tikhonov_lambda_zero(void) {
     #define N 30
     double x[N], y[N], y_noisy[N];
 
-    create_uniform_grid(x, N, 0.1);
+    create_uniform_grid(x, N, 0.0, 0.1);
     for (int i = 0; i < N; i++) {
         y[i] = 5.0 + 0.3 * x[i];
     }
@@ -814,7 +773,7 @@ void test_tikhonov_lambda_very_large(void) {
     #define N 50
     double x[N], y[N];
 
-    create_uniform_grid(x, N, 0.1);
+    create_uniform_grid(x, N, 0.0, 0.1);
     for (int i = 0; i < N; i++) {
         y[i] = 1.0 + 0.5 * x[i] + 0.3 * x[i] * x[i];  // Parabola
     }
@@ -892,7 +851,7 @@ void test_tikhonov_large_dataset(void) {
     TEST_ASSERT_NOT_NULL(x);
     TEST_ASSERT_NOT_NULL(y);
 
-    create_uniform_grid(x, N, 0.01);
+    create_uniform_grid(x, N, 0.0, 0.01);
     for (int i = 0; i < N; i++) {
         y[i] = 3.0 + 0.1 * x[i];
     }
@@ -931,7 +890,7 @@ void test_tikhonov_functional_computation_consistency(void) {
     #define N 50
     double x[N], y[N];
 
-    create_uniform_grid(x, N, 0.1);
+    create_uniform_grid(x, N, 0.0, 0.1);
     for (int i = 0; i < N; i++) {
         y[i] = 2.0 + 0.3 * x[i] * x[i];
     }
@@ -972,7 +931,7 @@ void test_tikhonov_functional_discretization_consistency(void) {
     double x_uniform[N], x_nonuniform[N], y[N];
 
     /* Uniformní grid */
-    create_uniform_grid(x_uniform, N, 0.1);
+    create_uniform_grid(x_uniform, N, 0.0, 0.1);
 
     /* Mírně neuniformní grid (ne příliš extrémní) */
     x_nonuniform[0] = 0.0;
@@ -1032,7 +991,7 @@ void test_tikhonov_boundary_conditions_natural(void) {
     #define N 50
     double x[N], y[N];
 
-    create_uniform_grid(x, N, 0.1);
+    create_uniform_grid(x, N, 0.0, 0.1);
 
     /* Parabola y = x² */
     for (int i = 0; i < N; i++) {
@@ -1087,7 +1046,7 @@ void test_tikhonov_memory_allocation_success(void) {
     #define N 30
     double x[N], y[N];
 
-    create_uniform_grid(x, N, 0.1);
+    create_uniform_grid(x, N, 0.0, 0.1);
     for (int i = 0; i < N; i++) {
         y[i] = 3.0;
     }

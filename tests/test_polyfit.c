@@ -5,6 +5,8 @@
 
 #include "unity.h"           // Unity testing framework
 #include "../polyfit.h" // Modul který testujeme
+#include "grid_helpers.h"    // Helper functions for grid creation
+#include "test_helpers.h"    // Helper functions for statistics and signal processing
 #include <math.h>            // Pro fabs() - absolutní hodnota
 #include <stdlib.h>          // Pro malloc(), free(), rand(), srand()
 #include <time.h>            // Pro time() - seed pro rand()
@@ -312,8 +314,8 @@ void test_polyfit_edge_case_large_n(void) {
   TEST_ASSERT_NOT_NULL(x);
   TEST_ASSERT_NOT_NULL(y);
 
+  create_uniform_grid(x, N_LARGE, 0.0, 0.01);
   for (int i = 0; i < N_LARGE; i++) {
-    x[i] = i * 0.01;
     y[i] = 5.0 + 3.0 * x[i];  // Lineární funkce
   }
 
@@ -582,18 +584,14 @@ void test_polyfit_constant_with_noise(void) {
   double y_noisy[N_NOISE];
 
   // Konstantní funkce y = 5.0
+  create_uniform_grid(x, N_NOISE, 0.0, 0.1);
   for (int i = 0; i < N_NOISE; i++) {
-    x[i] = i * 0.1;
     y[i] = 5.0;
   }
 
-  // Přidej šum (použij pseudonáhodná čísla)
-  srand(12345);  // Fixní seed pro reprodukovatelnost testů
+  // Přidej šum
   double noise_amplitude = 0.3;
-  for (int i = 0; i < N_NOISE; i++) {
-    double noise = noise_amplitude * ((double)rand() / RAND_MAX * 2.0 - 1.0);  // -1.0 až 1.0
-    y_noisy[i] = y[i] + noise;
-  }
+  add_noise(y, y_noisy, N_NOISE, noise_amplitude, 12345);
 
   int W = 11;  // Větší okno pro lepší vyhlazení
   int P = 0;   // Konstantní polynom
@@ -644,18 +642,14 @@ void test_polyfit_linear_with_noise(void) {
   double y_noisy[N_NOISE];
 
   // Lineární funkce y = 2.0 + 0.5*x
+  create_uniform_grid(x, N_NOISE, 0.0, 0.1);
   for (int i = 0; i < N_NOISE; i++) {
-    x[i] = i * 0.1;
     y[i] = 2.0 + 0.5 * x[i];
   }
 
-  // Přidej šum (použij pseudonáhodná čísla)
-  srand(23456);  // Fixní seed pro reprodukovatelnost testů
+  // Přidej šum
   double noise_amplitude = 0.4;
-  for (int i = 0; i < N_NOISE; i++) {
-    double noise = noise_amplitude * ((double)rand() / RAND_MAX * 2.0 - 1.0);  // -1.0 až 1.0
-    y_noisy[i] = y[i] + noise;
-  }
+  add_noise(y, y_noisy, N_NOISE, noise_amplitude, 23456);
 
   int W = 11;  // Větší okno pro lepší vyhlazení
   int P = 1;   // Lineární polynom
@@ -723,19 +717,15 @@ void test_polyfit_quadratic_with_noise(void) {
 
   // Kvadratická funkce y = 1.0 + 0.2*x + 0.3*x²
   // dy/dx = 0.2 + 0.6*x
+  create_uniform_grid(x, N_NOISE, 0.0, 0.1);
   for (int i = 0; i < N_NOISE; i++) {
-    x[i] = i * 0.1;
     y[i] = 1.0 + 0.2 * x[i] + 0.3 * x[i] * x[i];
     dy[i] = 0.2 + 0.6 * x[i];
   }
 
-  // Přidej šum (použij pseudonáhodná čísla)
-  srand(34567);  // Fixní seed pro reprodukovatelnost testů
+  // Přidej šum
   double noise_amplitude = 0.5;
-  for (int i = 0; i < N_NOISE; i++) {
-    double noise = noise_amplitude * ((double)rand() / RAND_MAX * 2.0 - 1.0);  // -1.0 až 1.0
-    y_noisy[i] = y[i] + noise;
-  }
+  add_noise(y, y_noisy, N_NOISE, noise_amplitude, 34567);
 
   int W = 13;  // Větší okno pro lepší vyhlazení
   int P = 2;   // Kvadratický polynom
@@ -790,18 +780,14 @@ void test_polyfit_noise_reduction_quality(void) {
   double y_noisy[N_NOISE];
 
   // Konstantní funkce y = 10.0
+  create_uniform_grid(x, N_NOISE, 0.0, 0.05);
   for (int i = 0; i < N_NOISE; i++) {
-    x[i] = i * 0.05;
     y[i] = 10.0;
   }
 
-  // Přidej větší šum (použij pseudonáhodná čísla)
-  srand(45678);  // Fixní seed pro reprodukovatelnost testů
+  // Přidej větší šum
   double noise_amplitude = 1.0;
-  for (int i = 0; i < N_NOISE; i++) {
-    double noise = noise_amplitude * ((double)rand() / RAND_MAX * 2.0 - 1.0);  // -1.0 až 1.0
-    y_noisy[i] = y[i] + noise;
-  }
+  add_noise(y, y_noisy, N_NOISE, noise_amplitude, 45678);
 
   int W = 15;  // Velké okno pro silné vyhlazení
   int P = 0;   // Konstantní polynom
@@ -867,11 +853,7 @@ void test_polyfit_nonuniform_grid_constant(void) {
   double y[N_NONUNIF];
 
   /* Vytvoř neuniformní mřížku pomocí sin²(i) */
-  x[0] = 0.0;
-  for (int i = 1; i < N_NONUNIF; i++) {
-    double sin_i = sin((double)i);
-    x[i] = x[i-1] + 0.1 * sin_i * sin_i;  // d_i ∈ [0, 0.1]
-  }
+  create_sin_squared_grid(x, N_NONUNIF, 0.0, 0.1, 0.0);
 
   /* Konstantní funkce y = 7.5 */
   for (int i = 0; i < N_NONUNIF; i++) {
@@ -919,11 +901,7 @@ void test_polyfit_nonuniform_grid_linear(void) {
   double y[N_NONUNIF];
 
   /* Vytvoř neuniformní mřížku pomocí sin²(i) */
-  x[0] = 0.0;
-  for (int i = 1; i < N_NONUNIF; i++) {
-    double sin_i = sin((double)i);
-    x[i] = x[i-1] + 0.1 * sin_i * sin_i;
-  }
+  create_sin_squared_grid(x, N_NONUNIF, 0.0, 0.1, 0.0);
 
   /* Lineární funkce y = 2.0 + 0.3*x */
   for (int i = 0; i < N_NONUNIF; i++) {
@@ -978,11 +956,7 @@ void test_polyfit_nonuniform_grid_quadratic(void) {
   double dy[N_NONUNIF];
 
   /* Vytvoř neuniformní mřížku pomocí sin²(i) */
-  x[0] = 0.0;
-  for (int i = 1; i < N_NONUNIF; i++) {
-    double sin_i = sin((double)i);
-    x[i] = x[i-1] + 0.1 * sin_i * sin_i;
-  }
+  create_sin_squared_grid(x, N_NONUNIF, 0.0, 0.1, 0.0);
 
   /* Kvadratická funkce y = 1.0 + 0.5*x + 0.2*x²
    * Derivace dy/dx = 0.5 + 0.4*x */

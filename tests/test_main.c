@@ -112,6 +112,37 @@ void test_tikhonov_boundary_conditions_natural(void);
 void test_tikhonov_memory_allocation_success(void);
 void test_tikhonov_memory_error_handling(void);
 
+// Testy pro butterworth.c - Basic functionality
+void test_butterworth_returns_valid_result(void);
+void test_butterworth_smooths_noisy_signal(void);
+void test_butterworth_preserves_constant_signal(void);
+void test_butterworth_preserves_linear_trend(void);
+
+// Testy pro butterworth.c - Cutoff frequency
+void test_butterworth_higher_cutoff_less_smoothing(void);
+void test_butterworth_invalid_cutoff_frequency(void);
+
+// Testy pro butterworth.c - Zero-phase filtering
+void test_butterworth_zero_phase_no_delay(void);
+
+// Testy pro butterworth.c - Edge behavior
+void test_butterworth_edge_points_no_excessive_oscillation(void);
+
+// Testy pro butterworth.c - Grid uniformity
+void test_butterworth_works_on_uniform_grid(void);
+void test_butterworth_works_on_nearly_uniform_grid(void);
+void test_butterworth_handles_moderately_nonuniform_grid(void);
+
+// Testy pro butterworth.c - Edge cases and robustness
+void test_butterworth_minimum_points(void);
+void test_butterworth_too_few_points(void);
+void test_butterworth_null_inputs(void);
+void test_butterworth_large_dataset(void);
+
+// Testy pro butterworth.c - Memory management
+void test_butterworth_free_null_safe(void);
+void test_butterworth_no_memory_leaks(void);
+
 /* ============================================================================
  * MAIN FUNKCE - SPOUŠTÍ VŠECHNY TESTY
  * ============================================================================
@@ -272,6 +303,42 @@ int main(void) {
     printf("\n--- Memory management tests ---\n");
     RUN_TEST(test_tikhonov_memory_allocation_success);
     RUN_TEST(test_tikhonov_memory_error_handling);
+
+    printf("\n");
+    printf("========================================\n");
+    printf("Running tests for butterworth module\n");
+    printf("========================================\n\n");
+
+    printf("--- Basic functionality tests ---\n");
+    RUN_TEST(test_butterworth_returns_valid_result);
+    RUN_TEST(test_butterworth_smooths_noisy_signal);
+    RUN_TEST(test_butterworth_preserves_constant_signal);
+    RUN_TEST(test_butterworth_preserves_linear_trend);
+
+    printf("\n--- Cutoff frequency tests ---\n");
+    RUN_TEST(test_butterworth_higher_cutoff_less_smoothing);
+    RUN_TEST(test_butterworth_invalid_cutoff_frequency);
+
+    printf("\n--- Zero-phase filtering tests ---\n");
+    RUN_TEST(test_butterworth_zero_phase_no_delay);
+
+    printf("\n--- Edge behavior tests ---\n");
+    RUN_TEST(test_butterworth_edge_points_no_excessive_oscillation);
+
+    printf("\n--- Grid uniformity tests ---\n");
+    RUN_TEST(test_butterworth_works_on_uniform_grid);
+    RUN_TEST(test_butterworth_works_on_nearly_uniform_grid);
+    RUN_TEST(test_butterworth_handles_moderately_nonuniform_grid);
+
+    printf("\n--- Edge cases and robustness tests ---\n");
+    RUN_TEST(test_butterworth_minimum_points);
+    RUN_TEST(test_butterworth_too_few_points);
+    RUN_TEST(test_butterworth_null_inputs);
+    RUN_TEST(test_butterworth_large_dataset);
+
+    printf("\n--- Memory management tests ---\n");
+    RUN_TEST(test_butterworth_free_null_safe);
+    RUN_TEST(test_butterworth_no_memory_leaks);
 
     /* UNITY_END() ukončí Unity framework a vrátí výsledek
      * Návratová hodnota:
