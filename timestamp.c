@@ -20,38 +20,37 @@ int parse_timestamp(const char *str, double *epoch_seconds)
     double subseconds = 0.0;
     int year, month, day, hour, min, sec;
     char separator;
+    int pos = 0;
 
-    /* Try parsing with subseconds first */
-    int matched = sscanf(str, "%d-%d-%d%c%d:%d:%d.%lf",
+    /* Parse date and time without subseconds */
+    int matched = sscanf(str, "%d-%d-%d%c%d:%d:%d%n",
                         &year, &month, &day, &separator,
-                        &hour, &min, &sec, &subseconds);
+                        &hour, &min, &sec, &pos);
 
-    if (matched >= 7) {
-        /* Got at least date and time, subseconds optional */
-        if (matched == 7) {
-            subseconds = 0.0;  /* No subseconds provided */
-        } else {
-            /* Subseconds parsed as decimal part (e.g., 390 instead of 0.390) */
-            /* Count digits to normalize */
-            const char *dot_pos = strchr(str, '.');
-            if (dot_pos) {
-                int digits = 0;
-                dot_pos++;
-                while (*dot_pos >= '0' && *dot_pos <= '9') {
-                    digits++;
-                    dot_pos++;
-                }
-                /* Convert to fractional seconds (e.g., 390 with 3 digits -> 0.390) */
-                subseconds /= pow(10.0, digits);
-            }
-        }
-
-        /* Validate separator (must be space or 'T') */
-        if (separator != ' ' && separator != 'T') {
-            return -1;
-        }
-    } else {
+    if (matched != 7) {
         return -1;  /* Parse failed */
+    }
+
+    /* Validate separator (must be space or 'T') */
+    if (separator != ' ' && separator != 'T') {
+        return -1;
+    }
+
+    /* Parse optional subseconds if present */
+    if (str[pos] == '.') {
+        const char *frac_start = &str[pos + 1];
+        int digits = 0;
+        long frac_value = 0;
+
+        /* Parse fractional digits manually */
+        while (frac_start[digits] >= '0' && frac_start[digits] <= '9') {
+            frac_value = frac_value * 10 + (frac_start[digits] - '0');
+            digits++;
+        }
+
+        if (digits > 0 && digits <= 9) {
+            subseconds = frac_value / pow(10.0, digits);
+        }
     }
 
     /* Validate ranges */
