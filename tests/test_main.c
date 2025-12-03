@@ -143,6 +143,23 @@ void test_butterworth_large_dataset(void);
 void test_butterworth_free_null_safe(void);
 void test_butterworth_no_memory_leaks(void);
 
+// Testy pro timestamp.c
+void test_parse_timestamp_space_separator(void);
+void test_parse_timestamp_T_separator(void);
+void test_parse_timestamp_no_subseconds(void);
+void test_parse_timestamp_subsecond_precision(void);
+void test_parse_timestamp_invalid_separator(void);
+void test_parse_timestamp_invalid_date(void);
+void test_parse_timestamp_null_inputs(void);
+void test_parse_timestamp_malformed(void);
+void test_convert_timestamps_basic(void);
+void test_convert_timestamps_with_errors(void);
+void test_convert_timestamps_all_invalid(void);
+void test_convert_timestamps_preserves_format(void);
+void test_convert_timestamps_null_inputs(void);
+void test_free_timestamp_context_null(void);
+void test_convert_timestamps_subsecond_accuracy(void);
+
 /* ============================================================================
  * MAIN FUNKCE - SPOUŠTÍ VŠECHNY TESTY
  * ============================================================================
@@ -339,6 +356,34 @@ int main(void) {
     printf("\n--- Memory management tests ---\n");
     RUN_TEST(test_butterworth_free_null_safe);
     RUN_TEST(test_butterworth_no_memory_leaks);
+
+    printf("\n");
+    printf("========================================\n");
+    printf("Running tests for timestamp module\n");
+    printf("========================================\n\n");
+
+    printf("--- Timestamp parsing tests ---\n");
+    RUN_TEST(test_parse_timestamp_space_separator);
+    RUN_TEST(test_parse_timestamp_T_separator);
+    RUN_TEST(test_parse_timestamp_no_subseconds);
+    RUN_TEST(test_parse_timestamp_subsecond_precision);
+
+    printf("\n--- Parsing error handling tests ---\n");
+    RUN_TEST(test_parse_timestamp_invalid_separator);
+    RUN_TEST(test_parse_timestamp_invalid_date);
+    RUN_TEST(test_parse_timestamp_null_inputs);
+    RUN_TEST(test_parse_timestamp_malformed);
+
+    printf("\n--- Timestamp conversion tests ---\n");
+    RUN_TEST(test_convert_timestamps_basic);
+    RUN_TEST(test_convert_timestamps_with_errors);
+    RUN_TEST(test_convert_timestamps_all_invalid);
+    RUN_TEST(test_convert_timestamps_preserves_format);
+    RUN_TEST(test_convert_timestamps_subsecond_accuracy);
+
+    printf("\n--- Edge cases and robustness tests ---\n");
+    RUN_TEST(test_convert_timestamps_null_inputs);
+    RUN_TEST(test_free_timestamp_context_null);
 
     /* UNITY_END() ukončí Unity framework a vrátí výsledek
      * Návratová hodnota:

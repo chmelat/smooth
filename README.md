@@ -1,7 +1,7 @@
 # Methods for Smoothing Experimental Data in the smooth Program
 
 **Technical Documentation**
-Version 5.8.1 | November 28, 2025
+Version 5.9.1 | December 2, 2025
 
 ---
 
@@ -60,6 +60,7 @@ command | smooth -m 3 -f 0.15 | gnuplot    # Pipeline
 - `-l auto` - automatic λ selection using GCV (tikhonov)
 - `-f fc` - normalized cutoff frequency (butterworth, 0 < fc < 0.5)
 - `-f auto` - automatic cutoff selection (butterworth, currently returns 0.1)
+- `-T` - timestamp mode: first column is RFC3339-style timestamp, second is y-value
 - `-d` - display first derivative in output (optional, not available for butterworth)
 - `-g` - show detailed grid uniformity analysis (optional)
 
@@ -68,6 +69,48 @@ command | smooth -m 3 -f 0.15 | gnuplot    # Pipeline
 **Note on derivatives:** From version 5.1, first derivative output is optional. Without the `-d` switch, the program outputs only smoothed values. With the `-d` switch, it outputs both smoothed values and first derivatives.
 
 **Note on grid analysis:** The `-g` flag (added in version 5.2) provides detailed grid uniformity statistics helpful for understanding your data and choosing appropriate smoothing parameters.
+
+**Note on timestamp mode:** The `-T` flag (added in version 5.9) enables smoothing of time-series data with RFC3339-style timestamps. Timestamps are converted to relative time in seconds for smoothing computations, but the original timestamp format is preserved in output. When combined with `-d`, derivatives are output as dy/dt where t is in seconds.
+
+---
+
+## What's New in Version 5.9
+
+### Timestamp Mode Support (v5.9.0)
+
+**New Feature: Time-Series Data Smoothing**
+
+The `smooth` program now supports direct processing of time-series data with RFC3339-style timestamps using the new `-T` flag.
+
+**Key Features:**
+- **Flexible timestamp formats:**
+  - `YYYY-MM-DD HH:MM:SS[.fff]` (space separator)
+  - `YYYY-MM-DDTHH:MM:SS[.fff]` (RFC3339 with T separator)
+  - Subsecond precision (milliseconds) supported
+- **Automatic conversion:** Timestamps converted to relative time in seconds for smoothing
+- **Format preservation:** Original timestamp format preserved exactly in output
+- **Derivative support:** With `-d` flag, derivatives output as dy/dt (t in seconds)
+- **Robust error handling:**
+  - Warning on first invalid timestamp with line number
+  - Silent skip of subsequent invalid timestamps
+  - Summary of skipped lines if errors encountered
+
+**Example Usage:**
+```bash
+# Input format: timestamp y-value
+# 2025-09-25 14:06:06.390  0.02128
+# 2025-09-25 14:06:06.391  0.02110
+
+smooth -T -m 2 -l auto data.dat              # Tikhonov with auto lambda
+smooth -T -m 1 -n 5 -p 2 -d timeseries.txt   # Savitzky-Golay with derivatives
+smooth -T -m 0 -n 7 -p 3 sensor_data.csv     # Polyfit smoothing
+```
+
+**Implementation Details:**
+- New `timestamp.c` module with comprehensive unit tests (15 tests)
+- Parser supports both space and T separators automatically
+- Timestamps converted to Unix epoch internally for high precision
+- All four smoothing methods work seamlessly with timestamp data
 
 ---
 
@@ -1434,6 +1477,38 @@ cat data.txt | ./smooth -m 0 -n 7 -p 2
 ./smooth -g data.txt
 ```
 
+### Timestamp Mode Examples
+
+```bash
+# Tikhonov smoothing with automatic lambda selection
+./smooth -T -m 2 -l auto timeseries.dat
+
+# Tikhonov with derivatives (dy/dt in seconds)
+./smooth -T -m 2 -l 0.01 -d timeseries.dat
+
+# Savitzky-Golay filter (requires nearly uniform time spacing)
+./smooth -T -m 1 -n 5 -p 2 sensor_data.txt
+
+# Polyfit with derivatives
+./smooth -T -m 0 -n 7 -p 3 -d measurements.csv
+
+# Butterworth filter (no derivatives available)
+./smooth -T -m 3 -f 0.15 signal.dat
+```
+
+**Input format for timestamp mode:**
+```
+# Space separator format
+2025-09-25 14:06:06.390  0.02128
+2025-09-25 14:06:06.391  0.02110
+2025-09-25 14:06:06.763  0.02230
+
+# T separator format (RFC3339)
+2025-09-25T14:06:06.390  0.02128
+2025-09-25T14:06:06.391  0.02110
+2025-09-25T14:06:06.763  0.02230
+```
+
 ### Output Format
 
 **Without `-d` flag:**
@@ -1457,6 +1532,21 @@ cat data.txt | ./smooth -m 0 -n 7 -p 2
   1.00000E+00  2.71828E+00  2.71828E+00
   ...
 ```
+
+**Timestamp mode output (with `-T` flag):**
+```
+# Data smooth - Tikhonov regularization with lambda = 1e-02
+# Functional J = 1.07e-03 (Data: 8.33e-04 + Regularization: 2.39e-04)
+# Data/Total ratio = 0.777, Regularization/Total ratio = 0.223
+# Derivative units: dy/dt (t in seconds)
+#    timestamp          y          y'
+2025-09-25 14:06:06.390 0.000816394 -0.00204621
+2025-09-25 14:06:06.391 0.000814348  0.0542818
+2025-09-25 14:06:06.763  0.0210635  0.0284901
+  ...
+```
+
+**Note:** In timestamp mode, the original timestamp format from input is preserved exactly in output.
 
 **With `-g` flag (grid analysis):**
 ```

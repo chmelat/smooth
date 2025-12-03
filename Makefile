@@ -10,15 +10,15 @@ VERSION=$(shell grep '^#define VERSION' revision.h | sed 's/.*"\(.*\)".*/\1/')
 PREFIX = /usr/local
 
 # Files
-SRC = smooth.c decomment.c tikhonov.c polyfit.c savgol.c butterworth.c grid_analysis.c
+SRC = smooth.c decomment.c tikhonov.c polyfit.c savgol.c butterworth.c grid_analysis.c timestamp.c
 OBJ = $(SRC:.c=.o)
-HEAD = decomment.h revision.h tikhonov.h polyfit.h savgol.h butterworth.h grid_analysis.h
+HEAD = decomment.h revision.h tikhonov.h polyfit.h savgol.h butterworth.h grid_analysis.h timestamp.h
 
 # Test files
 TEST_DIR = tests
-TEST_SRC = $(TEST_DIR)/test_main.c $(TEST_DIR)/test_grid_analysis.c $(TEST_DIR)/test_polyfit.c $(TEST_DIR)/test_savgol.c $(TEST_DIR)/test_tikhonov.c $(TEST_DIR)/test_butterworth.c $(TEST_DIR)/test_helpers.c $(TEST_DIR)/grid_helpers.c $(TEST_DIR)/unity.c
+TEST_SRC = $(TEST_DIR)/test_main.c $(TEST_DIR)/test_grid_analysis.c $(TEST_DIR)/test_polyfit.c $(TEST_DIR)/test_savgol.c $(TEST_DIR)/test_tikhonov.c $(TEST_DIR)/test_butterworth.c $(TEST_DIR)/test_timestamp.c $(TEST_DIR)/test_helpers.c $(TEST_DIR)/grid_helpers.c $(TEST_DIR)/unity.c
 TEST_OBJ = $(TEST_SRC:.c=.o)
-TEST_MODULES = grid_analysis.o polyfit.o savgol.o tikhonov.o butterworth.o # Modules being tested (without main program)
+TEST_MODULES = grid_analysis.o polyfit.o savgol.o tikhonov.o butterworth.o timestamp.o # Modules being tested (without main program)
 TEST_RUNNER = $(TEST_DIR)/test_runner
 
 # C compiler and flags

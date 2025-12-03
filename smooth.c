@@ -21,6 +21,7 @@
 #include "savgol.h"
 #include "butterworth.h"
 #include "grid_analysis.h"
+#include "timestamp.h"
 
 #define BUF 512
 #define N 5
@@ -64,6 +65,9 @@ int main(int argc, char **argv)
   int show_derivative = 0;
   int show_grid_analysis = 0;
   int y_column = 2;  /* Default: second column (1=first, 2=second, etc.) */
+  int timestamp_mode = 0;  /* Flag for timestamp input mode */
+  char **timestamp_strings = NULL;  /* Array of timestamp strings */
+  TimestampContext *ts_ctx = NULL;  /* Timestamp conversion context */
 
   progname = basename(argv[0]);
 
@@ -73,7 +77,7 @@ int main(int argc, char **argv)
   }
 
 /* Options command line */
-  while ( (ch = getopt(argc, argv, "n:p:m:l:f:k:dgh?")) != -1 ) {
+  while ( (ch = getopt(argc, argv, "n:p:m:l:f:k:dgTh?")) != -1 ) {
     switch (ch) {
       case 'n':
         sp = atoi(optarg);
@@ -143,6 +147,9 @@ int main(int argc, char **argv)
       case 'g':
         show_grid_analysis = 1;
         break;
+      case 'T':
+        timestamp_mode = 1;
+        break;
       case 'h':
         help();
         exit(EXIT_SUCCESS);
@@ -186,88 +193,225 @@ int main(int argc, char **argv)
     char line[4096];
     int line_number = 0;
 
+    /* Allocate arrays based on mode */
+    if (timestamp_mode) {
+      timestamp_strings = malloc(BUF * sizeof(char*));
+      if (!timestamp_strings) {
+        fprintf(stderr, "No memory for timestamp strings!\n");
+        exit(EXIT_FAILURE);
+      }
+      /* Allocate y array for timestamp mode */
+      y = malloc(BUF * sizeof(double));
+      if (!y) {
+        fprintf(stderr, "No memory for data table!\n");
+        free(timestamp_strings);
+        exit(EXIT_FAILURE);
+      }
+      abuf = BUF;  /* Track allocated size */
+    }
+
     while (fgets(line, sizeof(line), fp) != NULL) {
       line_number++;
 
-      /* Parse all columns from the line */
-      double values[100];  /* Support up to 100 columns */
-      int col_count = 0;
-      char *ptr = line;
-      char *endptr;
+      /* Parse based on mode */
+      if (timestamp_mode) {
+        /* Timestamp mode: format is "YYYY-MM-DD HH:MM:SS.fff value" (date and time separated by space) */
+        char date_str[20], time_str[20];
+        char timestamp_str[100];
+        double y_value;
 
-      /* Skip leading whitespace */
-      while (*ptr == ' ' || *ptr == '\t') ptr++;
-
-      /* Skip empty lines */
-      if (*ptr == '\n' || *ptr == '\0') continue;
-
-      /* Parse all numeric values on the line */
-      while (*ptr != '\n' && *ptr != '\0' && col_count < 100) {
-        errno = 0;
-        values[col_count] = strtod(ptr, &endptr);
-
-        /* Check if parsing was successful */
-        if (ptr == endptr || errno != 0) {
-          break;  /* Not a number, stop parsing this line */
-        }
-
-        col_count++;
-        ptr = endptr;
-
-        /* Skip whitespace between columns */
+        /* Skip leading whitespace */
+        char *ptr = line;
         while (*ptr == ' ' || *ptr == '\t') ptr++;
-      }
 
-      /* Check if we have enough columns */
-      if (col_count < 1) {
-        /* No valid numbers found, skip this line */
-        continue;
-      }
+        /* Skip empty lines */
+        if (*ptr == '\n' || *ptr == '\0') continue;
 
-      if (col_count < y_column) {
-        fprintf(stderr, "Error: Line %d has only %d column(s), but column %d was requested for y-data\n",
-                line_number, col_count, y_column);
-        free(x);
-        free(y);
-        if (fp != stdin) fclose(fp);
-        exit(EXIT_FAILURE);
-      }
+        /* Parse date, time, and y-value
+         * Format with space separator: "YYYY-MM-DD HH:MM:SS.fff value"
+         * Format with T separator: "YYYY-MM-DDTHH:MM:SS.fff value"
+         * sscanf will parse the timestamp correctly if it uses T, or as two tokens if it uses space */
+        int parsed = sscanf(ptr, "%19s %19s %lf", date_str, time_str, &y_value);
 
-      /* Reallocate arrays if needed */
-      if (n == abuf) {
-        abuf += BUF;
+        if (parsed == 2) {
+          /* Only got date and value - maybe format is "YYYY-MM-DDTHH:MM:SS.fff value" (T separator) */
+          y_value = atof(time_str);  /* time_str actually contains the y-value */
+          snprintf(timestamp_str, sizeof(timestamp_str), "%s", date_str);
+        } else if (parsed == 3) {
+          /* Check if time_str starts with '.' - this means T format split the subseconds */
+          if (time_str[0] == '.') {
+            /* Format was "YYYY-MM-DDTHH:MM:SS.fff" - combine date_str (which has everything up to '.') and time_str (which has '.fff') */
+            snprintf(timestamp_str, sizeof(timestamp_str), "%s%s", date_str, time_str);
+          } else {
+            /* Got date, time, and value - format is "YYYY-MM-DD HH:MM:SS.fff value" (space separator) */
+            snprintf(timestamp_str, sizeof(timestamp_str), "%s %s", date_str, time_str);
+          }
+        } else {
+          /* Could not parse - skip this line silently */
+          continue;
+        }
 
-        /* Safe realloc for x */
-        double *temp_x = (double *)realloc(x, abuf*sizeof(double));
-        if (temp_x == NULL) {
+        /* Reallocate arrays if needed */
+        if (n == abuf) {
+          abuf += BUF;
+
+          /* Realloc timestamp_strings */
+          char **temp_ts = (char**)realloc(timestamp_strings, abuf * sizeof(char*));
+          if (!temp_ts) {
+            fprintf(stderr, "No memory for timestamp strings!\n");
+            for (int i = 0; i < n; i++) free(timestamp_strings[i]);
+            free(timestamp_strings);
+            free(y);
+            exit(EXIT_FAILURE);
+          }
+          timestamp_strings = temp_ts;
+
+          /* Realloc y array */
+          double *temp_y = (double*)realloc(y, abuf * sizeof(double));
+          if (!temp_y) {
+            fprintf(stderr, "No memory for data table!\n");
+            for (int i = 0; i < n; i++) free(timestamp_strings[i]);
+            free(timestamp_strings);
+            free(y);
+            exit(EXIT_FAILURE);
+          }
+          y = temp_y;
+        }
+
+        /* Store timestamp string and y-value */
+        timestamp_strings[n] = strdup(timestamp_str);
+        if (!timestamp_strings[n]) {
+          fprintf(stderr, "No memory for timestamp string!\n");
+          for (int i = 0; i < n; i++) free(timestamp_strings[i]);
+          free(timestamp_strings);
+          free(y);
+          exit(EXIT_FAILURE);
+        }
+        y[n] = y_value;
+        n++;
+
+      } else {
+        /* Normal mode: parse numeric columns */
+        double values[100];  /* Support up to 100 columns */
+        int col_count = 0;
+        char *ptr = line;
+        char *endptr;
+
+        /* Skip leading whitespace */
+        while (*ptr == ' ' || *ptr == '\t') ptr++;
+
+        /* Skip empty lines */
+        if (*ptr == '\n' || *ptr == '\0') continue;
+
+        /* Parse all numeric values on the line */
+        while (*ptr != '\n' && *ptr != '\0' && col_count < 100) {
+          errno = 0;
+          values[col_count] = strtod(ptr, &endptr);
+
+          /* Check if parsing was successful */
+          if (ptr == endptr || errno != 0) {
+            break;  /* Not a number, stop parsing this line */
+          }
+
+          col_count++;
+          ptr = endptr;
+
+          /* Skip whitespace between columns */
+          while (*ptr == ' ' || *ptr == '\t') ptr++;
+        }
+
+        /* Check if we have enough columns */
+        if (col_count < 1) {
+          /* No valid numbers found, skip this line */
+          continue;
+        }
+
+        if (col_count < y_column) {
+          fprintf(stderr, "Error: Line %d has only %d column(s), but column %d was requested for y-data\n",
+                  line_number, col_count, y_column);
           free(x);
           free(y);
-          fprintf(stderr,"No memory for data table!\n");
           if (fp != stdin) fclose(fp);
           exit(EXIT_FAILURE);
         }
-        x = temp_x;
 
-        /* Safe realloc for y */
-        double *temp_y = (double *)realloc(y, abuf*sizeof(double));
-        if (temp_y == NULL) {
-          free(x);
-          free(y);
-          fprintf(stderr,"No memory for data table!\n");
-          if (fp != stdin) fclose(fp);
-          exit(EXIT_FAILURE);
+        /* Reallocate arrays if needed */
+        if (n == abuf) {
+          abuf += BUF;
+
+          /* Safe realloc for x */
+          double *temp_x = (double *)realloc(x, abuf*sizeof(double));
+          if (temp_x == NULL) {
+            free(x);
+            free(y);
+            fprintf(stderr,"No memory for data table!\n");
+            if (fp != stdin) fclose(fp);
+            exit(EXIT_FAILURE);
+          }
+          x = temp_x;
+
+          /* Safe realloc for y */
+          double *temp_y = (double *)realloc(y, abuf*sizeof(double));
+          if (temp_y == NULL) {
+            free(x);
+            free(y);
+            fprintf(stderr,"No memory for data table!\n");
+            if (fp != stdin) fclose(fp);
+            exit(EXIT_FAILURE);
+          }
+          y = temp_y;
         }
-        y = temp_y;
-      }
 
-      /* Store x from first column and y from specified column */
-      x[n] = values[0];           /* Always first column for x */
-      y[n] = values[y_column - 1]; /* User specifies 1-indexed, array is 0-indexed */
-      n++;
-    }
+        /* Store x from first column and y from specified column */
+        x[n] = values[0];           /* Always first column for x */
+        y[n] = values[y_column - 1]; /* User specifies 1-indexed, array is 0-indexed */
+        n++;
+      }  /* end else (normal mode) */
+    }  /* end while (fgets) */
 
     if (fp != stdin) {
       fclose(fp);
+    }
+
+    /* Convert timestamps to relative time if in timestamp mode */
+    if (timestamp_mode) {
+      if (n == 0) {
+        fprintf(stderr, "Error: No valid data points found\n");
+        for (int i = 0; i < n; i++) free(timestamp_strings[i]);
+        free(timestamp_strings);
+        free(y);
+        exit(EXIT_FAILURE);
+      }
+
+      int first_error_line = -1;
+      ts_ctx = convert_timestamps_to_relative(timestamp_strings, n, &x, &first_error_line);
+
+      if (ts_ctx == NULL) {
+        fprintf(stderr, "Error: No valid timestamps found in input\n");
+        if (first_error_line > 0) {
+          fprintf(stderr, "First invalid timestamp at line %d\n", first_error_line);
+        }
+        for (int i = 0; i < n; i++) free(timestamp_strings[i]);
+        free(timestamp_strings);
+        free(y);
+        exit(EXIT_FAILURE);
+      }
+
+      /* Print warning if some timestamps were invalid */
+      if (ts_ctx->errors_encountered > 0) {
+        fprintf(stderr, "Warning: Skipped %d line(s) with invalid timestamps (first error at line %d)\n",
+                ts_ctx->errors_encountered, first_error_line);
+      }
+
+      /* Update n to reflect actual number of valid points */
+      n = ts_ctx->n;
+
+      /* Free original timestamp_strings array (ts_ctx has its own copy) */
+      for (int i = 0; i < n + ts_ctx->errors_encountered; i++) {
+        free(timestamp_strings[i]);
+      }
+      free(timestamp_strings);
+      timestamp_strings = NULL;
     }
   }
 
@@ -322,23 +466,40 @@ int main(int argc, char **argv)
 
         /* Output header with functional information */
         printf("# Data smooth - Tikhonov regularization with lambda = %.6lG\n", lambda);
-        printf("# Functional J = %.6lG (Data: %.6lG + Regularization: %.6lG)\n", 
+        printf("# Functional J = %.6lG (Data: %.6lG + Regularization: %.6lG)\n",
                result->total_functional, result->data_term, result->regularization_term);
         printf("# Data/Total ratio = %.3f, Regularization/Total ratio = %.3f\n",
                result->data_term / result->total_functional,
                result->regularization_term / result->total_functional);
-        if (show_derivative) {
-          printf("#    x          y          y'\n");
+        if (timestamp_mode) {
+          if (show_derivative) {
+            printf("# Derivative units: dy/dt (t in seconds)\n");
+            printf("#    timestamp          y          y'\n");
+          } else {
+            printf("#    timestamp          y\n");
+          }
         } else {
-          printf("#    x          y\n");
+          if (show_derivative) {
+            printf("#    x          y          y'\n");
+          } else {
+            printf("#    x          y\n");
+          }
         }
 
         /* Output results */
         for (i = 0; i < n; i++) {
-          if (show_derivative) {
-            printf("%12.8lG %10.6lG %10.6lG\n", x[i], result->y_smooth[i], result->y_deriv[i]);
+          if (timestamp_mode) {
+            if (show_derivative) {
+              printf("%s %10.6lG %10.6lG\n", ts_ctx->original_timestamps[i], result->y_smooth[i], result->y_deriv[i]);
+            } else {
+              printf("%s %10.6lG\n", ts_ctx->original_timestamps[i], result->y_smooth[i]);
+            }
           } else {
-            printf("%12.8lG %10.6lG\n", x[i], result->y_smooth[i]);
+            if (show_derivative) {
+              printf("%12.8lG %10.6lG %10.6lG\n", x[i], result->y_smooth[i], result->y_deriv[i]);
+            } else {
+              printf("%12.8lG %10.6lG\n", x[i], result->y_smooth[i]);
+            }
           }
         }
 
@@ -359,17 +520,34 @@ int main(int argc, char **argv)
         }
         
         printf("# Data smooth - Savitzky-Golay filter, poly deg %d from %d points of moving window\n", dp, sp);
-        if (show_derivative) {
-          printf("#    x          y          y'\n");
-        } else {
-          printf("#    x          y\n");
-        }
-        
-        for (i = 0; i < n; i++) {
+        if (timestamp_mode) {
           if (show_derivative) {
-            printf("%12.8lG %10.6lG %10.6lG\n", x[i], result->y_smooth[i], result->y_deriv[i]);
+            printf("# Derivative units: dy/dt (t in seconds)\n");
+            printf("#    timestamp          y          y'\n");
           } else {
-            printf("%12.8lG %10.6lG\n", x[i], result->y_smooth[i]);
+            printf("#    timestamp          y\n");
+          }
+        } else {
+          if (show_derivative) {
+            printf("#    x          y          y'\n");
+          } else {
+            printf("#    x          y\n");
+          }
+        }
+
+        for (i = 0; i < n; i++) {
+          if (timestamp_mode) {
+            if (show_derivative) {
+              printf("%s %10.6lG %10.6lG\n", ts_ctx->original_timestamps[i], result->y_smooth[i], result->y_deriv[i]);
+            } else {
+              printf("%s %10.6lG\n", ts_ctx->original_timestamps[i], result->y_smooth[i]);
+            }
+          } else {
+            if (show_derivative) {
+              printf("%12.8lG %10.6lG %10.6lG\n", x[i], result->y_smooth[i], result->y_deriv[i]);
+            } else {
+              printf("%12.8lG %10.6lG\n", x[i], result->y_smooth[i]);
+            }
           }
         }
         
@@ -403,11 +581,19 @@ int main(int argc, char **argv)
         printf("# Actual cutoff frequency: f_cutoff = %.6lG (= fc × f_Nyquist)\n",
                result->cutoff_freq * result->sample_rate / 2.0);
         printf("# Effective order after filtfilt: %d\n", 2 * result->order);
-        printf("#    x          y\n");
+        if (timestamp_mode) {
+          printf("#    timestamp          y\n");
+        } else {
+          printf("#    x          y\n");
+        }
 
         /* Output results - Butterworth doesn't have derivatives */
         for (i = 0; i < n; i++) {
-          printf("%12.8lG %10.6lG\n", x[i], result->y_smooth[i]);
+          if (timestamp_mode) {
+            printf("%s %10.6lG\n", ts_ctx->original_timestamps[i], result->y_smooth[i]);
+          } else {
+            printf("%12.8lG %10.6lG\n", x[i], result->y_smooth[i]);
+          }
         }
 
         /* Clean up */
@@ -428,17 +614,34 @@ int main(int argc, char **argv)
         }
 
         printf("# Data smooth - aprox. pol. %ddg from %d points of moving window (least square)\n", dp, sp);
-        if (show_derivative) {
-          printf("#    x          y          y'\n");
+        if (timestamp_mode) {
+          if (show_derivative) {
+            printf("# Derivative units: dy/dt (t in seconds)\n");
+            printf("#    timestamp          y          y'\n");
+          } else {
+            printf("#    timestamp          y\n");
+          }
         } else {
-          printf("#    x          y\n");
+          if (show_derivative) {
+            printf("#    x          y          y'\n");
+          } else {
+            printf("#    x          y\n");
+          }
         }
 
         for (i = 0; i < n; i++) {
-          if (show_derivative) {
-            printf("%12.8lG %10.6lG %10.6lG\n", x[i], result->y_smooth[i], result->y_deriv[i]);
+          if (timestamp_mode) {
+            if (show_derivative) {
+              printf("%s %10.6lG %10.6lG\n", ts_ctx->original_timestamps[i], result->y_smooth[i], result->y_deriv[i]);
+            } else {
+              printf("%s %10.6lG\n", ts_ctx->original_timestamps[i], result->y_smooth[i]);
+            }
           } else {
-            printf("%12.8lG %10.6lG\n", x[i], result->y_smooth[i]);
+            if (show_derivative) {
+              printf("%12.8lG %10.6lG %10.6lG\n", x[i], result->y_smooth[i], result->y_deriv[i]);
+            } else {
+              printf("%12.8lG %10.6lG\n", x[i], result->y_smooth[i]);
+            }
           }
         }
 
@@ -451,6 +654,9 @@ int main(int argc, char **argv)
   free_grid_analysis(grid_info);
   free(x);
   free(y);
+  if (timestamp_mode && ts_ctx) {
+    free_timestamp_context(ts_ctx);
+  }
 
   return EXIT_SUCCESS;
 }
@@ -480,7 +686,11 @@ static void help(void)
     "\tUse '-f auto' for automatic cutoff selection",
     "-k\tColumn number for y-data (default 2), x-data always from column 1",
     "\tColumns are numbered starting from 1",
+    "-T\tTimestamp mode: first column is RFC3339-style timestamp, second is y-value",
+    "\tSupports formats: YYYY-MM-DD HH:MM:SS[.fff] or YYYY-MM-DDTHH:MM:SS[.fff]",
+    "\tTimestamps are converted to seconds for smoothing, original format preserved in output",
     "-d\tShow first derivative in output (not available for Butterworth)",
+    "\tWith -T flag, derivatives are in units dy/dt where t is in seconds",
     "-g\tShow detailed grid uniformity analysis",
     "\nMethods:",
     "  polyfit     - Local polynomial fitting (least squares)",
@@ -495,6 +705,8 @@ static void help(void)
     "  smooth -m 3 -f 0.1 data.txt           # Butterworth with fc=0.1",
     "  smooth -m 3 -f auto data.txt          # Butterworth with auto cutoff",
     "  smooth -k 3 -m 2 -l auto data.txt     # Use 3rd column for y-data",
+    "  smooth -T -m 2 -l auto data.txt       # Timestamp mode with Tikhonov",
+    "  smooth -T -m 1 -n 5 -p 2 -d data.txt  # Timestamps with derivatives (dy/dt in sec)",
     "  smooth -g data.txt                    # Detailed grid analysis",
     "  cat data.txt | smooth -m 1 -n 5       # Use as Unix filter (stdin -> stdout)",
     "  smooth -m 2 -l 0.01 < input.txt       # Read from stdin with redirection",
