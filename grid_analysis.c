@@ -11,7 +11,7 @@
 #include "grid_analysis.h"
 
 /* Configuration Thresholds */
-#define THRESH_CV_UNIFORM       1e-10 /* Tolerance for perfect uniformity */
+#define THRESH_CV_UNIFORM       0.01  /* Tolerance for practical uniformity */
 #define THRESH_CV_NOTICEABLE    0.2   /* CV level where non-uniformity is noted */
 #define THRESH_CV_HIGH          0.5   /* CV level suggesting adaptive methods */
 #define THRESH_CV_SEVERE        1.0   /* CV level indicating unreliable data */
@@ -120,8 +120,11 @@ GridAnalysis* analyze_grid(const double *x, int n, int store_spacings)
     analysis->ratio_max_min = analysis->h_max / analysis->h_min;
     analysis->cv = analysis->h_std / analysis->h_avg;
     
-    /* Determine uniformity */
-    analysis->is_uniform = (analysis->cv < THRESH_CV_UNIFORM) ? 1 : 0;
+    /* Determine uniformity
+     * Threshold 0.01 chosen to match practical interpretation: grids with CV <= 0.01
+     * are "practically uniform" and behave well with all methods (including Savgol)
+     */
+    analysis->is_uniform = (analysis->cv <= THRESH_CV_UNIFORM) ? 1 : 0;
     
     if (analysis->is_uniform) {
         analysis->uniformity_score = 1.0;

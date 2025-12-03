@@ -1269,7 +1269,7 @@ The filter assumes uniform sampling when computing the cutoff frequency. For hig
 
 | Grid Type | POLYFIT | SAVGOL | TIKHONOV | BUTTERWORTH |
 |-----------|---------|--------|----------|-------------|
-| Perfectly uniform (CV < 0.01) | [OK] | [OK] | [OK] | [OK] |
+| Uniform (CV <= 0.01) | [OK] | [OK] | [OK] | [OK] |
 | Nearly uniform (CV < 0.05) | [OK] | [WARNING] | [OK] | [OK] |
 | Moderately non-uniform (0.05 < CV < 0.2) | [OK] | [X] | [OK] | [WARNING] |
 | Highly non-uniform (CV > 0.2) | [WARNING] | [X] | [OK] | [WARNING] |
@@ -1731,7 +1731,7 @@ typedef struct {
 ### Grid Uniformity Thresholds
 
 ```
-CV < 0.01:   Perfectly uniform - all methods work optimally
+CV <= 0.01:  Uniform grid (is_uniform flag = 1) - all methods work optimally
              -> POLYFIT, SAVGOL, TIKHONOV all excellent
 
 CV < 0.05:   Nearly uniform - SAVGOL works with warning

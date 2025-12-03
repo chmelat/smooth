@@ -15,7 +15,7 @@ typedef struct {
     double h_std;           /* Standard deviation of spacing */
     double ratio_max_min;   /* Ratio h_max/h_min */
     double cv;              /* Coefficient of variation (std/avg) */
-    int is_uniform;         /* 1 if uniform, 0 otherwise */
+    int is_uniform;         /* 1 if CV <= 0.01 (practical uniformity), 0 otherwise */
     int reliability_warning; /* 1 if reliability concerns exist */
     char warning_msg[512];  /* Warning message buffer */
     

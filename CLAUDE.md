@@ -151,11 +151,11 @@ Grid analysis is central to method selection:
 ```
 CV = std_dev(spacing) / avg(spacing)
 
-CV < 0.01:  Perfectly uniform
+CV ≤ 0.01:  Uniform grid (is_uniform flag set to 1)
 CV < 0.05:  Nearly uniform (Savgol warns but works)
 CV < 0.15:  Moderately non-uniform (Tikhonov uses average coefficient method)
 CV ≥ 0.15:  Highly non-uniform (Tikhonov uses local spacing method)
-CV > 0.05:  Savgol REJECTS with detailed error message
+CV ≥ 0.05:  Savgol REJECTS with detailed error message
 ```
 
 **When modifying grid-dependent code:**
