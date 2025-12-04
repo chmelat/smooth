@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `smooth` is a scientific data smoothing program implementing four mathematical methods for noise reduction and derivative computation in experimental data. The codebase is ~3,600 lines of modular C code with LAPACK dependencies.
 
-**Current version:** 5.7.1 (2025-11-23)
+**Current version:** 5.9.2 (2025-12-03)
 
 ## Documentation Guidelines
 
@@ -17,17 +17,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Allowed characters:**
 - **Mathematical symbols:** All Greek letters (λ, ω, π, Σ, ε, μ, θ, etc.)
 - **Mathematical operators:** ², ³, ⁴, ₀, ₁, ₂, ∫, ∂, √, ±, ×, ≈, ≥, ≤, ·
+- **Mathematical arrows:** → (rightarrow only, use `==>` for implies/double arrows)
+- **Mathematical ellipsis:** ⋯ (centered dots), ⋮ (vertical dots), ⋱ (diagonal dots)
 - **Standard ASCII:** Letters, numbers, punctuation
 
 **Prohibited characters (use ASCII alternatives):**
 - **Box-drawing:** Use `|-`, `-`, `|`, `+-`, `=` instead of ├ ─ │ └ ━
 - **Checkmarks/warnings:** Use `[OK]`, `[X]`, `[WARNING]` instead of ✓ ✗ ⚠️
-- **Arrows:** Use `->`, `==>` instead of → ⟹
-- **Ellipsis:** Use `...` instead of ⋮ ⋱
 
-**Reason:** DejaVu fonts used for PDF generation support mathematical Unicode but have limited support for decorative box-drawing characters. This restriction ensures README.md converts cleanly to PDF while preserving all mathematical notation.
+**Reason:** DejaVu fonts used for PDF generation support mathematical Unicode (including arrows and ellipsis) but have limited support for decorative box-drawing characters. This restriction ensures README.md converts cleanly to PDF while preserving all mathematical notation.
 
-**When editing README.md:** Do not introduce box-drawing characters, special arrows, or decorative Unicode. Use ASCII art alternatives.
+**When editing README.md:** Do not introduce box-drawing characters or decorative Unicode. Mathematical arrows (→, ⟹) and ellipsis (⋯, ⋮, ⋱) are encouraged for better readability.
 
 ## Build System
 

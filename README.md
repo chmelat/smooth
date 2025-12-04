@@ -1,7 +1,7 @@
 # Methods for Smoothing Experimental Data in the smooth Program
 
 **Technical Documentation**
-Version 5.9.1 | December 2, 2025
+Version 5.9.2 | December 3, 2025
 
 ---
 
@@ -66,176 +66,11 @@ command | smooth -m 3 -f 0.15 | gnuplot    # Pipeline
 
 **Note on polynomial degree:** Degrees > 6 may generate numerical stability warnings.
 
-**Note on derivatives:** From version 5.1, first derivative output is optional. Without the `-d` switch, the program outputs only smoothed values. With the `-d` switch, it outputs both smoothed values and first derivatives.
+**Note on derivatives:** First derivative output is optional. Without the `-d` switch, the program outputs only smoothed values. With the `-d` switch, it outputs both smoothed values and first derivatives.
 
-**Note on grid analysis:** The `-g` flag (added in version 5.2) provides detailed grid uniformity statistics helpful for understanding your data and choosing appropriate smoothing parameters.
+**Note on grid analysis:** The `-g` flag provides detailed grid uniformity statistics helpful for understanding your data and choosing appropriate smoothing parameters.
 
-**Note on timestamp mode:** The `-T` flag (added in version 5.9) enables smoothing of time-series data with RFC3339-style timestamps. Timestamps are converted to relative time in seconds for smoothing computations, but the original timestamp format is preserved in output. When combined with `-d`, derivatives are output as dy/dt where t is in seconds.
-
----
-
-## What's New in Version 5.9
-
-### Timestamp Mode Support (v5.9.0)
-
-**New Feature: Time-Series Data Smoothing**
-
-The `smooth` program now supports direct processing of time-series data with RFC3339-style timestamps using the new `-T` flag.
-
-**Key Features:**
-- **Flexible timestamp formats:**
-  - `YYYY-MM-DD HH:MM:SS[.fff]` (space separator)
-  - `YYYY-MM-DDTHH:MM:SS[.fff]` (RFC3339 with T separator)
-  - Subsecond precision (milliseconds) supported
-- **Automatic conversion:** Timestamps converted to relative time in seconds for smoothing
-- **Format preservation:** Original timestamp format preserved exactly in output
-- **Derivative support:** With `-d` flag, derivatives output as dy/dt (t in seconds)
-- **Robust error handling:**
-  - Warning on first invalid timestamp with line number
-  - Silent skip of subsequent invalid timestamps
-  - Summary of skipped lines if errors encountered
-
-**Example Usage:**
-```bash
-# Input format: timestamp y-value
-# 2025-09-25 14:06:06.390  0.02128
-# 2025-09-25 14:06:06.391  0.02110
-
-smooth -T -m 2 -l auto data.dat              # Tikhonov with auto lambda
-smooth -T -m 1 -n 5 -p 2 -d timeseries.txt   # Savitzky-Golay with derivatives
-smooth -T -m 0 -n 7 -p 3 sensor_data.csv     # Polyfit smoothing
-```
-
-**Implementation Details:**
-- New `timestamp.c` module with comprehensive unit tests (15 tests)
-- Parser supports both space and T separators automatically
-- Timestamps converted to Unix epoch internally for high precision
-- All four smoothing methods work seamlessly with timestamp data
-
----
-
-## What's New in Version 5.8
-
-### Comprehensive Testing Framework (v5.6 - v5.8.1)
-
-**Major Achievement: Production-Ready Testing Infrastructure**
-
-The `smooth` project now features a comprehensive unit testing framework using the **Unity testing framework**, ensuring code reliability and correctness across all major modules.
-
-**Version 5.8.1 (2025-11-28):**
-- **Savitzky-Golay module tests** - 16 comprehensive tests:
-  - 3 basic functionality tests (constant, linear, quadratic functions)
-  - 9 edge case tests (boundary conditions, invalid inputs, extreme parameters)
-  - 3 noise handling tests (Gaussian noise on various polynomial signals)
-  - 1 grid uniformity test (validates rejection of non-uniform grids)
-- **Numerical stability improvements** in polyfit module
-- **Bug fixes** in tikhonov module
-- **Makefile enhancements** for better build system
-
-**Version 5.7.1 (2025-11-23):**
-- **Polynomial fitting module tests** - 18 comprehensive tests:
-  - 3 basic functionality tests
-  - 11 edge case tests
-  - 4 noise handling tests
-  - 3 non-uniform grid tests
-- Small bug fixes in polyfit module
-
-**Version 5.6 (Earlier):**
-- **Grid analysis module tests** - 7 comprehensive tests:
-  - Basic functionality tests
-  - Edge case tests
-  - Performance tests
-- First implementation of Unity testing framework
-
-**Test Coverage Summary:**
-```
-Total: 41+ unit tests across 3 modules
-
-grid_analysis.c: 7 tests
-  [OK] Perfectly uniform grids
-  [OK] Non-uniform grids
-  [OK] Edge cases (minimum points, null pointers)
-  [OK] Large datasets (1M+ points)
-  [OK] Grid with outliers
-
-polyfit.c: 18 tests
-  [OK] Basic functionality (constant, linear, quadratic)
-  [OK] Edge cases (boundary conditions, invalid parameters)
-  [OK] Noise reduction quality
-  [OK] Non-uniform grid handling
-
-savgol.c: 16 tests
-  [OK] Basic functionality (polynomial reproduction)
-  [OK] Edge cases (window size, polynomial degree limits)
-  [OK] Noise handling (Gaussian noise filtering)
-  [OK] Grid uniformity enforcement (rejection of CV > 0.05)
-```
-
-**Testing Best Practices Implemented:**
-- AAA pattern (Arrange-Act-Assert) for all tests
-- Comprehensive edge case coverage
-- Memory leak testing with Valgrind integration
-- Numerical tolerance handling for floating-point comparisons
-- Automatic test runner with clear reporting
-
-**Running Tests:**
-```bash
-make test           # Run all unit tests
-make test-valgrind  # Run tests with memory leak detection
-make test-clean     # Clean test artifacts
-```
-
-**Benefits:**
-- **Code confidence:** Every commit is validated against 41+ test cases
-- **Regression prevention:** Tests catch breaking changes immediately
-- **Documentation:** Tests serve as executable specifications
-- **Refactoring safety:** Can improve code structure with confidence
-- **Bug detection:** Found and fixed multiple edge case bugs during test development
-
----
-
-## What's New in Version 5.5
-
-### Major Improvements
-
-**Performance Optimization (NEW):**
-- **Centralized grid analysis:** Grid uniformity is now analyzed once at program startup
-- **Efficient parameter passing:** Analysis results are shared across all smoothing methods
-- **Consistent warnings:** Grid uniformity warnings displayed before method selection
-- **Improved architecture:** Cleaner separation between analysis and smoothing operations
-
-**Unix Filter Support (NEW):**
-- **Standard input/output:** Program now works as a Unix filter
-- **Pipe chain integration:** Can be used in pipelines with other tools
-- **Flexible input:** Reads from stdin when no file specified or `-` argument used
-- **Backward compatible:** Original file-based usage still works as before
-
-**Butterworth Digital Filter (NEW):**
-- **4th-order low-pass Butterworth filter** with filtfilt (zero-phase filtering)
-- **Low-pass frequency filter:** Removes high-frequency noise, preserves low-frequency trends
-- **Cutoff frequency control:** Simple fc parameter controls smoothing strength (lower fc = stronger smoothing)
-- **Complex number implementation:** Uses C complex.h for precise pole calculation
-- **Scipy-compatible algorithm:** Follows scipy.signal.butter design methodology
-- **Filtfilt implementation:** Forward-backward filtering eliminates phase distortion
-- **Robust initial conditions:** Implements scipy's lfilter_zi algorithm using LAPACK dgesv solver
-  - Uses companion matrix formulation for steady-state computation
-  - LAPACK dgesv with LU decomposition ensures numerical stability
-  - Handles challenging cases (very low fc with coefficients ~10⁻⁸)
-- **Edge handling:** Odd reflection padding minimizes boundary effects
-- **Frequency-domain control:** Intuitive cutoff frequency parameter (0 < fc < 0.5)
-
-### Previous Version 5.4 Improvements
-
-**Tikhonov Regularization (Hybrid Implementation):**
-- **Automatic discretization selection:** Method automatically chooses between average coefficient (ratio < 2.5) and local spacing (ratio ≥ 2.5) based on grid uniformity
-- **Harmonic mean for better accuracy:** Uses harmonic mean for interval averaging in nearly-uniform grids (more accurate than arithmetic mean)
-- **Fixed boundary conditions:** Corrected missing superdiagonal element in local spacing method
-- **Improved GCV optimization:** Enhanced with over-fitting penalty and L-curve sanity check for large datasets
-- **Better functional computation:** Mathematically correct D² discretization matching the matrix formulation
-
-**Grid Analysis:**
-- **Detailed reporting with `-g` flag:** Comprehensive grid uniformity statistics including CV, ratio, spacing details
-- **Better recommendations:** Program suggests optimal methods based on detected grid characteristics
+**Note on timestamp mode:** The `-T` flag enables smoothing of time-series data with RFC3339-style timestamps. Timestamps are converted to relative time in seconds for smoothing computations, but the original timestamp format is preserved in output. When combined with `-d`, derivatives are output as dy/dt where t is in seconds.
 
 ---
 
@@ -256,18 +91,41 @@ P(x) = a_0 + a_1(x-x_i) + a_2(x-x_i)² + ... + a_p(x-x_i)^p
 min Σ[y_j - P(x_j)]²    for j ∈ [i-n/2, i+n/2]
 ```
 
-### Construction of Normal Equations
+### Least Squares Solution via SVD
 
-For polynomial coefficients, we solve a system of linear equations:
+The polynomial coefficients are found by solving an **overdetermined linear system** using **Singular Value Decomposition (SVD)**:
 
 ```
-[Σ(x-x_i)⁰    Σ(x-x_i)¹    ...  Σ(x-x_i)^p  ] [a_0]   [Σy(x-x_i)⁰]
-[Σ(x-x_i)¹    Σ(x-x_i)²    ...  Σ(x-x_i)^{p+1}] [a_1] = [Σy(x-x_i)¹]
-[    ...            ...        ...        ...        ] [ ... ]   [    ...     ]
-[Σ(x-x_i)^p Σ(x-x_i)^{p+1} ... Σ(x-x_i)^{2p}] [a_p]   [Σy(x-x_i)^p]
+V · a = y_window
+
+where V is the Vandermonde matrix:
+
+    V[j,k] = (x_j - x_i)^k    for j = 0, …, window_size-1
+                                   k = 0, …, poly_degree
+
+         [ 1    (x_0-x_i)    (x_0-x_i)²  ...  (x_0-x_i)^p ]
+         [ 1    (x_1-x_i)    (x_1-x_i)²  ...  (x_1-x_i)^p ]
+    V =  [ 1    (x_2-x_i)    (x_2-x_i)²  ...  (x_2-x_i)^p ]
+         [ ...    ...          ...        ...      ...     ]
+         [ 1    (x_n-x_i)    (x_n-x_i)²  ...  (x_n-x_i)^p ]
+
+  a = [a_0, a_1, …, a_p]^T           (polynomial coefficients)
+  y_window = [y_{i-n/2}, …, y_{i+n/2}]^T  (data in window)
 ```
 
-where summation is over points in the window around `x_i`.
+**Why SVD instead of Normal Equations?**
+
+The implementation uses LAPACK's `dgelss` (SVD decomposition) rather than forming normal equations (V^T V)a = V^T y:
+
+1. **Numerical stability:** SVD avoids squaring the condition number (κ(V^T V) = κ(V)²)
+2. **Automatic regularization:** Singular values below rcond·σ_max are truncated
+3. **Rank detection:** Provides effective rank for diagnosing ill-conditioning
+4. **Robustness:** Handles high polynomial degrees (p > 6) more reliably
+
+**SVD truncation parameter:** rcond = 10^{-10}
+- Singular values σ_i < 10^{-10}·σ_max are treated as zero
+- Provides implicit Tikhonov-style regularization
+- Conservative threshold ensures stability without over-regularization
 
 ### Derivative Computation
 
@@ -290,14 +148,27 @@ f(x_k) = Σ_{m=0}^p a_m * (x_k - x_{n/2})^m
 
 ### Efficient Implementation
 
-The program uses LAPACK routine `dposv` for solving symmetric positive definite systems at each point:
+The program uses LAPACK routine `dgelss` for solving least squares via SVD at each point:
 
 ```c
-// System solution for polynomial coefficients
-dposv_(&uplo, &matrix_size, &nrhs, C, &matrix_size, B, &matrix_size, &info);
+// Build Vandermonde matrix
+build_vandermonde(x, i - offset, i + offset, x[i], poly_degree, V, window_size);
+
+// Solve least squares using SVD decomposition
+dgelss_(&window_size, &matrix_cols, &nrhs, V, &window_size,
+        rhs, &rhs_size, sing_vals, &rcond, &effective_rank,
+        work, &lwork, &info);
+
+// Extract solution: rhs[0] = a_0 (value), rhs[1] = a_1 (derivative)
+result->y_smooth[i] = rhs[0];
+result->y_deriv[i] = (poly_degree > 0) ? rhs[1] : 0.0;
 ```
 
-The normal equations matrix is symmetric and positive definite, making `dposv` optimal for this application.
+**Numerical diagnostics:**
+- On first window, reports condition number: κ = σ_max / σ_min
+- If κ > 10^8, issues warning about potential numerical issues
+- Reports effective rank if matrix is rank-deficient
+- Fallback to original value if SVD fails
 
 ### Modularized Implementation
 
@@ -320,12 +191,16 @@ typedef struct {
 - Adaptable to changes in curvature
 - Good preservation of local extrema
 - Works with moderately non-uniform grids
+- **Numerically stable:** SVD decomposition handles ill-conditioned systems
+- **Automatic regularization:** Implicit truncation of small singular values
+- **Diagnostic feedback:** Reports condition number and effective rank
 
 **Disadvantages:**
 - Sensitive to outliers
 - Boundary effects at edges
 - Possible Runge oscillations for high polynomial degrees (p > 6)
-- Numerical instability warnings for degrees > 6
+- Numerical instability warnings for degrees > 6 (but handled gracefully by SVD)
+- Computationally expensive: O(n·p³) due to per-point SVD
 
 ---
 
@@ -359,8 +234,6 @@ While both SAVGOL and POLYFIT use polynomial approximation, they differ fundamen
 - Computationally efficient: O(p³) once, then O(n·w) for application
 
 ### **CRITICAL: Grid Uniformity Requirement**
-
-**Version 5.3+ Important Feature:** The Savitzky-Golay method now enforces grid uniformity checking.
 
 The mathematical foundation of SG filter assumes **uniformly spaced data points**. The method is based on fitting polynomials in normalized coordinate space where points are at integer positions: {..., -2, -1, 0, 1, 2, ...}.
 
@@ -408,7 +281,7 @@ Coefficients are derived from the condition that the filter must exactly reprodu
 
 **Moment conditions:**
 ```
-Σ_{j=-n_L}^{n_R} c_j · j^m = δ_{m,d} · d!    for m = 0,1,...,p
+Σ_{j=-n_L}^{n_R} c_j · j^m = δ_{m,d} · d!    for m = 0, 1, …, p
 ```
 
 where:
@@ -420,14 +293,33 @@ This leads to a system of linear equations where the unknowns are the filter coe
 
 ### Matrix Formulation
 
-We solve a system of linear equations:
+The coefficients are found by solving a **normal equations system** (not a Vandermonde system):
 
 ```
-[1   -n_L    (-n_L)²   ...  (-n_L)^p  ] [c_{-n_L}]   [δ_{0,d}·0!]
-[1  -n_L+1  (-n_L+1)²  ... (-n_L+1)^p ] [c_{-n_L+1}] = [δ_{1,d}·1!]
-[...     ...        ...      ...       ...      ] [    ...    ]   [    ...     ]
-[1    n_R     n_R²     ...    n_R^p   ] [  c_{n_R} ]   [δ_{p,d}·p!]
+A · β = b
+
+where A is a symmetric (p+1)×(p+1) moment matrix:
+
+    A[i,j] = Σ_{k=-n_L}^{n_R} k^{i+j}    for i,j = 0, 1, …, p
+
+         [ Σk⁰  Σk¹  Σk²  ...  Σk^p   ]
+         [ Σk¹  Σk²  Σk³  ...  Σk^(p+1) ]
+    A =  [ Σk²  Σk³  Σk⁴  ...  Σk^(p+2) ]
+         [ ...  ...  ...  ...  ...     ]
+         [ Σk^p Σk^(p+1) ... Σk^(2p) ]
+
+and the right-hand side vector:
+
+    b[j] = δ_{j,d}·d!    (Kronecker delta: 1 if j=d, else 0)
 ```
+
+This results in a symmetric positive definite (p+1)×(p+1) matrix. The filter coefficients are then:
+
+```
+c_k = Σ_{j=0}^p β_j · k^j    for k = -n_L, …, n_R
+```
+
+**Note:** This formulation through normal equations is mathematically equivalent to least-squares polynomial fitting but more efficient computationally.
 
 ### Computational Efficiency
 
@@ -435,9 +327,15 @@ The brilliance of the Savitzky-Golay approach becomes apparent when processing l
 
 **Example for 10,000 data points, window size 21, polynomial degree 4:**
 - **POLYFIT:** Must solve 10,000 separate 5×5 linear systems
-- **SAVGOL:** Solves only ONE 5×5 system, then performs 10,000 simple weighted sums
+- **SAVGOL:**
+  - Solves ONE 5×5 system for central points (pre-computed coefficients)
+  - Performs 9,980 simple weighted sums (fast convolution)
+  - Solves 20 boundary systems (asymmetric windows at edges)
+  - **Net result:** ~500× faster for large datasets
 
 This difference explains why SAVGOL is preferred for real-time signal processing and large datasets, while maintaining the same mathematical accuracy as POLYFIT **for uniform grids**.
+
+**Implementation optimization:** The code pre-computes coefficients for the symmetric window once, then applies them via fast convolution to all central points. Only boundary points require per-point coefficient computation.
 
 ### Efficient Implementation
 
@@ -461,9 +359,45 @@ typedef struct {
 } SavgolResult;
 
 // Coefficient computation
-void savgol_coefficients(int nl, int nr, int poly_degree, 
+void savgol_coefficients(int nl, int nr, int poly_degree,
                         int deriv_order, double *c);
 ```
+
+### Derivative Scaling
+
+**IMPORTANT:** The derivative coefficients computed by `savgol_coefficients()` assume **unit spacing** (normalized integer coordinates). For physical derivatives on real grids, the results must be scaled:
+
+```
+dy/dx_physical = (dy/dx_normalized) / h_avg
+
+where h_avg = average grid spacing
+```
+
+The implementation automatically performs this scaling:
+```c
+result->y_deriv[i] = deriv / h_avg;  // Scale to physical units
+```
+
+This is **essential** for correct derivative values on uniform grids with spacing ≠ 1.
+
+### Boundary Handling
+
+At data boundaries where a full symmetric window cannot be used, the method employs **asymmetric windows**:
+
+**Central points (i = offset to n-offset):**
+- Use symmetric window: nl = nr = offset
+- Pre-computed coefficients applied via fast convolution
+
+**Boundary points (left and right edges):**
+- Use asymmetric windows: nl ≠ nr
+- Coefficients computed per-point for each boundary configuration
+- Ensures enough points available for polynomial degree
+- Example: leftmost point uses nl=0, nr=window_size-1
+
+**Edge cases:**
+- If insufficient points for polynomial degree, falls back to original value
+- Maintains polynomial exactness property at boundaries
+- More computationally expensive than central points (acceptable for small boundary regions)
 
 ### Optimal Properties
 
@@ -521,7 +455,7 @@ The parameter λ is the **heart of Tikhonov regularization** - it controls the b
 λ = 0:     No smoothing, u = y (exact data fit)
            J[u] = ||y - u||² only
 
-λ -> ∞:     Maximum smoothing, u -> straight line
+λ → ∞:     Maximum smoothing, u → straight line
            J[u] ≈ λ||D²u||² dominates
 
 λ optimal: Balanced between data fit and smoothness
@@ -536,9 +470,9 @@ The minimization of J[u] leads to:
 ```
 
 **Effect of λ on the solution:**
-- **Small λ (< 0.01):** Matrix ≈ I -> solution u ≈ y (minimal smoothing)
-- **Large λ (> 1.0):** Matrix ≈ λD^TD -> strong curvature penalty (heavy smoothing)
-- **Optimal λ:** Matrix components balanced -> noise removed, signal preserved
+- **Small λ (< 0.01):** Matrix ≈ I → solution u ≈ y (minimal smoothing)
+- **Large λ (> 1.0):** Matrix ≈ λD^TD → strong curvature penalty (heavy smoothing)
+- **Optimal λ:** Matrix components balanced → noise removed, signal preserved
 
 #### Frequency Domain Interpretation
 
@@ -550,14 +484,14 @@ In Fourier space, Tikhonov acts as a low-pass filter:
 where ω is spatial frequency. 
 
 **Effect:**
-- **Low frequencies (slow variations):** Ĥ ≈ 1 -> preserved
-- **High frequencies (noise, rapid variations):** Ĥ ≈ 1/(λω⁴) -> attenuated
+- **Low frequencies (slow variations):** Ĥ ≈ 1 → preserved
+- **High frequencies (noise, rapid variations):** Ĥ ≈ 1/(λω⁴) → attenuated
 - **Cutoff frequency:** ω_c ~ λ^(-1/4)
 
 **This means:**
 ```
-Larger λ  -> Lower cutoff -> More aggressive low-pass filtering -> Smoother result
-Smaller λ -> Higher cutoff -> Less filtering -> Result closer to data
+Larger λ  → Lower cutoff → More aggressive low-pass filtering → Smoother result
+Smaller λ → Higher cutoff → Less filtering → Result closer to data
 ```
 
 #### Practical Guidelines for λ Selection
@@ -622,22 +556,22 @@ The effective regularization strength depends on grid spacing:
 ```
 Effective strength ~ λ / h²_avg
 
-Same λ on finer grid   -> weaker smoothing
-Same λ on coarser grid -> stronger smoothing
+Same λ on finer grid   → weaker smoothing
+Same λ on coarser grid → stronger smoothing
 ```
 
 For dimensional consistency, λ has units [Length²].
 
-### Second Derivative Discretization (Hybrid Method v5.4)
+### Second Derivative Discretization (Hybrid Method)
 
-**Version 5.4 Implementation:** Automatic selection between two discretization schemes based on grid uniformity.
+Automatic selection between two discretization schemes based on grid uniformity.
 
 #### Grid Uniformity Detection
 ```
 CV = coefficient of variation (h_std / h_avg)
 
-CV < 0.15:  Nearly uniform    -> Average Coefficient Method
-CV ≥ 0.15:  Highly non-uniform -> Local Spacing Method
+CV < 0.15:  Nearly uniform    → Average Coefficient Method
+CV ≥ 0.15:  Highly non-uniform → Local Spacing Method
 ```
 
 #### Method 1: Average Coefficient (for CV < 0.15)
@@ -661,8 +595,18 @@ D²u_i ≈ (u_{i-1} - 2u_i + u_{i+1}) / h_harm²
 ```
 c = λ · Σ(1/h_i²) / (n-1)    (average coefficient)
 
-A[i,i]   = 1 + 2c  (interior points)
-A[i,i±1] = -c      (off-diagonals)
+Tridiagonal matrix A = I + λD^TD:
+
+    A[i,i]   = 1 + 2c     (diagonal, interior points)
+    A[i,i±1] = -c         (off-diagonals)
+
+Example for n=5 points:
+
+         [ 1+2c   -c     0     0     0  ]
+         [  -c   1+2c   -c     0     0  ]
+    A =  [  0     -c   1+2c   -c     0  ]
+         [  0     0     -c   1+2c   -c  ]
+         [  0     0     0     -c   1+2c ]
 ```
 
 #### Method 2: Local Spacing (for CV ≥ 0.15)
@@ -680,15 +624,30 @@ This is the **correct second derivative formula** for non-uniform grids derived 
 
 **Matrix construction:**
 ```
-w = 2λ / (h₁ + h₂)
+For each interior point i, compute weight:
+    w_i = 2λ / (h_{i-1} + h_i)
 
-A[i,i]   = 1 + w·(1/h₁ + 1/h₂)
-A[i,i-1] = -w/h₁
-A[i,i+1] = -w/h₂
+where h_{i-1} = x[i] - x[i-1], h_i = x[i+1] - x[i]
+
+Tridiagonal matrix A = I + λD^TD:
+
+    A[i,i]   = 1 + w_i·(1/h_{i-1} + 1/h_i)    (diagonal)
+    A[i,i-1] = -w_i/h_{i-1}                   (lower diagonal)
+    A[i,i+1] = -w_i/h_i                       (upper diagonal)
+
+Example structure for n=5 points (non-uniform spacing):
+
+         [  d0    u0     0      0      0   ]
+         [  l1    d1    u1      0      0   ]
+    A =  [  0     l2    d2     u2      0   ]
+         [  0     0     l3     d3     u3   ]
+         [  0     0      0     l4     d4   ]
+
+where d_i, u_i, l_i vary with local spacing
 ```
 
 **The resulting matrix is:**
-- Symmetric
+- Symmetric (u_i = l_{i+1})
 - Positive definite
 - Tridiagonal (bandwidth = 1)
 
@@ -696,9 +655,11 @@ A[i,i+1] = -w/h₂
 
 Natural boundary conditions (second derivative = 0 at ends):
 
+**Matrix construction uses simplified two-point formula:**
+
 **Left boundary (i=0):**
 ```
-D²u_0 ≈ (u_1 - u_0) / h_0²
+Penalty: λ·[(u_1 - u_0) / h_0²]²
 
 A[0,0] += λ/h_0²
 A[0,1] += -λ/h_0²
@@ -706,12 +667,14 @@ A[0,1] += -λ/h_0²
 
 **Right boundary (i=n-1):**
 ```
-D²u_{n-1} ≈ (u_{n-1} - u_{n-2}) / h_{n-1}²
+Penalty: λ·[(u_{n-1} - u_{n-2}) / h_{n-1}²]²
 
 A[n-1,n-1] += λ/h_{n-1}²
 ```
 
-**Critical fix in v5.4:** The boundary superdiagonal element A[0,1] was missing in previous versions, causing isolation of the first point. This is now corrected.
+**Implementation note:** The boundary superdiagonal element A[0,1] is properly included to prevent isolation of the first point.
+
+**Functional computation uses more accurate three-point formula** (as shown in the Functional Computation section above) for better accuracy when evaluating the objective function value.
 
 #### Boundary Effects and Edge Artifacts
 
@@ -781,23 +744,29 @@ The actual value of the minimized functional is computed for diagnostic purposes
 ||y - u||² = Σ(y_i - u_i)²
 ```
 
-**Regularization term (must match matrix formulation!):**
+**Regularization term:**
 
 For **average coefficient method:**
 ```
 ||D²u||² = Σ_{interior} [(u_{i-1} - 2u_i + u_{i+1})/h_harm²]²
-         + 0.5·[(u_1 - u_0)/h_0²]²
-         + 0.5·[(u_{n-1} - u_{n-2})/h_{n-1}²]²
+         + 0.5·[D²u_left]²
+         + 0.5·[D²u_right]²
+```
+
+where boundary second derivatives use forward/backward three-point formulas:
+```
+D²u_left  = 2·(h₁·u₀ - (h₀+h₁)·u₁ + h₀·u₂) / (h₀·h₁·(h₀+h₁))
+D²u_right = 2·(h_{n-2}·u_{n-1} - (h_{n-3}+h_{n-2})·u_{n-2} + h_{n-3}·u_{n-3}) / (h_{n-3}·h_{n-2}·(h_{n-3}+h_{n-2}))
 ```
 
 For **local spacing method:**
 ```
 ||D²u||² = Σ_{interior} [D²u_i]² · (h₁+h₂)/2
-         + 0.5·[(u_1 - u_0)/h_0²]² · h_0
-         + 0.5·[(u_{n-1} - u_{n-2})/h_{n-1}²]² · h_{n-1}
+         + 0.5·[D²u_left]² · h₀
+         + 0.5·[D²u_right]² · h_{n-1}
 ```
 
-Note the **weighting factors** in local spacing method for proper integration over non-uniform grid.
+where the boundary terms use the same three-point formulas as above, and weighting factors ensure proper integration over non-uniform grid.
 
 **Total functional:**
 ```
@@ -819,10 +788,24 @@ which leads to the linear system:
 
 ### Matrix Representation
 
-Matrix `A = I + λD^T D` is:
+The linear system `(I + λD^T D)u = y` has matrix `A = I + λD^T D` with structure:
+
+**Properties:**
 - Symmetric
-- Positive definite  
+- Positive definite
 - Tridiagonal (banded with bandwidth 1)
+
+**General tridiagonal form:**
+```
+         [  d0    c0     0      0     ...   0   ]
+         [  c0    d1    c1      0     ...   0   ]
+         [   0    c1    d2     c2     ...   0   ]
+    A =  [   0     0    c2     d3     ...   0   ]
+         [ ...   ...   ...    ...     ...  ...  ]
+         [   0     0     0      0     c_{n-2} d_{n-1} ]
+
+where d_i = diagonal, c_i = off-diagonal elements
+```
 
 This structure allows efficient solution using LAPACK's banded solver `dpbsv`.
 
@@ -858,7 +841,7 @@ where eigenvalues:
 
 **Note:** This approximation is exact for uniform grids but approximate for non-uniform grids. For highly non-uniform grids (CV > 0.2), the program issues a warning.
 
-#### Enhanced GCV in v5.4
+#### Enhanced GCV
 
 **Over-fitting penalty:**
 ```
@@ -888,9 +871,16 @@ The program uses LAPACK routine `dpbsv` for solving symmetric positive definite 
 
 ```c
 // Banded matrix storage (LAPACK column-major format)
-AB[0,j] = superdiagonal elements
-AB[1,j] = diagonal elements
-
+// For tridiagonal symmetric matrix A with bandwidth kd=1:
+//
+//     [ AB[0,j] ]  = superdiagonal elements  (a[i,i+1])
+//     [ AB[1,j] ]  = diagonal elements       (a[i,i])
+//
+// Storage layout for tridiagonal matrix:
+//
+//         [ *    a01  a12  a23  a34  ... ]   <- row 0 (superdiagonal)
+//    AB = [ a00  a11  a22  a33  a44  ... ]   <- row 1 (diagonal)
+//
 // System solution
 dpbsv_(&uplo, &n, &kd, &nrhs, AB, &ldab, b, &n, &info);
 ```
@@ -901,7 +891,7 @@ dpbsv_(&uplo, &n, &kd, &nrhs, AB, &ldab, b, &n, &info);
 
 This is **optimal** for tridiagonal systems.
 
-### Hybrid Implementation (v5.4)
+### Implementation Details
 
 ```c
 typedef struct {
@@ -955,8 +945,8 @@ The Butterworth filter is a classical **low-pass frequency filter** in digital s
 - **Passes low frequencies:** Slow variations in your data pass through unchanged
 - **Blocks high frequencies:** Rapid fluctuations (noise) are removed
 - **The cutoff frequency (fc)** determines the boundary between "low" and "high"
-  - Lower fc -> more aggressive smoothing (removes more detail)
-  - Higher fc -> gentler smoothing (preserves more detail)
+  - Lower fc → more aggressive smoothing (removes more detail)
+  - Higher fc → gentler smoothing (preserves more detail)
 
 The filter is characterized by a **maximally flat magnitude response** in the passband and provides zero phase distortion when implemented as filtfilt.
 
@@ -986,7 +976,7 @@ The smooth program implements a **4th-order digital Butterworth low-pass filter*
 
 Butterworth poles lie on unit circle in s-domain at angles:
 ```
-θk = π/2 + π(2k+1)/(2N),  k = 0,1,...,N-1
+θk = π/2 + π(2k+1)/(2N),  k = 0, 1, …, N−1
 ```
 
 For N=4:
@@ -998,9 +988,11 @@ s_poles[k] = exp(j·θk)  where θ = {5π/8, 7π/8, 9π/8, 11π/8}
 
 Scale poles by prewarped cutoff frequency:
 ```
-wc = tan(π·fc)    (prewarp for bilinear transform)
+wc = tan(π·fc/2)    (prewarp for bilinear transform)
 s_poles_scaled = wc · s_poles
 ```
+
+**Prewarping correction:** The bilinear transform introduces frequency warping. The factor `tan(π·fc/2)` compensates for this, ensuring the digital filter's cutoff matches the desired normalized frequency `fc`.
 
 **Step 3: Bilinear Transform**
 
@@ -1010,8 +1002,8 @@ z_poles = (2 + s_poles_scaled) / (2 - s_poles_scaled)
 ```
 
 The bilinear transformation maps:
-- Left half of s-plane -> inside unit circle in z-plane
-- jω axis -> unit circle in z-plane
+- Left half of s-plane → inside unit circle in z-plane
+- jω axis → unit circle in z-plane
 - Preserves stability
 
 **Step 4: Biquad Cascade**
@@ -1031,9 +1023,9 @@ The **filtfilt** (forward-backward filtering) eliminates phase distortion:
 
 **Algorithm:**
 1. **Pad signal:** Reflect signal at boundaries (3×order length)
-2. **Forward filter:** Apply H(z) from left to right -> y_fwd
+2. **Forward filter:** Apply H(z) from left to right → y_fwd
 3. **Reverse:** y_rev = reverse(y_fwd)
-4. **Backward filter:** Apply H(z) to y_rev -> y_bwd
+4. **Backward filter:** Apply H(z) to y_rev → y_bwd
 5. **Reverse back:** y_final = reverse(y_bwd)
 6. **Extract:** Remove padding to get final result
 
@@ -1062,28 +1054,31 @@ where:
   B = b[1:] - a[1:]·b[0]
 ```
 
-The companion matrix for `[1, a1, a2, a3, a4]` is:
+The companion matrix for filter coefficients `[1, a1, a2, a3, a4]` is:
+
 ```
-     [-a1  -a2  -a3  -a4]
-     [1     0    0    0 ]
-     [0     1    0    0 ]
-     [0     0    1    0 ]
+         [ -a1  -a2  -a3  -a4 ]
+         [  1    0    0    0  ]
+    C =  [  0    1    0    0  ]
+         [  0    0    1    0  ]
 ```
 
-And its transpose `A^T`:
+And its transpose `A^T = C^T`:
+
 ```
-     [-a1   1    0    0]
-     [-a2   0    1    0]
-     [-a3   0    0    1]
-     [-a4   0    0    0]
+          [ -a1   1    0    0 ]
+          [ -a2   0    1    0 ]
+    A^T = [ -a3   0    0    1 ]
+          [ -a4   0    0    0 ]
 ```
 
-Therefore `I - A^T`:
+Therefore the system matrix `I - A^T`:
+
 ```
-     [1+a1  -1    0    0]
-     [a2     1   -1    0]
-     [a3     0    1   -1]
-     [a4     0    0    1]
+              [ 1+a1  -1    0    0 ]
+              [  a2    1   -1    0 ]
+    I - A^T = [  a3    0    1   -1 ]
+              [  a4    0    0    1 ]
 ```
 
 **Implementation:** The linear system is solved using **LAPACK's dgesv** routine for robustness:
@@ -1100,8 +1095,8 @@ The cutoff frequency `fc` is **normalized** to the sampling rate and is the **mo
 
 **Simple explanation:**
 - `fc` controls how much smoothing you get
-- **Smaller fc (e.g., 0.05)** -> heavy smoothing, only very slow trends preserved
-- **Larger fc (e.g., 0.30)** -> light smoothing, more detail preserved
+- **Smaller fc (e.g., 0.05)** → heavy smoothing, only very slow trends preserved
+- **Larger fc (e.g., 0.30)** → light smoothing, more detail preserved
 - Valid range: `0 < fc < 0.5` (Nyquist limit)
 
 **Technical details:**
@@ -1258,7 +1253,7 @@ The filter assumes uniform sampling when computing the cutoff frequency. For hig
 | Derivative quality | ***** | ***** | *** | N/A |
 | Boundary behavior | ** | *** | **** | *** |
 | Non-uniform grids | *** | [X] | ***** | ** |
-| Ease of use (v5.5) | **** | **** | ***** | **** |
+| Ease of use | **** | **** | ***** | **** |
 | Parameter selection | Manual | Manual | Auto (GCV) | Manual |
 | Frequency control | No | No | No | Yes |
 | Phase distortion | N/A | N/A | N/A | Zero |
@@ -1566,7 +1561,7 @@ cat data.txt | ./smooth -m 0 -n 7 -p 2
 ...
 ```
 
-### Working with Non-uniform Grids (v5.4)
+### Working with Non-uniform Grids
 
 ```bash
 # First, analyze your grid
@@ -1666,7 +1661,7 @@ cat data.txt | ./smooth -m 2 -l 0.1 | ./smooth -m 1 -n 5 -p 2
 
 The `grid_analysis` module provides comprehensive analysis of input data and helps optimize smoothing parameters.
 
-**Architecture (v5.5):** Grid analysis is performed once at program startup (after data loading) and the results are shared across all smoothing methods. This eliminates redundant computation while ensuring all methods have access to consistent grid uniformity information. Methods that require uniform grids (Savitzky-Golay, Butterworth) receive pre-computed analysis results and can immediately reject unsuitable data with detailed recommendations.
+**Architecture:** Grid analysis is performed once at program startup (after data loading) and the results are shared across all smoothing methods. This eliminates redundant computation while ensuring all methods have access to consistent grid uniformity information. Methods that require uniform grids (Savitzky-Golay, Butterworth) receive pre-computed analysis results and can immediately reject unsuitable data with detailed recommendations.
 
 ### Main Functions
 
@@ -1782,7 +1777,7 @@ make
 # Debug build
 make debug
 
-# Run unit tests (v5.6+)
+# Run unit tests
 make test
 
 # Run tests with Valgrind (memory leak detection)
@@ -1820,30 +1815,32 @@ gcc -Wall -Wextra -pedantic -o smooth smooth.c polyfit.c savgol.c \
 
 ```
 smooth/
-|--- smooth.c           # Main program (v5.5: added Butterworth)
+|--- smooth.c           # Main program
 |--- polyfit.c/h        # Polynomial fitting module
-|--- savgol.c/h         # Savitzky-Golay module (v5.3: with uniformity check)
-|--- tikhonov.c/h       # Tikhonov module (v5.4: hybrid implementation)
-|--- butterworth.c/h    # Butterworth filter module (v5.5: new)
+|--- savgol.c/h         # Savitzky-Golay module
+|--- tikhonov.c/h       # Tikhonov regularization module
+|--- butterworth.c/h    # Butterworth filter module
 |--- grid_analysis.c/h  # Grid analysis module
 |--- decomment.c/h      # Comment removal utility
+|--- timestamp.c/h      # Timestamp parsing module
 |--- revision.h         # Program version
 |--- Makefile           # Build system with test targets
 |--- README.md          # This documentation
-+--- tests/             # Unit testing framework (v5.6+: Unity tests)
++--- tests/             # Unit testing framework (Unity)
     |--- unity.c/h                # Unity testing framework
     |--- unity_internals.h        # Unity internals
-    |--- test_main.c              # Test runner (41+ tests)
+    |--- test_main.c              # Test runner (50+ tests)
     |--- test_grid_analysis.c     # Grid analysis tests (7 tests)
     |--- test_polyfit.c           # Polyfit module tests (18 tests)
-    +--- test_savgol.c            # Savgol module tests (16 tests)
+    |--- test_savgol.c            # Savgol module tests (16 tests)
+    +--- test_timestamp.c         # Timestamp module tests (15 tests)
 ```
 
 ---
 
 ## Conclusion
 
-The `smooth` program v5.8.1 provides four complementary smoothing methods in a modular architecture with advanced input data analysis and comprehensive testing:
+The `smooth` program provides four complementary smoothing methods in a modular architecture with advanced input data analysis and comprehensive testing:
 
 - **POLYFIT** - local polynomial approximation using least squares method
 - **SAVGOL** - optimal linear filter with pre-computed coefficients (uniform grids only)
@@ -1851,46 +1848,23 @@ The `smooth` program v5.8.1 provides four complementary smoothing methods in a m
 - **BUTTERWORTH** - digital low-pass filter with zero-phase filtfilt
 - **GRID_ANALYSIS** - automatic analysis and method recommendation
 
-### Version 5.8.1 Highlights
+### Key Features
 
-**Major Achievement: Production-Ready Code Quality**
-
-The `smooth` project has evolved from a functional scientific tool to a **production-ready, thoroughly tested** codebase with 41+ unit tests ensuring reliability and correctness.
-
-**New in v5.8.1 (2025-11-28):**
-- **Comprehensive unit testing** - 41+ tests across 3 critical modules (grid_analysis, polyfit, savgol)
-- **Unity testing framework** - industry-standard testing with AAA pattern, edge case coverage, and memory leak detection
-- **Numerical stability improvements** - enhanced polyfit module for better numerical accuracy
-- **Bug fixes** - resolved issues in tikhonov module discovered during testing
-- **Enhanced build system** - Makefile with dedicated test targets (test, test-valgrind, test-clean)
-- **Test coverage:**
-  - grid_analysis: 7 tests (uniform/non-uniform grids, edge cases, large datasets)
-  - polyfit: 18 tests (functionality, edge cases, noise handling, non-uniform grids)
-  - savgol: 16 tests (functionality, edge cases, noise handling, grid uniformity)
-
-**Reliability Benefits:**
-- Every commit validated against 41+ test cases
-- Regression prevention through automated testing
+**Robust Testing Infrastructure:**
+- 50+ unit tests using Unity testing framework
+- AAA pattern (Arrange-Act-Assert) for all tests
 - Memory leak detection via Valgrind integration
 - Edge case coverage for robust production use
-- Executable documentation through tests
+- Test modules: grid_analysis (7 tests), polyfit (18 tests), savgol (16 tests), timestamp (15 tests)
 
-### Previous Major Version Highlights
-
-**Version 5.5 Improvements:**
-- Performance optimization with centralized grid analysis
-- Unix filter support for pipe chains
-- Butterworth low-pass filter (4th-order) with filtfilt
-- Scipy-compatible algorithms
-- Zero-phase filtering capability
-
-**Version 5.4 Improvements:**
-1. Tikhonov hybrid implementation - automatic discretization selection
-2. Harmonic mean for accurate interval averaging
-3. Fixed boundary conditions in tikhonov module
-4. Enhanced GCV with over-fitting penalty
-5. Better diagnostics and functional balance reporting
-6. Grid analysis with `-g` flag for detailed statistics
+**Advanced Capabilities:**
+- Centralized grid analysis performed once at startup
+- Unix filter support for integration into pipelines
+- Timestamp mode for RFC3339 time-series data
+- Automatic parameter selection (GCV for Tikhonov)
+- Scipy-compatible algorithms (Butterworth filtfilt, lfilter_zi)
+- Zero-phase filtering for Butterworth method
+- Hybrid discretization for Tikhonov on non-uniform grids
 
 ### When to Use Each Method
 
@@ -1942,8 +1916,8 @@ Each method has a strong mathematical foundation and is optimized for specific d
 
 ---
 
-**Document revision:** 2025-11-28
-**Program version:** smooth v5.8.1
+**Document revision:** 2025-12-03
+**Program version:** smooth v5.9.2
 **Dependencies:** LAPACK, BLAS
 **Testing framework:** Unity (included in tests/)
-**License:** See source files
+**License:** MIT License
