@@ -222,7 +222,10 @@ void test_butterworth_zero_phase_no_delay(void) {
 void test_butterworth_edge_points_no_excessive_oscillation(void) {
     const int n = 50;
     double x[n], y[n];
-    create_uniform_grid(x, n, 0.0, 0.2);
+    // Create grid from 0.0 to 0.2 with uniform spacing
+    double x_end = 0.2;
+    double spacing = (x_end - 0.0) / (n - 1);
+    create_uniform_grid(x, n, 0.0, spacing);
 
     // Smooth polynomial
     for (int i = 0; i < n; i++) {
@@ -373,10 +376,10 @@ void test_butterworth_null_inputs(void) {
     grid = analyze_grid(x, n, 0);
 
     // NULL x array
-    TEST_ASSERT_NULL(butterworth_filtfilt(NULL, y, n, 0.2, 0, &grid));
+    TEST_ASSERT_NULL(butterworth_filtfilt(NULL, y, n, 0.2, 0, grid));
 
     // NULL y array
-    TEST_ASSERT_NULL(butterworth_filtfilt(x, NULL, n, 0.2, 0, &grid));
+    TEST_ASSERT_NULL(butterworth_filtfilt(x, NULL, n, 0.2, 0, grid));
 
     // NULL grid
     TEST_ASSERT_NULL(butterworth_filtfilt(x, y, n, 0.2, 0, NULL));
