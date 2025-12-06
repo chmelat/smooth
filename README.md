@@ -58,7 +58,7 @@ command | smooth -m 3 -f 0.15 | gnuplot    # Pipeline
 - `-p P` - polynomial degree (polyfit, savgol, max 12)
 - `-l λ` - regularization parameter (tikhonov)
 - `-l auto` - automatic λ selection using GCV (tikhonov)
-- `-f fc` - normalized cutoff frequency (butterworth, 0 < fc < 0.5)
+- `-f fc` - normalized cutoff frequency (butterworth, 0 < fc < 1.0)
 - `-f auto` - automatic cutoff selection (butterworth, currently returns 0.1)
 - `-T` - timestamp mode: first column is RFC3339-style timestamp, second is y-value
 - `-d` - display first derivative in output (optional, not available for butterworth)
@@ -1097,19 +1097,20 @@ The cutoff frequency `fc` is **normalized** to the sampling rate and is the **mo
 - `fc` controls how much smoothing you get
 - **Smaller fc (e.g., 0.05)** → heavy smoothing, only very slow trends preserved
 - **Larger fc (e.g., 0.30)** → light smoothing, more detail preserved
-- Valid range: `0 < fc < 0.5` (Nyquist limit)
+- Valid range: `0 < fc < 1.0` (Nyquist limit)
 
 **Technical details:**
 ```
-fc = f_cutoff / f_sample
+fc = f_cutoff / f_Nyquist = f_cutoff / (f_sample / 2)
 
 where:
   f_cutoff = desired cutoff frequency in physical units
   f_sample = 1 / h_avg  (h_avg = average data spacing)
+  f_Nyquist = f_sample / 2  (Nyquist frequency)
 ```
 
-**Nyquist Constraint:** `0 < fc < 0.5`
-- `fc = 0.5` corresponds to Nyquist frequency (f_sample/2) - maximum possible
+**Nyquist Constraint:** `0 < fc < 1.0`
+- `fc = 1.0` corresponds to Nyquist frequency (f_sample/2) - maximum possible
 - Higher fc -> less filtering (more high frequencies pass)
 - Lower fc -> more filtering (smoother result)
 
@@ -1117,9 +1118,9 @@ where:
 
 Example: Data with spacing h_avg = 0.1 seconds
 - Sample rate: f_sample = 1/0.1 = 10 Hz
-- Nyquist frequency: 5 Hz
-- If fc = 0.2, then f_cutoff = 0.2 × 10 = 2 Hz
-- Filter removes frequencies above ~2 Hz
+- Nyquist frequency: f_Nyquist = 5 Hz
+- If fc = 0.2, then f_cutoff = fc × f_Nyquist = 0.2 × 5 = 1 Hz
+- Filter removes frequencies above ~1 Hz
 
 **Practical Guidelines for Choosing fc:**
 
@@ -1386,7 +1387,7 @@ Start with manual selection: fc = 0.15 - 0.20
 - High noise:       fc = 0.05 - 0.15  (aggressive smoothing)
 - Very noisy data:  fc = 0.01 - 0.05  (heavy smoothing)
 
-Full range: 0 < fc < 0.5 (Nyquist limit)
+Full range: 0 < fc < 1.0 (Nyquist limit)
 
 **AUTOMATIC SELECTION:**
 - Use -f auto (currently returns default fc = 0.1)
@@ -1394,11 +1395,11 @@ Full range: 0 < fc < 0.5 (Nyquist limit)
 - Manual tuning recommended for best results
 
 **PHYSICAL INTERPRETATION:**
-fc = f_cutoff / f_sample
+fc = f_cutoff / f_Nyquist = f_cutoff / (f_sample / 2)
 where f_sample = 1 / h_avg
 
-Example: h_avg = 0.1 sec -> f_sample = 10 Hz
-         fc = 0.2 -> f_cutoff = 2 Hz (removes freq > 2 Hz)
+Example: h_avg = 0.1 sec -> f_sample = 10 Hz, f_Nyquist = 5 Hz
+         fc = 0.2 -> f_cutoff = fc × f_Nyquist = 1 Hz (removes freq > 1 Hz)
 
 **ITERATIVE REFINEMENT:**
 1. Start with fc = 0.15 or fc = 0.20

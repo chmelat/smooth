@@ -1,19 +1,32 @@
 /*  Butterworth filter for data smoothing
  *  Digital low-pass filter with filtfilt (zero-phase forward-backward filtering)
+ *  V1.3/2025-12-06/ Memory optimization, symbolic constants, improved validation
+ *  V1.2/2025-11-21/ Refactored error handling (goto pattern) for memory safety
+ *  V1.1/2025-11-03/ Updated grid uniformity check to use CV
  *  V1.0/2025-11-03/ Initial implementation
  */
 
 #ifndef BUTTERWORTH_H
 #define BUTTERWORTH_H
 
+#include <stddef.h>
 #include "grid_analysis.h"
+
+/* Filter parameters */
+#define BUTTERWORTH_ORDER      4
+#define BUTTERWORTH_NUM_COEFFS (BUTTERWORTH_ORDER + 1)
+
+/* Memory limits */
+#define BUTTERWORTH_MAX_POINTS_WARNING  (50 * 1000 * 1000)   /* 50M points: warn user */
+#define BUTTERWORTH_MAX_POINTS_LIMIT    (500 * 1000 * 1000)  /* 500M points: refuse */
+#define BUTTERWORTH_MIN_POINTS          20
 
 /* Structure for Butterworth filter results */
 typedef struct {
     double *y_smooth;     /* Smoothed values */
     int n;                /* Number of points */
-    int order;            /* Filter order used (fixed at 4) */
-    double cutoff_freq;   /* Normalized cutoff frequency used (0 < fc < 0.5) */
+    int order;            /* Filter order used (fixed at BUTTERWORTH_ORDER) */
+    double cutoff_freq;   /* Normalized cutoff frequency used (0 < fc < 1) */
     double sample_rate;   /* Effective sample rate from data spacing */
 } ButterworthResult;
 
@@ -28,7 +41,7 @@ typedef struct {
  * Parameters:
  *   x           - Array of x-coordinates (must be strictly monotonic increasing)
  *   y           - Array of y-values to be smoothed
- *   n           - Number of data points (must be >= 20 for reliable filtering)
+ *   n           - Number of data points (must be >= BUTTERWORTH_MIN_POINTS)
  *   cutoff_freq - Normalized cutoff frequency (0 < fc < 1)
  *                 fc = f_cutoff / f_Nyquist = f_cutoff / (f_sample / 2)
  *                 where f_sample = 1 / h_avg (h_avg = average spacing)
@@ -43,10 +56,16 @@ typedef struct {
  *   Pointer to ButterworthResult structure containing:
  *   - y_smooth: filtered values
  *   - n: number of points
- *   - order: filter order (always 4)
+ *   - order: filter order (always BUTTERWORTH_ORDER)
  *   - cutoff_freq: normalized cutoff frequency used
  *   - sample_rate: effective sample rate (1/h_avg)
  *   Returns NULL on error.
+ *
+ * Memory usage:
+ *   Approximately 2 * (n + 2*pad_len) * sizeof(double) for temporary buffers,
+ *   plus n * sizeof(double) for the result.
+ *   For large datasets (> BUTTERWORTH_MAX_POINTS_WARNING), a warning is printed.
+ *   Datasets exceeding BUTTERWORTH_MAX_POINTS_LIMIT are refused.
  *
  * Normalized Cutoff Frequency (fc):
  *   fc = f_cutoff / f_Nyquist = f_cutoff / (f_sample / 2), where:
@@ -75,28 +94,29 @@ typedef struct {
  *
  * Algorithm:
  *   1. Design 4th-order Butterworth filter (bilinear transform)
- *   2. Pad signal at both ends (reflect padding)
+ *   2. Pad signal at both ends (odd reflection, length = 3 * filter_order)
  *   3. Apply filter forward (left to right)
  *   4. Apply filter backward (right to left)
  *   5. Result has zero phase distortion and 8th-order effective filtering
  *
  * Notes:
  *   - Memory must be freed using free_butterworth_result()
- *   - Effective filter order after filtfilt: 2 × 4 = 8
+ *   - Effective filter order after filtfilt: 2 × BUTTERWORTH_ORDER = 8
  *   - Zero phase lag (no signal delay)
  *   - Edge effects minimized by padding
  *   - For uniform grids, very efficient and accurate
  *
  * Error handling:
  *   Returns NULL if:
- *   - n < 20 (too few points for reliable filtering)
+ *   - n < BUTTERWORTH_MIN_POINTS (too few points for reliable filtering)
+ *   - n > BUTTERWORTH_MAX_POINTS_LIMIT (dataset too large)
  *   - cutoff_freq <= 0 or >= 1.0 (invalid cutoff)
  *   - Memory allocation fails
- *   - Grid is excessively non-uniform (ratio > 20)
+ *   - Grid is excessively non-uniform (CV > threshold)
  */
-ButterworthResult* butterworth_filtfilt(double *x, double *y, int n,
+ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
                                         double cutoff_freq, int auto_cutoff,
-                                        GridAnalysis *grid_info);
+                                        const GridAnalysis *grid_info);
 
 /* Automatic cutoff frequency selection
  *
@@ -115,7 +135,7 @@ ButterworthResult* butterworth_filtfilt(double *x, double *y, int n,
  *   - Works best with n > 50
  *   - For small datasets, returns default fc = 0.1
  */
-double estimate_cutoff_frequency(double *x, double *y, int n);
+double estimate_cutoff_frequency(const double *x, const double *y, int n);
 
 /* Free allocated memory for ButterworthResult structure
  *
