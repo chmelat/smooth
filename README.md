@@ -1,7 +1,7 @@
 # Methods for Smoothing Experimental Data in the smooth Program
 
 **Technical Documentation**
-Version 5.9.2 | December 3, 2025
+Version 5.10.1 | December 7, 2025
 
 ---
 
@@ -59,7 +59,7 @@ command | smooth -m 3 -f 0.15 | gnuplot    # Pipeline
 - `-l λ` - regularization parameter (tikhonov)
 - `-l auto` - automatic λ selection using GCV (tikhonov)
 - `-f fc` - normalized cutoff frequency (butterworth, 0 < fc < 1.0)
-- `-f auto` - automatic cutoff selection (butterworth, currently returns 0.1)
+- `-f auto` - automatic cutoff selection (butterworth, currently returns 0.2)
 - `-T` - timestamp mode: first column is RFC3339-style timestamp, second is y-value
 - `-d` - display first derivative in output (optional, not available for butterworth)
 - `-g` - show detailed grid uniformity analysis (optional)
@@ -1034,60 +1034,46 @@ The **filtfilt** (forward-backward filtering) eliminates phase distortion:
 - **Effective order:** 2N = 8 (squared magnitude response)
 - **Steeper rolloff:** |H_eff(jω)|² = |H(jω)|⁴
 
-### Initial Conditions (lfilter_zi)
+### Initial Conditions (Biquad IC)
 
-To minimize edge transients, we compute initial filter state using **scipy's lfilter_zi algorithm**:
+To minimize edge transients, we compute initial filter state for each **biquad section** using an **analytical solution**:
 
-**Problem:** Find initial state `zi` such that for constant input `x = c`:
+**Problem:** For each 2nd-order biquad section, find initial state `zi` such that for constant input `x = c`:
 ```
 zi = A·zi + B·c
 ```
 
-This ensures the filter starts in steady-state, eliminating startup transients.
+This ensures each biquad starts in steady-state, eliminating startup transients.
 
-**Solution:** Solve linear system using companion matrix:
+**Solution for 2nd-order biquad:** Solve the 2×2 linear system analytically:
 ```
-(I - A^T)·zi = B
+(I - A)·zi = B
 
-where:
-  A = companion(a).T    (companion matrix transposed)
-  B = b[1:] - a[1:]·b[0]
-```
-
-The companion matrix for filter coefficients `[1, a1, a2, a3, a4]` is:
-
-```
-         [ -a1  -a2  -a3  -a4 ]
-         [  1    0    0    0  ]
-    C =  [  0    1    0    0  ]
-         [  0    0    1    0  ]
+where for Transposed Direct Form II:
+  (I - A) = [[1+a1, -1], [a2, 1]]
+  B = [b1 - a1·b0, b2 - a2·b0]
 ```
 
-And its transpose `A^T = C^T`:
+**Analytical solution using Cramer's rule:**
 
+The determinant of (I - A) is:
 ```
-          [ -a1   1    0    0 ]
-          [ -a2   0    1    0 ]
-    A^T = [ -a3   0    0    1 ]
-          [ -a4   0    0    0 ]
+det = (1 + a1)·1 - (-1)·a2 = 1 + a1 + a2
 ```
 
-Therefore the system matrix `I - A^T`:
-
+The solution is:
 ```
-              [ 1+a1  -1    0    0 ]
-              [  a2    1   -1    0 ]
-    I - A^T = [  a3    0    1   -1 ]
-              [  a4    0    0    1 ]
+zi[0] = (B[0] + B[1]) / det
+zi[1] = (-a2·B[0] + (1 + a1)·B[1]) / det
 ```
 
-**Implementation:** The linear system is solved using **LAPACK's dgesv** routine for robustness:
-```c
-// Uses LU decomposition with partial pivoting
-dgesv_(&n, &nrhs, A_colmajor, &lda, ipiv, zi, &ldb, &info);
-```
+**Implementation advantages:**
+- **No LAPACK dependency** for initial conditions (purely analytical)
+- **Per-biquad computation** - simple 2×2 systems instead of 4×4
+- **Numerically robust** - direct formulas avoid iterative solvers
+- **Efficient** - closed-form solution, no matrix decomposition needed
 
-This approach ensures numerical stability even for challenging filter coefficients (e.g., very low cutoff frequencies where coefficients can be extremely small ~10⁻⁸).
+This approach maintains numerical stability even for challenging filter coefficients (e.g., very low cutoff frequencies where coefficients can be extremely small ~10⁻⁸), while being simpler and faster than the previous LAPACK-based companion matrix approach.
 
 ### Normalized Cutoff Frequency
 
@@ -1138,39 +1124,76 @@ Example: Data with spacing h_avg = 0.1 seconds
 - **Extreme noise?** Try fc = 0.05
 - **High quality data?** Try fc = 0.25 - 0.30
 
-### IIR Filter Implementation
+### Biquad Cascade Implementation
 
-Uses **Transposed Direct Form II** for numerical stability:
+The 4th-order Butterworth filter is implemented as a **cascade of 2 second-order sections (biquads)** for superior numerical stability.
+
+**Why biquad cascade?**
+- **Numerical stability:** Each 2nd-order section has well-conditioned coefficient magnitudes
+- **Reduced quantization errors:** Coefficients stay in reasonable ranges (~0.1 to 10)
+- **Industry standard:** Used in professional DSP applications
+- **Modular:** Each biquad can be analyzed and tested independently
+
+**Filter structure:**
+```
+x → [Biquad 1] → [Biquad 2] → y
+
+Each biquad processes conjugate pole pair from Butterworth prototype
+```
+
+Each biquad section uses **Transposed Direct Form II** (TDF-II) for optimal numerical properties:
 
 ```
+For each biquad section (applied sequentially):
 For each sample n:
   y[n] = b[0]·x[n] + z[0]
   z[0] = b[1]·x[n] - a[1]·y[n] + z[1]
-  z[1] = b[2]·x[n] - a[2]·y[n] + z[2]
-  z[2] = b[3]·x[n] - a[3]·y[n] + z[3]
-  z[3] = b[4]·x[n] - a[4]·y[n]
+  z[1] = b[2]·x[n] - a[2]·y[n]
+
+where:
+  z[2] is the biquad state (2 elements per section)
+  [b0, b1, b2] are numerator coefficients
+  [1, a1, a2] are denominator coefficients (a0 normalized to 1)
 ```
 
-where `z[]` is the filter state (4 elements for 4th order).
+**Complete 4th-order filtering:**
+1. Apply first biquad to input → intermediate result
+2. Apply second biquad to intermediate result → final output
+
+This cascade approach is more robust than direct 4th-order implementation, especially for very low cutoff frequencies (fc < 0.05) where monolithic implementations can suffer from coefficient scaling issues.
 
 ### Modularized Implementation
 
 ```c
 // butterworth.h
+
+/* Biquad section structure (2nd-order IIR filter) */
+typedef struct {
+    double b[3];  // Numerator coefficients: [b0, b1, b2]
+    double a[3];  // Denominator coefficients: [a0=1, a1, a2]
+} BiquadSection;
+
+/* Complete filter structure (cascade of 2 biquads) */
+typedef struct {
+    BiquadSection sections[2];  // Two 2nd-order sections for 4th order
+} ButterworthCoeffs;
+
+/* Result structure */
 typedef struct {
     double *y_smooth;     // Smoothed values
     int n;                // Number of points
-    int order;            // Filter order (4)
-    double cutoff_freq;   // Normalized cutoff frequency
-    double sample_rate;   // Effective sample rate (1/h_avg)
+    int order;            // Filter order (BUTTERWORTH_ORDER = 4)
+    double cutoff_freq;   // Normalized cutoff frequency (0 < fc < 1)
+    double sample_rate;   // Effective sample rate from data spacing
 } ButterworthResult;
 
 // Main function
-ButterworthResult* butterworth_filtfilt(double *x, double *y, int n,
-                                        double cutoff_freq, int auto_cutoff);
+ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
+                                        double cutoff_freq, int auto_cutoff,
+                                        const GridAnalysis *grid_info);
 
-// Automatic cutoff selection (currently returns 0.1)
-double estimate_cutoff_frequency(double *x, double *y, int n);
+// Automatic cutoff selection (currently returns 0.2)
+double estimate_cutoff_frequency(const double *x, const double *y, int n);
 
 // Memory cleanup
 void free_butterworth_result(ButterworthResult *result);
@@ -1194,14 +1217,17 @@ The filter assumes uniform sampling when computing the cutoff frequency. For hig
 **Advantages:**
 - **Zero phase distortion** (filtfilt eliminates all phase lag)
 - **Maximally flat frequency response** in passband
+- **Superior numerical stability** (biquad cascade implementation)
+- **No LAPACK dependency** for initial conditions (analytical solution)
 - **Classical DSP approach** with extensive literature and understanding
 - **Predictable frequency-domain behavior** - easy to interpret cutoff frequency
 - **No ringing** (unlike Chebyshev or elliptic filters)
 - **Efficient implementation** - O(n) time complexity
 - **Smooth monotonic rolloff** - natural attenuation curve
+- **Robust for extreme cutoffs** (fc < 0.05 handled well by biquad cascade)
 
 **Disadvantages:**
-- **Requires uniform/nearly-uniform grid** (CV < 0.15 recommended)
+- **Requires uniform/nearly-uniform grid** (CV < 0.05 enforced)
 - **No derivative output** (Butterworth is smoothing-only)
 - **Less local adaptability** than polynomial methods
 - **Cutoff selection not automatic** (currently manual tuning needed)
@@ -1390,7 +1416,7 @@ Start with manual selection: fc = 0.15 - 0.20
 Full range: 0 < fc < 1.0 (Nyquist limit)
 
 **AUTOMATIC SELECTION:**
-- Use -f auto (currently returns default fc = 0.1)
+- Use -f auto (currently returns default fc = 0.2)
 - Note: Automatic selection not yet fully implemented
 - Manual tuning recommended for best results
 
@@ -1466,7 +1492,7 @@ cat data.txt | ./smooth -m 0 -n 7 -p 2
 # Butterworth with manual cutoff frequency
 ./smooth -m 3 -f 0.15 data.txt
 
-# Butterworth with automatic cutoff (currently returns 0.1)
+# Butterworth with automatic cutoff (currently returns 0.2)
 ./smooth -m 3 -f auto data.txt
 
 # Grid analysis only (exits after analysis)
@@ -1917,8 +1943,14 @@ Each method has a strong mathematical foundation and is optimized for specific d
 
 ---
 
-**Document revision:** 2025-12-03
-**Program version:** smooth v5.9.2
+**Document revision:** 2025-12-07
+**Program version:** smooth v5.10.1
 **Dependencies:** LAPACK, BLAS
 **Testing framework:** Unity (included in tests/)
 **License:** MIT License
+
+**Recent changes (v5.10.1):**
+- Complete rewrite of Butterworth filter module using biquad cascade architecture
+- Analytical initial conditions computation (no LAPACK dependency for IC)
+- Improved numerical stability for extreme cutoff frequencies (fc < 0.05)
+- Enhanced robustness through industry-standard biquad cascade approach

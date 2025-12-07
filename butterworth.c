@@ -1,16 +1,13 @@
 /* Butterworth filter for data smoothing
- * Implementation of 4th-order digital Butterworth low-pass filter with filtfilt
- * V1.3/2025-12-06/ Memory optimization (2 buffers instead of 4), symbolic constants,
- *                  improved validation, const-correctness
+ * V1.4/2025-12-07/ Biquad cascade implementation with proper initial conditions
+ *                  Combines numerical stability of biquads with robust IC computation
+ * V1.3/2025-12-06/ Memory optimization, symbolic constants, improved validation
  * V1.2/2025-11-21/ Refactored error handling (goto pattern) for memory safety
- * V1.1/2025-11-03/ Updated grid uniformity check to use CV
- * V1.0/2025-11-03/ Initial implementation
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <complex.h>
 #include <string.h>
 #include "butterworth.h"
 #include "grid_analysis.h"
@@ -19,28 +16,25 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-/* Threshold for grid uniformity (same as Savitzky-Golay) */
+/* Thresholds */
 #define UNIFORMITY_CV_THRESHOLD 0.05
 #define NEARLY_UNIFORM_CV_THRESHOLD 0.01
-
-/* Cutoff frequency limits */
 #define CUTOFF_FREQ_MIN 0.0
 #define CUTOFF_FREQ_MAX 1.0
 #define CUTOFF_FREQ_STABILITY_WARN 0.95
 
 /* Internal function prototypes */
-static void butterworth_coefficients(double fc, double *b, double *a);
-static void apply_iir_filter(const double *b, const double *a,
-                             const double *x, double *y, size_t n,
-                             const double *zi, double *zf);
-static void compute_initial_conditions(const double *b, const double *a, double *zi);
+static void design_biquad_sections(double fc, BiquadSection *sections);
+static void compute_biquad_ic(const BiquadSection *bq, double *zi_base);
+static void apply_biquad(const BiquadSection *bq, const double *x, double *y, 
+                         size_t n, double z[2]);
 static double* pad_signal(const double *y, int n, int pad_len, size_t *total_len);
 static void reverse_array_inplace(double *arr, size_t n);
 
-/* Calculate padding length (SciPy convention: 3 * max(len(a), len(b)) - 1) */
+/* Calculate padding length (3 * filter_order for biquad cascade) */
 static inline int calculate_pad_length(int n)
 {
-    int pad_len = 3 * BUTTERWORTH_NUM_COEFFS - 1;
+    int pad_len = 3 * (BUTTERWORTH_ORDER + 1) - 1;
     if (pad_len >= n) {
         pad_len = n - 1;
     }
@@ -51,182 +45,107 @@ static inline int calculate_pad_length(int n)
 static inline size_t estimate_memory_usage(int n, int pad_len)
 {
     size_t padded_len = (size_t)n + 2 * (size_t)pad_len;
-    /* 2 temp buffers + 1 result buffer */
     return (2 * padded_len + (size_t)n) * sizeof(double) + sizeof(ButterworthResult);
 }
 
-/* Design 4th-order Butterworth low-pass filter */
-static void butterworth_coefficients(double fc, double *b, double *a)
+/* Design 4th-order Butterworth as 2 cascaded biquad sections
+ * Uses bilinear transform with prewarping
+ */
+static void design_biquad_sections(double fc, BiquadSection *sections)
 {
-    /* Step 1: Calculate analog prototype poles on unit circle */
-    double complex s_poles[BUTTERWORTH_ORDER];
-    for (int k = 0; k < BUTTERWORTH_ORDER; k++) {
-        double theta = M_PI/2.0 + M_PI*(2*k + 1)/(2.0*BUTTERWORTH_ORDER);
-        s_poles[k] = cexp(I * theta);
+    /* Prewarp cutoff frequency */
+    double Wc = tan(M_PI * fc / 2.0);
+    double Wc_sq = Wc * Wc;
+
+    /* 4th-order Butterworth pole angles (2 conjugate pairs) */
+    /* Poles at angles: π/8, 3π/8, 5π/8, 7π/8 from positive real axis */
+    /* We use the two unique angles for the two biquad sections */
+    double theta[NUM_BIQUADS] = {
+        M_PI * (1.0 / 8.0),   /* First conjugate pair */
+        M_PI * (3.0 / 8.0)    /* Second conjugate pair */
+    };
+    
+    for (int i = 0; i < NUM_BIQUADS; i++) {
+        /* Analog prototype: H(s) = 1 / (s² + 2·cos(θ)·s + 1) */
+        /* Scaled by Wc: H(s) = Wc² / (s² + 2·Wc·cos(θ)·s + Wc²) */
+        double cos_theta = cos(theta[i]);
+        double alpha = 2.0 * Wc * cos_theta;  /* 2·Wc·cos(θ) */
+
+        /* Bilinear transform: s = 2·(z-1)/(z+1)
+         * Denominator coefficients after transform:
+         * A(z) = (4 + 2α + Wc²) + (2Wc² - 8)z⁻¹ + (4 - 2α + Wc²)z⁻²
+         */
+        double A0 = 4.0 + 2.0 * alpha + Wc_sq;  /* Normalization factor */
+        
+        /* Normalized denominator: a[0] = 1 */
+        sections[i].a[0] = 1.0;
+        sections[i].a[1] = (2.0 * Wc_sq - 8.0) / A0;
+        sections[i].a[2] = (4.0 - 2.0 * alpha + Wc_sq) / A0;
+
+        /* Numerator: B(z) = Wc²·(1 + 2z⁻¹ + z⁻²) for lowpass
+         * Normalized for unity DC gain: H(z=1) = 1
+         */
+        double gain = Wc_sq / A0;
+        sections[i].b[0] = gain;
+        sections[i].b[1] = 2.0 * gain;
+        sections[i].b[2] = gain;
     }
+}
 
-    /* Step 2: Prewarp the cutoff frequency for bilinear transform */
-    double wc = tan(M_PI / 2.0 * fc);
-
-    /* Step 3: Scale poles by cutoff frequency */
-    for (int k = 0; k < BUTTERWORTH_ORDER; k++) {
-        s_poles[k] *= wc;
-    }
-
-    /* Step 4: Apply bilinear transform to get z-domain poles */
-    double complex z_poles[BUTTERWORTH_ORDER];
-    for (int k = 0; k < BUTTERWORTH_ORDER; k++) {
-        z_poles[k] = (2.0 + s_poles[k]) / (2.0 - s_poles[k]);
-    }
-
-    /* Step 5: Form biquad sections from conjugate pole pairs */
-    /* Biquad 1: poles z_poles[0] and z_poles[3] */
-    double complex p_sum1 = z_poles[0] + z_poles[3];
-    double complex p_prod1 = z_poles[0] * z_poles[3];
-    double a1_1 = -creal(p_sum1);
-    double a1_2 = creal(p_prod1);
-
-    /* Biquad 2: poles z_poles[1] and z_poles[2] */
-    double complex p_sum2 = z_poles[1] + z_poles[2];
-    double complex p_prod2 = z_poles[1] * z_poles[2];
-    double a2_1 = -creal(p_sum2);
-    double a2_2 = creal(p_prod2);
-
-    /* Step 6: Calculate normalization factors for unity DC gain
-     * For a biquad with numerator [1, 2, 1] and denominator [1, a1, a2]:
-     * H(z=1) = (1+2+1)/(1+a1+a2) = 4/(1+a1+a2)
-     * To normalize: multiply numerator by (1+a1+a2)/4
+/* Compute initial conditions for one biquad section
+ * Solves (I - A)·zi = B for steady-state response to step input
+ * where A is the companion matrix of the denominator
+ *
+ * For TDF-II biquad with a[0]=1:
+ *   (I - A) = [[1+a1, -1], [a2, 1]]
+ *   B = [b1 - a1·b0, b2 - a2·b0]
+ */
+static void compute_biquad_ic(const BiquadSection *bq, double *zi_base)
+{
+    double b0 = bq->b[0], b1 = bq->b[1], b2 = bq->b[2];
+    double a1 = bq->a[1], a2 = bq->a[2];
+    
+    /* Determinant of (I - A): det = (1+a1)·1 - (-1)·a2 = 1 + a1 + a2 */
+    double det = 1.0 + a1 + a2;
+    
+    /* B vector */
+    double B0 = b1 - a1 * b0;
+    double B1 = b2 - a2 * b0;
+    
+    /* Solve using Cramer's rule / direct inverse of 2x2 matrix
+     * (I-A)^(-1) = (1/det) · [[1, 1], [-a2, 1+a1]]
      */
-    double norm1 = (1.0 + a1_1 + a1_2) / 4.0;
-    double norm2 = (1.0 + a2_1 + a2_2) / 4.0;
-
-    /* Numerator coefficients for each biquad (normalized) */
-    double b1_0 = norm1;
-    double b1_1 = 2.0 * norm1;
-    double b1_2 = norm1;
-
-    double b2_0 = norm2;
-    double b2_1 = 2.0 * norm2;
-    double b2_2 = norm2;
-
-    /* Step 7: Cascade the two biquad sections */
-    /* Numerator: multiply polynomials */
-    b[0] = b1_0 * b2_0;
-    b[1] = b1_0*b2_1 + b1_1*b2_0;
-    b[2] = b1_0*b2_2 + b1_1*b2_1 + b1_2*b2_0;
-    b[3] = b1_1*b2_2 + b1_2*b2_1;
-    b[4] = b1_2 * b2_2;
-
-    /* Denominator: multiply polynomials */
-    a[0] = 1.0;
-    a[1] = a1_1 + a2_1;
-    a[2] = a1_2 + a1_1*a2_1 + a2_2;
-    a[3] = a1_2*a2_1 + a1_1*a2_2;
-    a[4] = a1_2 * a2_2;
-}
-
-/* Compute initial conditions for IIR filter using LAPACK */
-static void compute_initial_conditions(const double *b, const double *a, double *zi)
-{
-    /* Build the (I - A) matrix and B vector */
-    double IminusA[BUTTERWORTH_ORDER][BUTTERWORTH_ORDER];
-    double B[BUTTERWORTH_ORDER];
-
-    /* Initialize to zero */
-    for (int i = 0; i < BUTTERWORTH_ORDER; i++) {
-        B[i] = 0.0;
-        for (int j = 0; j < BUTTERWORTH_ORDER; j++) {
-            IminusA[i][j] = 0.0;
-        }
-    }
-
-    /* Diagonal: I */
-    for (int i = 0; i < BUTTERWORTH_ORDER; i++) {
-        IminusA[i][i] = 1.0;
-    }
-
-    /* B vector: B = b[1:] - a[1:] * b[0] */
-    for (int i = 0; i < BUTTERWORTH_ORDER; i++) {
-        B[i] = b[i+1] - a[i+1] * b[0];
-    }
-
-    /* IminusA = I - companion(a).T */
-    IminusA[0][0] = 1.0 + a[1];
-    IminusA[0][1] = -1.0;
-    IminusA[0][2] = 0.0;
-    IminusA[0][3] = 0.0;
-
-    IminusA[1][0] = a[2];
-    IminusA[1][1] = 1.0;
-    IminusA[1][2] = -1.0;
-    IminusA[1][3] = 0.0;
-
-    IminusA[2][0] = a[3];
-    IminusA[2][1] = 0.0;
-    IminusA[2][2] = 1.0;
-    IminusA[2][3] = -1.0;
-
-    IminusA[3][0] = a[4];
-    IminusA[3][1] = 0.0;
-    IminusA[3][2] = 0.0;
-    IminusA[3][3] = 1.0;
-
-    /* Solve the system using LAPACK dgesv */
-    double A_colmajor[BUTTERWORTH_ORDER * BUTTERWORTH_ORDER];
-    for (int i = 0; i < BUTTERWORTH_ORDER; i++) {
-        for (int j = 0; j < BUTTERWORTH_ORDER; j++) {
-            A_colmajor[j*BUTTERWORTH_ORDER + i] = IminusA[i][j];
-        }
-    }
-
-    for (int i = 0; i < BUTTERWORTH_ORDER; i++) {
-        zi[i] = B[i];
-    }
-
-    int n_sys = BUTTERWORTH_ORDER;
-    int nrhs = 1;
-    int lda = BUTTERWORTH_ORDER;
-    int ipiv[BUTTERWORTH_ORDER];
-    int ldb = BUTTERWORTH_ORDER;
-    int info;
-
-    extern void dgesv_(int *n, int *nrhs, double *A, int *lda,
-                       int *ipiv, double *B, int *ldb, int *info);
-
-    dgesv_(&n_sys, &nrhs, A_colmajor, &lda, ipiv, zi, &ldb, &info);
-
-    if (info != 0) {
-        fprintf(stderr, "Warning: LAPACK dgesv failed (info=%d), using zero initial conditions\n", info);
-        for (int i = 0; i < BUTTERWORTH_ORDER; i++) zi[i] = 0.0;
+    if (fabs(det) > 1e-10) {
+        zi_base[0] = (B0 + B1) / det;
+        zi_base[1] = (-a2 * B0 + (1.0 + a1) * B1) / det;
+    } else {
+        /* Fallback for degenerate case (should not happen with valid fc) */
+        zi_base[0] = 0.0;
+        zi_base[1] = 0.0;
     }
 }
 
-/* Apply IIR filter using transposed Direct Form II */
-static void apply_iir_filter(const double *b, const double *a,
-                             const double *x, double *y, size_t n,
-                             const double *zi, double *zf)
+/* Apply one biquad section using Transposed Direct Form II
+ * This form is numerically stable and efficient
+ *
+ * y[n] = b0·x[n] + z[0]
+ * z[0] = b1·x[n] - a1·y[n] + z[1]
+ * z[1] = b2·x[n] - a2·y[n]
+ */
+static void apply_biquad(const BiquadSection *bq, const double *x, double *y, 
+                         size_t n, double z[2])
 {
-    double z[BUTTERWORTH_ORDER] = {0.0, 0.0, 0.0, 0.0};
-
-    if (zi != NULL) {
-        for (int i = 0; i < BUTTERWORTH_ORDER; i++) {
-            z[i] = zi[i];
-        }
-    }
-
+    double b0 = bq->b[0], b1 = bq->b[1], b2 = bq->b[2];
+    double a1 = bq->a[1], a2 = bq->a[2];
+    
     for (size_t i = 0; i < n; i++) {
-        y[i] = b[0] * x[i] + z[0];
-
-        z[0] = b[1]*x[i] - a[1]*y[i] + z[1];
-        z[1] = b[2]*x[i] - a[2]*y[i] + z[2];
-        z[2] = b[3]*x[i] - a[3]*y[i] + z[3];
-        z[3] = b[4]*x[i] - a[4]*y[i];
-    }
-
-    if (zf != NULL) {
-        for (int i = 0; i < BUTTERWORTH_ORDER; i++) {
-            zf[i] = z[i];
-        }
+        double xi = x[i];
+        double yi = b0 * xi + z[0];
+        
+        z[0] = b1 * xi - a1 * yi + z[1];
+        z[1] = b2 * xi - a2 * yi;
+        
+        y[i] = yi;
     }
 }
 
@@ -244,7 +163,9 @@ static void reverse_array_inplace(double *arr, size_t n)
     }
 }
 
-/* Pad signal using odd reflection */
+/* Pad signal using odd reflection (anti-symmetric extension)
+ * This minimizes edge discontinuities for filtfilt
+ */
 static double* pad_signal(const double *y, int n, int pad_len, size_t *total_len)
 {
     *total_len = (size_t)n + 2 * (size_t)pad_len;
@@ -254,44 +175,50 @@ static double* pad_signal(const double *y, int n, int pad_len, size_t *total_len
         return NULL;
     }
 
+    /* Copy original data to center */
     memcpy(padded + pad_len, y, (size_t)n * sizeof(double));
 
-    double left_end = y[0];
+    /* Left padding: odd reflection around y[0]
+     * padded[pad_len-1-i] = 2·y[0] - y[1+i]
+     */
+    double left_val = y[0];
     for (int i = 0; i < pad_len; i++) {
         int src_idx = pad_len - i;
         if (src_idx >= n) src_idx = n - 1;
-        padded[i] = 2.0 * left_end - y[src_idx];
+        padded[i] = 2.0 * left_val - y[src_idx];
     }
 
-    double right_end = y[n-1];
+    /* Right padding: odd reflection around y[n-1]
+     * padded[pad_len+n+i] = 2·y[n-1] - y[n-2-i]
+     */
+    double right_val = y[n-1];
     for (int i = 0; i < pad_len; i++) {
         int src_idx = n - 2 - i;
         if (src_idx < 0) src_idx = 0;
-        padded[pad_len + n + i] = 2.0 * right_end - y[src_idx];
+        padded[pad_len + n + i] = 2.0 * right_val - y[src_idx];
     }
 
     return padded;
 }
 
-/* Automatic cutoff frequency estimation */
+/* Automatic cutoff frequency estimation (placeholder) */
 double estimate_cutoff_frequency(const double *x, const double *y, int n)
 {
     (void)x; (void)y; (void)n;
-    /* TODO: Implement actual estimation (e.g., zero-crossing rate, spectral analysis) */
     return 0.2;
 }
 
-/* Main filtfilt function with optimized memory usage */
+/* Main filtfilt function using biquad cascade with proper IC */
 ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
                                         double cutoff_freq, int auto_cutoff,
                                         const GridAnalysis *grid_info)
 {
-    /* Initialize pointers to NULL for safe cleanup */
+    /* Initialize pointers for safe cleanup */
     ButterworthResult *result = NULL;
     double *y_padded = NULL;
     double *y_work = NULL;
 
-    /* Input validation */
+    /* --- Input validation --- */
     if (x == NULL || y == NULL) {
         fprintf(stderr, "ERROR: NULL input pointer\n");
         return NULL;
@@ -314,7 +241,7 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
         return NULL;
     }
 
-    /* Calculate padding and check memory requirements */
+    /* Calculate padding and memory estimate */
     int pad_len = calculate_pad_length(n);
     size_t mem_estimate = estimate_memory_usage(n, pad_len);
 
@@ -323,7 +250,7 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
                 n, (double)mem_estimate / (1024.0 * 1024.0 * 1024.0));
     }
 
-    /* Automatic cutoff selection */
+    /* Auto cutoff selection */
     double fc = cutoff_freq;
     if (auto_cutoff > 0) {
         fc = estimate_cutoff_frequency(x, y, n);
@@ -338,8 +265,7 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
     }
 
     if (fc > CUTOFF_FREQ_STABILITY_WARN) {
-        fprintf(stderr, "Warning: fc = %.4f is close to Nyquist limit, "
-                "may cause numerical instability\n", fc);
+        fprintf(stderr, "Warning: fc = %.4f is close to Nyquist limit\n", fc);
     }
 
     /* Check grid uniformity */
@@ -356,9 +282,7 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
 
     double sample_rate = 1.0 / grid_info->h_avg;
 
-    /* --- ALLOCATIONS START --- */
-
-    /* 1. Allocate result structure */
+    /* --- ALLOCATIONS --- */
     result = (ButterworthResult*)malloc(sizeof(ButterworthResult));
     if (result == NULL) {
         fprintf(stderr, "ERROR: Memory allocation failed (result structure)\n");
@@ -366,7 +290,6 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
     }
     result->y_smooth = NULL;
 
-    /* 2. Allocate result data array */
     result->y_smooth = (double*)malloc((size_t)n * sizeof(double));
     if (result->y_smooth == NULL) {
         fprintf(stderr, "ERROR: Memory allocation failed (result buffer)\n");
@@ -379,11 +302,17 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
     result->cutoff_freq = fc;
     result->sample_rate = sample_rate;
 
-    /* Design filter */
-    double b[BUTTERWORTH_NUM_COEFFS], a[BUTTERWORTH_NUM_COEFFS];
-    butterworth_coefficients(fc, b, a);
+    /* Design filter (2 biquad sections) */
+    BiquadSection sections[NUM_BIQUADS];
+    design_biquad_sections(fc, sections);
 
-    /* 3. Allocate padded signal */
+    /* Compute initial conditions for each biquad */
+    double zi_base[NUM_BIQUADS][2];
+    for (int i = 0; i < NUM_BIQUADS; i++) {
+        compute_biquad_ic(&sections[i], zi_base[i]);
+    }
+
+    /* Pad signal */
     size_t padded_len;
     y_padded = pad_signal(y, n, pad_len, &padded_len);
     if (y_padded == NULL) {
@@ -391,41 +320,55 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
         goto error;
     }
 
-    /* 4. Allocate single work buffer (optimization: reduced from 3 to 1) */
+    /* Allocate work buffer */
     y_work = (double*)malloc(padded_len * sizeof(double));
     if (y_work == NULL) {
         fprintf(stderr, "ERROR: Memory allocation failed (work buffer)\n");
         goto error;
     }
 
-    /* --- PROCESSING --- */
-
-    /* Initial conditions */
-    double zi_base[BUTTERWORTH_ORDER];
-    double zi[BUTTERWORTH_ORDER];
-    compute_initial_conditions(b, a, zi_base);
-
-    /* Forward filtering: y_padded -> y_work */
-    for (int i = 0; i < BUTTERWORTH_ORDER; i++) {
-        zi[i] = zi_base[i] * y_padded[0];
+    /* --- FORWARD FILTERING --- */
+    /* Copy input to work buffer */
+    memcpy(y_work, y_padded, padded_len * sizeof(double));
+    
+    /* Apply biquads in cascade with scaled IC */
+    double zi[2];
+    double first_val = y_work[0];
+    
+    for (int s = 0; s < NUM_BIQUADS; s++) {
+        /* Scale IC by first sample value */
+        zi[0] = zi_base[s][0] * first_val;
+        zi[1] = zi_base[s][1] * first_val;
+        
+        /* Apply biquad (in-place: y_work -> y_work) */
+        apply_biquad(&sections[s], y_work, y_work, padded_len, zi);
+        
+        /* Update first_val for next section (output of this section) */
+        first_val = y_work[0];
     }
-    apply_iir_filter(b, a, y_padded, y_work, padded_len, zi, NULL);
 
-    /* Reverse y_work in-place */
+    /* --- BACKWARD FILTERING --- */
+    /* Reverse the forward-filtered signal */
+    reverse_array_inplace(y_work, padded_len);
+    
+    /* Apply biquads again with IC based on reversed signal's first value */
+    first_val = y_work[0];
+    
+    for (int s = 0; s < NUM_BIQUADS; s++) {
+        zi[0] = zi_base[s][0] * first_val;
+        zi[1] = zi_base[s][1] * first_val;
+        
+        apply_biquad(&sections[s], y_work, y_work, padded_len, zi);
+        
+        first_val = y_work[0];
+    }
+
+    /* Reverse back to original order */
     reverse_array_inplace(y_work, padded_len);
 
-    /* Backward filtering: y_work -> y_padded (reuse as output buffer) */
-    for (int i = 0; i < BUTTERWORTH_ORDER; i++) {
-        zi[i] = zi_base[i] * y_work[0];
-    }
-    apply_iir_filter(b, a, y_work, y_padded, padded_len, zi, NULL);
-
-    /* Reverse y_padded in-place */
-    reverse_array_inplace(y_padded, padded_len);
-
-    /* Extract result (from reversed padded buffer) */
+    /* --- EXTRACT RESULT --- */
     for (int i = 0; i < n; i++) {
-        result->y_smooth[i] = y_padded[pad_len + i];
+        result->y_smooth[i] = y_work[pad_len + i];
     }
 
     /* --- CLEANUP (Success) --- */
