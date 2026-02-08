@@ -84,7 +84,7 @@ void test_tikhonov_constant_function(void) {
     #undef N
 }
 
-/* TEST 2: Lineární funkce */
+/* TEST 2: Lineární funkce — now in null space of D² penalty */
 void test_tikhonov_linear_function(void) {
     /* ARRANGE */
     #define N 50
@@ -106,16 +106,19 @@ void test_tikhonov_linear_function(void) {
     /* ASSERT */
     TEST_ASSERT_NOT_NULL(result);
 
-    /* Vyhlazená data by měla odpovídat přímce */
-    for (int i = 5; i < N-5; i++) {  /* Ignoruj okraje */
+    /* Linear function is in null space of D² — result should be exact for all points */
+    for (int i = 0; i < N; i++) {
         double expected = a + b * x[i];
-        TEST_ASSERT_DOUBLE_WITHIN(0.05, expected, result->y_smooth[i]);  /* Zvýšená tolerance */
+        TEST_ASSERT_DOUBLE_WITHIN(1e-8, expected, result->y_smooth[i]);
     }
 
     /* Derivace by měla být konstantní slope b */
-    for (int i = 5; i < N-5; i++) {
-        TEST_ASSERT_DOUBLE_WITHIN(0.1, b, result->y_deriv[i]);  /* Zvýšená tolerance pro regularizaci */
+    for (int i = 1; i < N-1; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(1e-6, b, result->y_deriv[i]);
     }
+
+    /* Reg term should be ~0 (linear is in null space) */
+    TEST_ASSERT_LESS_THAN_DOUBLE(1e-10, result->regularization_term);
 
     /* CLEANUP */
     free_tikhonov_result(result);
@@ -146,16 +149,17 @@ void test_tikhonov_quadratic_function(void) {
     /* ASSERT */
     TEST_ASSERT_NOT_NULL(result);
 
-    /* Vyhlazená data by měla aproximovat parabolu */
+    /* Vyhlazená data by měla aproximovat parabolu
+     * With D² penalty, parabola has constant d²y/dx²=2c=0.6, so penalty is active */
     for (int i = 5; i < N-5; i++) {
         double expected = a + b * x[i] + c * x[i] * x[i];
-        TEST_ASSERT_DOUBLE_WITHIN(0.05, expected, result->y_smooth[i]);
+        TEST_ASSERT_DOUBLE_WITHIN(0.15, expected, result->y_smooth[i]);
     }
 
     /* Derivace by měla být dy/dx = b + 2*c*x */
     for (int i = 10; i < N-10; i++) {
         double expected_deriv = b + 2.0 * c * x[i];
-        TEST_ASSERT_DOUBLE_WITHIN(0.1, expected_deriv, result->y_deriv[i]);
+        TEST_ASSERT_DOUBLE_WITHIN(0.15, expected_deriv, result->y_deriv[i]);
     }
 
     /* CLEANUP */
@@ -393,10 +397,11 @@ void test_tikhonov_uniform_grid_average_method(void) {
     TEST_ASSERT_LESS_THAN_DOUBLE(0.01, grid->cv);
     TEST_ASSERT_EQUAL_INT(1, grid->is_uniform);
 
-    /* Výsledek by měl být dobrá aproximace paraboly */
+    /* Výsledek by měl být dobrá aproximace paraboly
+     * With D² penalty, parabola has constant d²y/dx²=1.0, penalty active */
     for (int i = 5; i < N-5; i++) {
         double expected = 1.0 + 0.5 * x[i] * x[i];
-        TEST_ASSERT_DOUBLE_WITHIN(0.05, expected, result->y_smooth[i]);
+        TEST_ASSERT_DOUBLE_WITHIN(0.15, expected, result->y_smooth[i]);
     }
 
     /* CLEANUP */
@@ -589,7 +594,7 @@ void test_gcv_optimal_lambda_constant_with_noise(void) {
 
     /* ASSERT */
     /* Lambda by měla být v rozumném rozsahu */
-    TEST_ASSERT_GREATER_THAN_DOUBLE(1e-5, optimal_lambda);
+    TEST_ASSERT_GREATER_THAN_DOUBLE(1e-8, optimal_lambda);
     TEST_ASSERT_LESS_THAN_DOUBLE(10.0, optimal_lambda);
 
     /* Použij optimální lambda pro smoothing */
@@ -628,7 +633,7 @@ void test_gcv_optimal_lambda_quadratic_with_noise(void) {
     double optimal_lambda = find_optimal_lambda_gcv(x, y_noisy, N, grid);
 
     /* ASSERT */
-    TEST_ASSERT_GREATER_THAN_DOUBLE(1e-5, optimal_lambda);
+    TEST_ASSERT_GREATER_THAN_DOUBLE(1e-8, optimal_lambda);
     TEST_ASSERT_LESS_THAN_DOUBLE(10.0, optimal_lambda);
 
     /* Použij optimální lambda */
@@ -665,10 +670,10 @@ void test_gcv_trace_penalty_overfitting(void) {
     double optimal_lambda = find_optimal_lambda_gcv(x, y_noisy, N, grid);
 
     /* ASSERT */
-    TEST_ASSERT_GREATER_THAN_DOUBLE(1e-5, optimal_lambda);
+    TEST_ASSERT_GREATER_THAN_DOUBLE(1e-8, optimal_lambda);
 
     /* Lambda by neměla být příliš malá (prevence overfitting) */
-    TEST_ASSERT_GREATER_THAN_DOUBLE(1e-3, optimal_lambda);
+    TEST_ASSERT_GREATER_THAN_DOUBLE(1e-6, optimal_lambda);
 
     /* CLEANUP */
     free_grid_analysis(grid);
@@ -786,8 +791,9 @@ void test_tikhonov_lambda_very_large(void) {
     /* ASSERT */
     TEST_ASSERT_NOT_NULL(result);
 
-    /* Pro velkou lambda by měl být data_term větší (horší fit) */
-    TEST_ASSERT_GREATER_THAN_DOUBLE(1.0, result->data_term);
+    /* Pro velkou lambda by měl být data_term větší (horší fit)
+     * With D² penalty, large lambda drives solution toward best-fit line */
+    TEST_ASSERT_GREATER_THAN_DOUBLE(0.5, result->data_term);
 
     /* Reg_term by měl být nenulový */
     TEST_ASSERT_GREATER_THAN_DOUBLE(0.0, result->regularization_term);
@@ -1100,6 +1106,53 @@ void test_tikhonov_memory_error_handling(void) {
     free_tikhonov_result(NULL);  // Mělo by být safe
 
     /* CLEANUP - není potřeba, všechny result* jsou NULL */
+}
+
+/* ============================================================================
+ * G. NULL SPACE VERIFICATION
+ * ============================================================================
+ */
+
+/* TEST 26: Linear function is in null space of D² — exact for any lambda */
+void test_tikhonov_linear_exact_null_space(void) {
+    /* ARRANGE */
+    #define N 50
+    double x[N], y[N];
+    const double a = 3.0;
+    const double b = 2.5;
+
+    create_uniform_grid(x, N, 0.0, 0.1);
+    for (int i = 0; i < N; i++) {
+        y[i] = a + b * x[i];
+    }
+
+    GridAnalysis *grid = analyze_grid(x, N, 0);
+
+    /* Use extremely large lambda — linear function should still be preserved exactly */
+    double lambda = 100.0;
+
+    /* ACT */
+    TikhonovResult *result = tikhonov_smooth(x, y, N, lambda, grid);
+
+    /* ASSERT */
+    TEST_ASSERT_NOT_NULL(result);
+
+    /* y_smooth must equal y exactly (within numerical precision) for ALL points */
+    for (int i = 0; i < N; i++) {
+        double expected = a + b * x[i];
+        TEST_ASSERT_DOUBLE_WITHIN(1e-8, expected, result->y_smooth[i]);
+    }
+
+    /* Regularization term must be ~0 */
+    TEST_ASSERT_LESS_THAN_DOUBLE(1e-10, result->regularization_term);
+
+    /* Data term must be ~0 (perfect fit) */
+    TEST_ASSERT_LESS_THAN_DOUBLE(1e-10, result->data_term);
+
+    /* CLEANUP */
+    free_tikhonov_result(result);
+    free_grid_analysis(grid);
+    #undef N
 }
 
 /* ============================================================================

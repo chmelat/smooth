@@ -6,28 +6,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `smooth` is a scientific data smoothing program implementing four mathematical methods for noise reduction and derivative computation in experimental data. The codebase is ~3,600 lines of modular C code with LAPACK dependencies.
 
-**Current version:** 5.9.2 (2025-12-03)
+**Current version:** 5.11.0 (2026-02-07)
 
 ## Documentation Guidelines
 
+### README.md Equation Format
+
+**IMPORTANT:** The README.md uses **GitHub LaTeX math syntax** for all mathematical equations:
+
+- **Inline math:** `$...$` — e.g., `$\lambda$`, `$\|y - u\|^2$`
+- **Display math:** `$$...$$` — for standalone equations on their own line
+- **Matrices:** Use `\begin{pmatrix}...\end{pmatrix}` inside `$$...$$`
+
+**When editing README.md:** Always use LaTeX math syntax for equations, formulas, and mathematical symbols. Do NOT use plain-text approximations in code blocks for mathematical content. Code blocks should be reserved for actual code, CLI examples, and program output.
+
+**Examples of correct usage:**
+```markdown
+Inline: The parameter $\lambda$ controls smoothing strength.
+Display: $$J[\mathbf{u}] = \|\mathbf{y} - \mathbf{u}\|^2 + \lambda \|D^2 \mathbf{u}\|^2$$
+Matrix: $$A = \begin{pmatrix} 1 & -2 \\ -2 & 5 \end{pmatrix}$$
+```
+
 ### README.md Character Restrictions
-
-**IMPORTANT:** The README.md file uses Unicode mathematical symbols but **restricts non-mathematical special characters** for PDF conversion compatibility.
-
-**Allowed characters:**
-- **Mathematical symbols:** All Greek letters (λ, ω, π, Σ, ε, μ, θ, etc.)
-- **Mathematical operators:** ², ³, ⁴, ₀, ₁, ₂, ∫, ∂, √, ±, ×, ≈, ≥, ≤, ·
-- **Mathematical arrows:** → (rightarrow only, use `==>` for implies/double arrows)
-- **Mathematical ellipsis:** ⋯ (centered dots), ⋮ (vertical dots), ⋱ (diagonal dots)
-- **Standard ASCII:** Letters, numbers, punctuation
 
 **Prohibited characters (use ASCII alternatives):**
 - **Box-drawing:** Use `|-`, `-`, `|`, `+-`, `=` instead of ├ ─ │ └ ━
 - **Checkmarks/warnings:** Use `[OK]`, `[X]`, `[WARNING]` instead of ✓ ✗ ⚠️
 
-**Reason:** DejaVu fonts used for PDF generation support mathematical Unicode (including arrows and ellipsis) but have limited support for decorative box-drawing characters. This restriction ensures README.md converts cleanly to PDF while preserving all mathematical notation.
+**Allowed non-LaTeX Unicode:**
+- **Arrows:** → for plain text (use `\to` or `\rightarrow` inside math)
+- **Standard ASCII:** Letters, numbers, punctuation
 
-**When editing README.md:** Do not introduce box-drawing characters or decorative Unicode. Mathematical arrows (→, ⟹) and ellipsis (⋯, ⋮, ⋱) are encouraged for better readability.
+**Reason:** Box-drawing and decorative Unicode characters are not supported by DejaVu fonts used for PDF generation. Mathematical notation is handled entirely by LaTeX rendering.
 
 ## Build System
 
@@ -136,10 +146,10 @@ typedef struct {
 
 All methods use LAPACK for linear algebra:
 
-- **polyfit:** `dposv` - Symmetric positive definite solver (normal equations)
+- **polyfit:** `dgelss` - SVD least squares solver (Vandermonde system)
 - **savgol:** `dposv` - Symmetric positive definite solver (coefficient computation)
-- **tikhonov:** `dpbsv` - Banded symmetric positive definite solver (tridiagonal system)
-- **butterworth:** `dgesv` - General linear solver (initial conditions via LU decomposition)
+- **tikhonov:** `dpbsv` - Banded symmetric positive definite solver (pentadiagonal, kd=2)
+- **butterworth:** No LAPACK dependency (analytical biquad IC via Cramer's rule)
 
 **Key:** Methods rely on the symmetric positive definite structure of their formulations for numerical stability.
 
@@ -147,16 +157,15 @@ All methods use LAPACK for linear algebra:
 
 Grid analysis is central to method selection:
 
-**Coefficient of Variation (CV):**
-```
-CV = std_dev(spacing) / avg(spacing)
+**Coefficient of Variation (CV):** $CV = \sigma(h) / h_{\text{avg}}$
 
-CV ≤ 0.01:  Uniform grid (is_uniform flag set to 1)
-CV < 0.05:  Nearly uniform (Savgol warns but works)
-CV < 0.15:  Moderately non-uniform (Tikhonov uses average coefficient method)
-CV ≥ 0.15:  Highly non-uniform (Tikhonov uses local spacing method)
-CV ≥ 0.05:  Savgol REJECTS with detailed error message
-```
+| CV threshold | Effect |
+|-------------|--------|
+| $CV \le 0.01$ | Uniform grid (`is_uniform` = 1) |
+| $CV < 0.05$ | Nearly uniform (Savgol warns but works) |
+| $CV < 0.15$ | Moderately non-uniform (Tikhonov: average coefficient method) |
+| $CV \ge 0.15$ | Highly non-uniform (Tikhonov: local spacing method) |
+| $CV \ge 0.05$ | Savgol REJECTS with detailed error message |
 
 **When modifying grid-dependent code:**
 - Savitzky-Golay assumes uniform grids (mathematical requirement, not implementation choice)
@@ -168,9 +177,13 @@ CV ≥ 0.05:  Savgol REJECTS with detailed error message
 
 Uses **Unity testing framework** (included in `tests/` directory).
 
-**Current test coverage:**
+**Current test coverage (102 tests total):**
 - `test_grid_analysis.c` - Grid analysis module (7 tests)
-- `test_polyfit.c` - Polynomial fitting module
+- `test_polyfit.c` - Polynomial fitting module (21 tests)
+- `test_savgol.c` - Savitzky-Golay module (16 tests)
+- `test_tikhonov.c` - Tikhonov module (26 tests)
+- `test_butterworth.c` - Butterworth module (17 tests, 4 have pre-existing valgrind leaks)
+- `test_timestamp.c` - Timestamp module (15 tests)
 - `test_main.c` - Test runner
 
 **To add new tests:**
@@ -239,7 +252,8 @@ TEST_MODULES = ... module.o
 
 **Polynomial Fitting (polyfit.c):**
 - Local polynomial least squares in sliding window
-- Solves normal equations at each point: `(X^T X)a = X^T y`
+- SVD decomposition via `dgelss` at each point: $V \cdot \mathbf{a} = \mathbf{y}$
+- Automatic truncation of small singular values ($\text{rcond} = 10^{-10}$)
 - Asymmetric windows at boundaries with polynomial extrapolation
 - O(n·p³) complexity
 
@@ -251,22 +265,22 @@ TEST_MODULES = ... module.o
 - Key difference from polyfit: same coefficients applied everywhere (translation invariance)
 
 **Tikhonov (tikhonov.c):**
-- Global variational minimization: `J[u] = ||y-u||² + λ||D²u||²`
-- **Hybrid discretization (v5.4+):**
-  - CV < 0.15: Average coefficient method (harmonic mean)
-  - CV ≥ 0.15: Local spacing method (Taylor expansion)
-- Natural boundary conditions (D²u = 0 at ends)
-- Tridiagonal banded solver for O(n) efficiency
-- GCV for automatic λ selection (eigenvalue trace approximation)
+- Global variational minimization: $J[\mathbf{u}] = \|\mathbf{y}-\mathbf{u}\|^2 + \lambda\|D^2\mathbf{u}\|^2$
+- True 2nd-order penalty via $(D^2)^T W D^2$ Gram matrix (pentadiagonal, kd=2)
+- **Hybrid discretization (v5.4+, corrected v5.11):**
+  - CV < 0.15: Average coefficient method (uniform stencil $[1,-4,6,-4,1]/h^4$)
+  - CV ≥ 0.15: Local spacing method (weighted Gram matrix $\sum w_k \mathbf{d}_k^T \mathbf{d}_k$)
+- Natural boundary conditions implicit (no D² rows for boundary points)
+- Pentadiagonal banded solver `dpbsv` for O(n) efficiency
+- GCV for automatic λ selection (eigenvalue trace with 2D null space)
 - O(n) complexity
-- **Boundary artifacts:** On non-uniform grids (CV > 0.15) with small λ, last 2-3 points may show significant oscillations (up to 60% deviation). This is documented behavior, not a bug. See README.md for mitigation strategies.
 
 **Butterworth (butterworth.c):**
 - 4th-order digital low-pass filter
 - Bilinear transform: s-domain poles → z-domain
 - Biquad cascade (two 2nd-order sections)
 - **Filtfilt:** Forward-backward filtering for zero phase
-- **lfilter_zi:** Scipy-compatible initial conditions via companion matrix + LAPACK dgesv
+- **Analytical IC:** Per-biquad initial conditions via Cramer's rule (no LAPACK needed)
 - Odd reflection padding for edge handling
 - O(n) complexity
 
@@ -325,7 +339,9 @@ void free_method_result(MethodResult *result) {
 
 ## Version History Context
 
-**v5.7.1 (current):** Added polyfit unit tests, small bug fixes
+**v5.11.0 (current):** True 2nd-order Tikhonov penalty $(D^2)^T W D^2$, pentadiagonal matrix, 102 tests
+**v5.10.1:** Butterworth biquad cascade rewrite, analytical IC
+**v5.7.1:** Added polyfit unit tests, small bug fixes
 **v5.6:** First unity tests added
 **v5.5:** Butterworth filter added, Unix filter support, centralized grid analysis
 **v5.4:** Tikhonov hybrid discretization (auto-switch at CV=0.15), GCV improvements

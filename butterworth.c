@@ -17,7 +17,8 @@
 #endif
 
 /* Thresholds */
-#define UNIFORMITY_CV_THRESHOLD 0.05
+#define UNIFORMITY_CV_THRESHOLD 0.15
+#define UNIFORMITY_CV_WARNING   0.05
 #define NEARLY_UNIFORM_CV_THRESHOLD 0.01
 #define CUTOFF_FREQ_MIN 0.0
 #define CUTOFF_FREQ_MAX 1.0
@@ -45,7 +46,7 @@ static inline int calculate_pad_length(int n)
 static inline size_t estimate_memory_usage(int n, int pad_len)
 {
     size_t padded_len = (size_t)n + 2 * (size_t)pad_len;
-    return (2 * padded_len + (size_t)n) * sizeof(double) + sizeof(ButterworthResult);
+    return (padded_len + (size_t)n) * sizeof(double) + sizeof(ButterworthResult);
 }
 
 /* Design 4th-order Butterworth as 2 cascaded biquad sections
@@ -215,7 +216,6 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
 {
     /* Initialize pointers for safe cleanup */
     ButterworthResult *result = NULL;
-    double *y_padded = NULL;
     double *y_work = NULL;
 
     /* --- Input validation --- */
@@ -276,7 +276,11 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
         return NULL;
     }
 
-    if (grid_info->cv > NEARLY_UNIFORM_CV_THRESHOLD) {
+    if (grid_info->cv > UNIFORMITY_CV_WARNING) {
+        printf("# WARNING: Grid is moderately non-uniform (CV=%.4f)\n", grid_info->cv);
+        printf("#   Butterworth frequency response may be distorted.\n");
+        printf("#   Consider using Tikhonov method (-m 2 -l auto) for better results.\n");
+    } else if (grid_info->cv > NEARLY_UNIFORM_CV_THRESHOLD) {
         printf("# Butterworth: Grid is nearly uniform (CV=%.4f)\n", grid_info->cv);
     }
 
@@ -312,24 +316,15 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
         compute_biquad_ic(&sections[i], zi_base[i]);
     }
 
-    /* Pad signal */
+    /* Pad signal — use directly as work buffer */
     size_t padded_len;
-    y_padded = pad_signal(y, n, pad_len, &padded_len);
-    if (y_padded == NULL) {
+    y_work = pad_signal(y, n, pad_len, &padded_len);
+    if (y_work == NULL) {
         fprintf(stderr, "ERROR: Signal padding failed\n");
         goto error;
     }
 
-    /* Allocate work buffer */
-    y_work = (double*)malloc(padded_len * sizeof(double));
-    if (y_work == NULL) {
-        fprintf(stderr, "ERROR: Memory allocation failed (work buffer)\n");
-        goto error;
-    }
-
     /* --- FORWARD FILTERING --- */
-    /* Copy input to work buffer */
-    memcpy(y_work, y_padded, padded_len * sizeof(double));
     
     /* Apply biquads in cascade with scaled IC */
     double zi[2];
@@ -372,14 +367,12 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
     }
 
     /* --- CLEANUP (Success) --- */
-    free(y_padded);
     free(y_work);
 
     return result;
 
     /* --- ERROR HANDLER --- */
 error:
-    if (y_padded) free(y_padded);
     if (y_work) free(y_work);
     free_butterworth_result(result);
 

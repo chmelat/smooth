@@ -1,6 +1,6 @@
 /*  Tikhonov regularization for data smoothing
- *  Simplified header with correct D² operator
- *  V4.0/2025-10-04/ Simplified version
+ *  Second derivative penalty via (D²)ᵀ W D² Gram matrix
+ *  V5.0/2026-02-07/ Corrected to true 2nd order penalty (pentadiagonal)
  */
 
 #ifndef TIKHONOV_H
@@ -48,7 +48,7 @@ typedef struct {
  * 
  * Notes:
  *   - Uses natural boundary conditions (second derivative = 0 at ends)
- *   - Efficient band matrix implementation for O(n) memory
+ *   - Efficient pentadiagonal band matrix (bandwidth 2) for O(n) memory
  *   - Correct discretization for both uniform and non-uniform grids
  *   - Memory must be freed using free_tikhonov_result()
  */

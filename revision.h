@@ -1,5 +1,5 @@
 /*
 * revision.h - define the version number and date
 */
-#define VERSION "5.10.1"
-#define REVDATE "2025-12-07"
+#define VERSION "5.11.0"
+#define REVDATE "2026-02-07"

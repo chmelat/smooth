@@ -1,5 +1,6 @@
 /* Tikhonov regularization for data smoothing
- * Hybrid version: combines best of old and new approaches
+ * Second derivative penalty via (D²)ᵀ W D² (pentadiagonal Gram matrix)
+ * V5.0/2026-02-07/ Corrected penalty from 1st to 2nd order: (D²)ᵀWD² pentadiagonal matrix
  * V4.7/2025-11-28/ Fixed boundary condition asymmetry in Local Spacing Method
  * V4.6/2025-11-28/ Fixed critical bugs: discretization consistency, functional computation
  * V4.5/2025-11-21/ Refactored memory management (goto pattern)
@@ -106,67 +107,65 @@ static void build_band_matrix(double *x, int n, double lambda, double *AB, int l
     DiscretizationMethod method = select_discretization_method(grid_info, x, n);
 
     if (method == DISCRETIZATION_AVERAGE) {
-        /* Average Coefficient Method */
-        double h_avg_squared = 0.0;
-        for (int i = 1; i < n; i++) {
-            double h_local = x[i] - x[i-1];
-            h_avg_squared += 1.0 / (h_local * h_local);
-        }
-        double c = lambda * h_avg_squared / (n-1);
-        
-        /* Interior points */
-        for (j = 1; j < n-1; j++) {
-            AB[kd + j*ldab] += c * 2.0;
-        }
-        
-        /* Boundaries */
-        AB[kd + 0*ldab] += c * 1.0;
-        AB[kd + (n-1)*ldab] += c * 1.0;
-        
-        /* Superdiagonal (stored at index 0 in band storage with kd=1) */
-        for (j = 1; j < n; j++) {
-            AB[0 + j*ldab] += c * (-1.0);
+        /* Average Coefficient Method: (D²)ᵀ D² with uniform stencil
+         * D² is (n-2)×n matrix, row k: [1, -2, 1] / h_avg²
+         * (D²)ᵀ D² = sum_k d_k^T d_k / h_avg^4
+         * Resulting pentadiagonal matrix with stencil [1, -4, 6, -4, 1]/h^4
+         * Natural BCs (D²u = 0 at boundaries) are implicit — no boundary rows in D²
+         */
+        double h_avg = (x[n-1] - x[0]) / (n - 1);
+        double h4 = h_avg * h_avg * h_avg * h_avg;
+        double coeff = lambda / h4;
+
+        for (int k = 1; k <= n-2; k++) {
+            /* d_k = [1, -2, 1] at positions k-1, k, k+1 */
+            /* Accumulate rank-1 contribution d_k^T d_k (upper triangle only) */
+
+            /* Diagonal: a²=1, b²=4, c²=1 */
+            AB[kd + (k-1)*ldab] += coeff * 1.0;
+            AB[kd + k*ldab]     += coeff * 4.0;
+            AB[kd + (k+1)*ldab] += coeff * 1.0;
+
+            /* 1st superdiagonal: a*b = -2, b*c = -2 */
+            AB[(kd-1) + k*ldab]     += coeff * (-2.0);
+            AB[(kd-1) + (k+1)*ldab] += coeff * (-2.0);
+
+            /* 2nd superdiagonal: a*c = 1 */
+            AB[(kd-2) + (k+1)*ldab] += coeff * 1.0;
         }
 
     } else {
-        /* Local Spacing Method */
-        /* Interior points */
-        for (j = 1; j < n-1; j++) {
-            double h_left = x[j] - x[j-1];
-            double h_right = x[j+1] - x[j];
-            double h_sum = h_left + h_right;
-            double w = 2.0 * lambda / h_sum;
-            
-            AB[kd + j*ldab] += w * (1.0/h_left + 1.0/h_right);
-            AB[0 + (j+1)*ldab] += -w / h_right;
-        }
-        
-        /* FIX 3.2: Symmetric boundary conditions
-         * 
-         * Natural boundary conditions penalize (u')² at boundaries.
-         * For left boundary:  λ * ((u_1 - u_0) / h_0)²
-         * For right boundary: λ * ((u_{n-1} - u_{n-2}) / h_{n-2})²
-         * 
-         * The Hessian of each term contributes to a 2x2 block:
-         *   [+1/h²  -1/h²]
-         *   [-1/h²  +1/h²]
-         * 
-         * Both diagonal AND off-diagonal elements must be set for symmetry.
+        /* Local Spacing Method: (D²)ᵀ W D² for non-uniform grid
+         * Row k of D²: (D²u)_k = (2/(h_l+h_r)) * [u_{k-1}/h_l - u_k*(1/h_l+1/h_r) + u_{k+1}/h_r]
+         * Integration weight: w_k = (h_l + h_r) / 2
+         * Matrix = sum_k w_k * d_k^T d_k — automatically symmetric (Gram matrix)
+         * Natural BCs implicit — no boundary rows in D²
          */
-        
-        /* Left boundary: affects elements [0,0], [0,1], and [1,1] */
-        double h_first = x[1] - x[0];
-        double bc_left = lambda / (h_first * h_first);
-        AB[kd + 0*ldab] += bc_left;          /* K[0,0] */
-        AB[0 + 1*ldab] += -bc_left;          /* K[0,1] (superdiagonal) */
-        AB[kd + 1*ldab] += bc_left;          /* K[1,1] - contribution from boundary */
-        
-        /* Right boundary: affects elements [n-2,n-2], [n-2,n-1], and [n-1,n-1] */
-        double h_last = x[n-1] - x[n-2];
-        double bc_right = lambda / (h_last * h_last);
-        AB[kd + (n-2)*ldab] += bc_right;     /* K[n-2,n-2] - contribution from boundary */
-        AB[0 + (n-1)*ldab] += -bc_right;     /* K[n-2,n-1] (superdiagonal) - WAS MISSING! */
-        AB[kd + (n-1)*ldab] += bc_right;     /* K[n-1,n-1] */
+        for (int k = 1; k <= n-2; k++) {
+            double h_l = x[k] - x[k-1];
+            double h_r = x[k+1] - x[k];
+            double h_sum = h_l + h_r;
+            double w_k = h_sum / 2.0;
+
+            double a = 2.0 / (h_sum * h_l);        /* coeff of u_{k-1} */
+            double b = -2.0 / (h_l * h_r);         /* coeff of u_k */
+            double c = 2.0 / (h_sum * h_r);        /* coeff of u_{k+1} */
+
+            double lw = lambda * w_k;
+
+            /* Accumulate d_k^T * w_k * d_k (upper triangle only) */
+            /* Diagonal */
+            AB[kd + (k-1)*ldab] += lw * a * a;
+            AB[kd + k*ldab]     += lw * b * b;
+            AB[kd + (k+1)*ldab] += lw * c * c;
+
+            /* 1st superdiagonal */
+            AB[(kd-1) + k*ldab]     += lw * a * b;
+            AB[(kd-1) + (k+1)*ldab] += lw * b * c;
+
+            /* 2nd superdiagonal */
+            AB[(kd-2) + (k+1)*ldab] += lw * a * c;
+        }
     }
 }
 
@@ -224,72 +223,32 @@ static void compute_functional(double *x, double *y, double *y_smooth, int n, do
         DiscretizationMethod method = select_discretization_method(grid_info, x, n);
         
         if (method == DISCRETIZATION_AVERAGE) {
-            /* Average coefficient method */
-            
-            /* Interior points: standard second difference with harmonic mean spacing */
+            /* Average coefficient method: ||D²u||² with uniform stencil
+             * Interior points only — natural BCs (D²u = 0 at boundaries) are implicit */
+            double h_avg = (x[n-1] - x[0]) / (n - 1);
+            double h_avg_sq = h_avg * h_avg;
             for (int i = 1; i < n-1; i++) {
-                double h_left = x[i] - x[i-1];
-                double h_right = x[i+1] - x[i];
-                double h_harm = 2.0 * h_left * h_right / (h_left + h_right);
-                double d2u = (y_smooth[i-1] - 2.0*y_smooth[i] + y_smooth[i+1]) / (h_harm * h_harm);
+                double d2u = (y_smooth[i-1] - 2.0*y_smooth[i] + y_smooth[i+1]) / h_avg_sq;
                 *reg_term += d2u * d2u;
             }
-            
-            /* FIX 1.3: Boundary terms using proper one-sided second derivatives
-             * 
-             * For natural boundary conditions (u'' = 0 at boundaries), the penalty
-             * at boundaries should be based on the actual curvature near the boundary.
-             * 
-             * Left boundary: use forward second difference with first 3 points
-             * d²u/dx² ≈ (u[2] - 2*u[1] + u[0]) / h²  (for uniform h)
-             * For non-uniform: use weighted formula
-             */
-            double h0 = x[1] - x[0];
-            double h1 = x[2] - x[1];
-            
-            /* One-sided second derivative at left boundary (using points 0,1,2) */
-            double d2u_left = 2.0 * (h1*y_smooth[0] - (h0+h1)*y_smooth[1] + h0*y_smooth[2]) 
-                              / (h0 * h1 * (h0 + h1));
-            *reg_term += 0.5 * d2u_left * d2u_left;
-            
-            /* One-sided second derivative at right boundary (using points n-3, n-2, n-1) */
-            double hm1 = x[n-1] - x[n-2];
-            double hm2 = x[n-2] - x[n-3];
-            double d2u_right = 2.0 * (hm2*y_smooth[n-1] - (hm1+hm2)*y_smooth[n-2] + hm1*y_smooth[n-3])
-                               / (hm1 * hm2 * (hm1 + hm2));
-            *reg_term += 0.5 * d2u_right * d2u_right;
-            
+
         } else {
-            /* Local spacing method */
-            
-            /* Interior points */
+            /* Local spacing method: ||D²u||²_W with local weights
+             * Interior points only — natural BCs implicit */
             for (int i = 1; i < n-1; i++) {
                 double h_left = x[i] - x[i-1];
                 double h_right = x[i+1] - x[i];
                 double h_sum = h_left + h_right;
-                
+
                 /* Second derivative with non-uniform spacing */
                 double d2u = (2.0 / h_sum) * (
-                    y_smooth[i-1] / h_left - 
-                    y_smooth[i] * (1.0/h_left + 1.0/h_right) + 
+                    y_smooth[i-1] / h_left -
+                    y_smooth[i] * (1.0/h_left + 1.0/h_right) +
                     y_smooth[i+1] / h_right
                 );
                 /* Weight by local interval length for integration */
                 *reg_term += d2u * d2u * h_sum / 2.0;
             }
-            
-            /* FIX 1.3: Boundary terms with correct one-sided second derivatives */
-            double h0 = x[1] - x[0];
-            double h1 = x[2] - x[1];
-            double d2u_left = 2.0 * (h1*y_smooth[0] - (h0+h1)*y_smooth[1] + h0*y_smooth[2])
-                              / (h0 * h1 * (h0 + h1));
-            *reg_term += d2u_left * d2u_left * h0 / 2.0;
-            
-            double hm1 = x[n-1] - x[n-2];
-            double hm2 = x[n-2] - x[n-3];
-            double d2u_right = 2.0 * (hm2*y_smooth[n-1] - (hm1+hm2)*y_smooth[n-2] + hm1*y_smooth[n-3])
-                               / (hm1 * hm2 * (hm1 + hm2));
-            *reg_term += d2u_right * d2u_right * hm1 / 2.0;
         }
         
         *reg_term *= lambda;
@@ -348,7 +307,7 @@ TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda,
      * LDA = KD + 1 = 2 (1 superdiagonal + 1 diagonal) 
      * Dimensions: ldab * n 
      */
-    int kd = 1;
+    int kd = 2;
     int ldab = kd + 1;
     
     AB = (double *)calloc(ldab * n, sizeof(double));
@@ -440,14 +399,19 @@ static double compute_gcv_score_robust(double *x, double *y, int n, double lambd
     double ratio = h_max / h_min;
     
     double h_avg = (x[n-1] - x[0]) / (n-1);
-    double scale = lambda / (h_avg * h_avg);
-    
+    double h4 = h_avg * h_avg * h_avg * h_avg;
+    double scale = lambda / h4;
+
     if (n <= 5000) {
-        /* Analytical trace - NOTE: approximate for non-uniform grids */
+        /* Analytical trace - NOTE: approximate for non-uniform grids
+         * Eigenvalues of (D²)ᵀD² = (eigenvalues of D¹ᵀD¹)²
+         * Null space of D² is 2-dimensional (constants + linear), so trace starts at 2.0 */
         trace_H = 2.0;
         for (int k = 1; k <= n-2; k++) {
             double theta = M_PI * k / n;
-            double eigenval = 4.0 * pow(sin(theta/2.0), 2) / (h_avg * h_avg);
+            double sin_half = sin(theta / 2.0);
+            double ev1 = 4.0 * sin_half * sin_half / (h_avg * h_avg);
+            double eigenval = ev1 * ev1;
             trace_H += 1.0 / (1.0 + lambda * eigenval);
         }
         
@@ -586,7 +550,7 @@ double find_optimal_lambda_gcv(double *x, double *y, int n, GridAnalysis *grid_i
     
     if (n > 20000) {
         /* Large dataset: conservative range + robust GCV */
-        double lambdas[] = {1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3, 1e-2, 2e-2, 5e-2, 1e-1, 2e-1, 5e-1, 1e0};
+        double lambdas[] = {1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 5e-2, 1e-1, 2e-1, 5e-1, 1e0};
         int n_lambdas = sizeof(lambdas) / sizeof(lambdas[0]);
         
         for (int i = 0; i < n_lambdas; i++) {
@@ -607,7 +571,7 @@ double find_optimal_lambda_gcv(double *x, double *y, int n, GridAnalysis *grid_i
         
     } else {
         /* Standard GCV search */
-        double lambda_min = 1e-6;
+        double lambda_min = 1e-8;
         double lambda_max = 1e0;
         int n_points = 13;
         

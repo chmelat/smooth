@@ -1,7 +1,7 @@
 # Methods for Smoothing Experimental Data in the smooth Program
 
 **Technical Documentation**
-Version 5.10.1 | December 7, 2025
+Version 5.11.0 | February 7, 2026
 
 ---
 
@@ -27,11 +27,10 @@ The `smooth` program implements four sophisticated methods for smoothing experim
 ### General Smoothing Problem
 
 Experimental data often contains random noise:
-```
-y_obs(x_i) = y_true(x_i) + ε_i
-```
 
-The goal of smoothing is to estimate `y_true` while suppressing `ε_i` and preserving physically relevant signal properties.
+$$y_{\text{obs}}(x_i) = y_{\text{true}}(x_i) + \varepsilon_i$$
+
+The goal of smoothing is to estimate $y_{\text{true}}$ while suppressing $\varepsilon_i$ and preserving physically relevant signal properties.
 
 ### Program Structure
 
@@ -80,50 +79,37 @@ command | smooth -m 3 -f 0.15 | gnuplot    # Pipeline
 
 The POLYFIT method uses local polynomial fitting with least squares method in a sliding window.
 
-**Problem:** For each point `x_i`, we fit a polynomial of degree `p` to the surrounding `n` points:
+**Problem:** For each point $x_i$, we fit a polynomial of degree $p$ to the surrounding $n$ points:
 
-```
-P(x) = a_0 + a_1(x-x_i) + a_2(x-x_i)² + ... + a_p(x-x_i)^p
-```
+$$P(x) = a_0 + a_1(x-x_i) + a_2(x-x_i)^2 + \cdots + a_p(x-x_i)^p$$
 
 **Optimization criterion:**
-```
-min Σ[y_j - P(x_j)]²    for j ∈ [i-n/2, i+n/2]
-```
+
+$$\min \sum_{j \in [i-n/2,\, i+n/2]} \left[ y_j - P(x_j) \right]^2$$
 
 ### Least Squares Solution via SVD
 
 The polynomial coefficients are found by solving an **overdetermined linear system** using **Singular Value Decomposition (SVD)**:
 
-```
-V · a = y_window
+$$V \cdot \mathbf{a} = \mathbf{y}_{\text{window}}$$
 
-where V is the Vandermonde matrix:
+where $V$ is the Vandermonde matrix with $V_{j,k} = (x_j - x_i)^k$:
 
-    V[j,k] = (x_j - x_i)^k    for j = 0, …, window_size-1
-                                   k = 0, …, poly_degree
+$$V = \begin{pmatrix} 1 & (x_0-x_i) & (x_0-x_i)^2 & \cdots & (x_0-x_i)^p \\ 1 & (x_1-x_i) & (x_1-x_i)^2 & \cdots & (x_1-x_i)^p \\ \vdots & \vdots & \vdots & \ddots & \vdots \\ 1 & (x_n-x_i) & (x_n-x_i)^2 & \cdots & (x_n-x_i)^p \end{pmatrix}$$
 
-         [ 1    (x_0-x_i)    (x_0-x_i)²  ...  (x_0-x_i)^p ]
-         [ 1    (x_1-x_i)    (x_1-x_i)²  ...  (x_1-x_i)^p ]
-    V =  [ 1    (x_2-x_i)    (x_2-x_i)²  ...  (x_2-x_i)^p ]
-         [ ...    ...          ...        ...      ...     ]
-         [ 1    (x_n-x_i)    (x_n-x_i)²  ...  (x_n-x_i)^p ]
-
-  a = [a_0, a_1, …, a_p]^T           (polynomial coefficients)
-  y_window = [y_{i-n/2}, …, y_{i+n/2}]^T  (data in window)
-```
+$$\mathbf{a} = [a_0, a_1, \ldots, a_p]^T \quad\text{(polynomial coefficients)}, \qquad \mathbf{y}_{\text{window}} = [y_{i-n/2}, \ldots, y_{i+n/2}]^T$$
 
 **Why SVD instead of Normal Equations?**
 
-The implementation uses LAPACK's `dgelss` (SVD decomposition) rather than forming normal equations (V^T V)a = V^T y:
+The implementation uses LAPACK's `dgelss` (SVD decomposition) rather than forming normal equations $(V^T V)\mathbf{a} = V^T \mathbf{y}$:
 
-1. **Numerical stability:** SVD avoids squaring the condition number (κ(V^T V) = κ(V)²)
-2. **Automatic regularization:** Singular values below rcond·σ_max are truncated
+1. **Numerical stability:** SVD avoids squaring the condition number ($\kappa(V^T V) = \kappa(V)^2$)
+2. **Automatic regularization:** Singular values below $\text{rcond} \cdot \sigma_{\max}$ are truncated
 3. **Rank detection:** Provides effective rank for diagnosing ill-conditioning
 4. **Robustness:** Handles high polynomial degrees (p > 6) more reliably
 
-**SVD truncation parameter:** rcond = 10^{-10}
-- Singular values σ_i < 10^{-10}·σ_max are treated as zero
+**SVD truncation parameter:** $\text{rcond} = 10^{-10}$
+- Singular values $\sigma_i < 10^{-10} \cdot \sigma_{\max}$ are treated as zero
 - Provides implicit Tikhonov-style regularization
 - Conservative threshold ensures stability without over-regularization
 
@@ -131,20 +117,13 @@ The implementation uses LAPACK's `dgelss` (SVD decomposition) rather than formin
 
 Derivatives are computed analytically from polynomial coefficients:
 
-```
-f(x_i) = a_0
-f'(x_i) = a_1
-f''(x_i) = 2a_2
-```
+$$f(x_i) = a_0, \qquad f'(x_i) = a_1, \qquad f''(x_i) = 2a_2$$
 
 ### Edge Handling
 
 At edges, asymmetric windows are used with extrapolation of the fitted polynomial:
 
-```c
-// For point x_k < x_{n/2}
-f(x_k) = Σ_{m=0}^p a_m * (x_k - x_{n/2})^m
-```
+$$f(x_k) = \sum_{m=0}^{p} a_m \cdot (x_k - x_{n/2})^m$$
 
 ### Efficient Implementation
 
@@ -165,8 +144,8 @@ result->y_deriv[i] = (poly_degree > 0) ? rhs[1] : 0.0;
 ```
 
 **Numerical diagnostics:**
-- On first window, reports condition number: κ = σ_max / σ_min
-- If κ > 10^8, issues warning about potential numerical issues
+- On first window, reports condition number: $\kappa = \sigma_{\max} / \sigma_{\min}$
+- If $\kappa > 10^8$, issues warning about potential numerical issues
 - Reports effective rank if matrix is rank-deficient
 - Fallback to original value if SVD fails
 
@@ -210,11 +189,9 @@ typedef struct {
 
 The Savitzky-Golay filter is an optimal linear filter for smoothing and derivatives based on local polynomial regression. The key innovation is pre-computation of convolution coefficients.
 
-**Fundamental principle:** For given parameters (window size, polynomial degree, derivative order), there exist universal coefficients `c_k` such that:
+**Fundamental principle:** For given parameters (window size, polynomial degree, derivative order), there exist universal coefficients $c_k$ such that:
 
-```
-f^(d)(x_i) = Σ_{k=-n_L}^{n_R} c_k · y_{i+k}
-```
+$$f^{(d)}(x_i) = \sum_{k=-n_L}^{n_R} c_k \cdot y_{i+k}$$
 
 ### Key Difference from POLYFIT Method
 
@@ -238,13 +215,14 @@ While both SAVGOL and POLYFIT use polynomial approximation, they differ fundamen
 The mathematical foundation of SG filter assumes **uniformly spaced data points**. The method is based on fitting polynomials in normalized coordinate space where points are at integer positions: {..., -2, -1, 0, 1, 2, ...}.
 
 **Uniformity Check:**
-```
-CV = std_dev(spacing) / avg(spacing)
 
-If CV > 0.05:  REJECT - Grid too non-uniform for SG
-If CV > 0.01:  WARNING - Nearly uniform, proceed with caution
-If CV ≤ 0.01:  OK - Grid sufficiently uniform
-```
+$$CV = \frac{\sigma(h)}{h_{\text{avg}}}$$
+
+| CV range | Decision |
+|----------|----------|
+| $CV > 0.05$ | REJECT — Grid too non-uniform for SG |
+| $CV > 0.01$ | WARNING — Nearly uniform, proceed with caution |
+| $CV \le 0.01$ | OK — Grid sufficiently uniform |
 
 **What happens when grid is rejected:**
 ```
@@ -267,57 +245,39 @@ RECOMMENDED ALTERNATIVES:
 
 The Savitzky-Golay method seeks a linear combination of data points:
 
-```
-ŷ₀ = c₋ₙₗ·y₋ₙₗ + ... + c₀·y₀ + ... + cₙᵣ·yₙᵣ
-```
+$$\hat{y}_0 = c_{-n_L} \cdot y_{-n_L} + \cdots + c_0 \cdot y_0 + \cdots + c_{n_R} \cdot y_{n_R}$$
 
-where the coefficients `c_k` are "undetermined" and must satisfy the condition that the filter exactly reproduces polynomials up to degree `p`.
+where the coefficients $c_k$ are "undetermined" and must satisfy the condition that the filter exactly reproduces polynomials up to degree $p$.
 
 **The key insight:** For a given window configuration and polynomial degree, these coefficients can be determined once and applied universally - but only on uniform grids!
 
 ### Coefficient Derivation
 
-Coefficients are derived from the condition that the filter must exactly reproduce polynomials up to degree `p`.
+Coefficients are derived from the condition that the filter must exactly reproduce polynomials up to degree $p$.
 
 **Moment conditions:**
-```
-Σ_{j=-n_L}^{n_R} c_j · j^m = δ_{m,d} · d!    for m = 0, 1, …, p
-```
 
-where:
-- `δ_{m,d}` is the Kronecker delta
-- `d` is the derivative order
-- `d!` is factorial
+$$\sum_{j=-n_L}^{n_R} c_j \cdot j^m = \delta_{m,d} \cdot d! \qquad \text{for } m = 0, 1, \ldots, p$$
 
-This leads to a system of linear equations where the unknowns are the filter coefficients `c_j`.
+where $\delta_{m,d}$ is the Kronecker delta, $d$ is the derivative order, and $d!$ is factorial.
+
+This leads to a system of linear equations where the unknowns are the filter coefficients $c_j$.
 
 ### Matrix Formulation
 
 The coefficients are found by solving a **normal equations system** (not a Vandermonde system):
 
-```
-A · β = b
+$$A \cdot \boldsymbol{\beta} = \mathbf{b}$$
 
-where A is a symmetric (p+1)×(p+1) moment matrix:
+where $A$ is a symmetric $(p+1) \times (p+1)$ moment matrix with $A_{i,j} = \sum_{k=-n_L}^{n_R} k^{i+j}$:
 
-    A[i,j] = Σ_{k=-n_L}^{n_R} k^{i+j}    for i,j = 0, 1, …, p
+$$A = \begin{pmatrix} \sum k^0 & \sum k^1 & \sum k^2 & \cdots & \sum k^p \\ \sum k^1 & \sum k^2 & \sum k^3 & \cdots & \sum k^{p+1} \\ \vdots & \vdots & \vdots & \ddots & \vdots \\ \sum k^p & \sum k^{p+1} & \cdots & \cdots & \sum k^{2p} \end{pmatrix}$$
 
-         [ Σk⁰  Σk¹  Σk²  ...  Σk^p   ]
-         [ Σk¹  Σk²  Σk³  ...  Σk^(p+1) ]
-    A =  [ Σk²  Σk³  Σk⁴  ...  Σk^(p+2) ]
-         [ ...  ...  ...  ...  ...     ]
-         [ Σk^p Σk^(p+1) ... Σk^(2p) ]
+and the right-hand side vector: $b_j = \delta_{j,d} \cdot d!$
 
-and the right-hand side vector:
+This results in a symmetric positive definite $(p+1) \times (p+1)$ matrix. The filter coefficients are then:
 
-    b[j] = δ_{j,d}·d!    (Kronecker delta: 1 if j=d, else 0)
-```
-
-This results in a symmetric positive definite (p+1)×(p+1) matrix. The filter coefficients are then:
-
-```
-c_k = Σ_{j=0}^p β_j · k^j    for k = -n_L, …, n_R
-```
+$$c_k = \sum_{j=0}^{p} \beta_j \cdot k^j \qquad \text{for } k = -n_L, \ldots, n_R$$
 
 **Note:** This formulation through normal equations is mathematically equivalent to least-squares polynomial fitting but more efficient computationally.
 
@@ -367,11 +327,9 @@ void savgol_coefficients(int nl, int nr, int poly_degree,
 
 **IMPORTANT:** The derivative coefficients computed by `savgol_coefficients()` assume **unit spacing** (normalized integer coordinates). For physical derivatives on real grids, the results must be scaled:
 
-```
-dy/dx_physical = (dy/dx_normalized) / h_avg
+$$\frac{dy}{dx}\bigg|_{\text{physical}} = \frac{1}{h_{\text{avg}}} \cdot \frac{dy}{dx}\bigg|_{\text{normalized}}$$
 
-where h_avg = average grid spacing
-```
+where $h_{\text{avg}}$ is the average grid spacing.
 
 The implementation automatically performs this scaling:
 ```c
@@ -428,22 +386,18 @@ The Savitzky-Golay filter minimizes approximation error in the least squares sen
 Tikhonov regularization solves the ill-posed inverse smoothing problem using a variational approach. We seek a function minimizing the functional:
 
 **Continuous formulation:**
-```
-J[u] = ∫(y(x) - u(x))² dx + λ∫(u''(x))² dx
-       _==================     _=============
-       Data fidelity term      Smoothness penalty
-```
+
+$$J[u] = \underbrace{\int (y(x) - u(x))^2 \, dx}_{\text{Data fidelity}} + \lambda \underbrace{\int (u''(x))^2 \, dx}_{\text{Smoothness penalty}}$$
 
 **Discrete formulation:**
-```
-J[u] = ||y - u||² + λ||D²u||²
-```
+
+$$J[\mathbf{u}] = \|\mathbf{y} - \mathbf{u}\|^2 + \lambda \|D^2 \mathbf{u}\|^2$$
 
 where:
-- `||y - u||²` = Σ(y_i - u_i)² is the **data fidelity term**
-- `||D²u||²` = Σ(D²u_i)² is the **regularization term** (smoothness penalty)
-- `λ` is the **regularization parameter** controlling the balance
-- `D²` is the discrete second derivative operator
+- $\|\mathbf{y} - \mathbf{u}\|^2 = \sum (y_i - u_i)^2$ is the **data fidelity term**
+- $\|D^2 \mathbf{u}\|^2 = \sum (D^2 u_i)^2$ is the **regularization term** (smoothness penalty)
+- $\lambda$ is the **regularization parameter** controlling the balance
+- $D^2$ is the discrete second derivative operator
 
 ### The Regularization Parameter λ
 
@@ -451,48 +405,37 @@ The parameter λ is the **heart of Tikhonov regularization** - it controls the b
 
 #### Physical Interpretation
 
-```
-λ = 0:     No smoothing, u = y (exact data fit)
-           J[u] = ||y - u||² only
-
-λ → ∞:     Maximum smoothing, u → straight line
-           J[u] ≈ λ||D²u||² dominates
-
-λ optimal: Balanced between data fit and smoothness
-           Both terms contribute meaningfully
-```
+| $\lambda$ | Effect | Functional |
+|-----------|--------|------------|
+| $\lambda = 0$ | No smoothing, $u = y$ | $J[u] = \|\mathbf{y} - \mathbf{u}\|^2$ only |
+| $\lambda \to \infty$ | Maximum smoothing, $u \to$ straight line | $J[u] \approx \lambda\|D^2 \mathbf{u}\|^2$ dominates |
+| $\lambda$ optimal | Balanced data fit and smoothness | Both terms contribute meaningfully |
 
 #### Mathematical Role
 
-The minimization of J[u] leads to:
-```
-(I + λD^TD)u = y
-```
+The minimization of $J[\mathbf{u}]$ leads to:
 
-**Effect of λ on the solution:**
-- **Small λ (< 0.01):** Matrix ≈ I → solution u ≈ y (minimal smoothing)
-- **Large λ (> 1.0):** Matrix ≈ λD^TD → strong curvature penalty (heavy smoothing)
+$$(I + \lambda (D^2)^T W D^2) \, \mathbf{u} = \mathbf{y}$$
+
+**Effect of $\lambda$ on the solution:**
+- **Small $\lambda$ (< 0.01):** Matrix $\approx I$ → solution $\mathbf{u} \approx \mathbf{y}$ (minimal smoothing)
+- **Large $\lambda$ (> 1.0):** Matrix $\approx \lambda (D^2)^T W D^2$ → strong curvature penalty (heavy smoothing)
 - **Optimal λ:** Matrix components balanced → noise removed, signal preserved
 
 #### Frequency Domain Interpretation
 
 In Fourier space, Tikhonov acts as a low-pass filter:
-```
-Ĥ(ω) = 1 / (1 + λω⁴)
-```
 
-where ω is spatial frequency. 
+$$\hat{H}(\omega) = \frac{1}{1 + \lambda \omega^4}$$
+
+where $\omega$ is spatial frequency.
 
 **Effect:**
-- **Low frequencies (slow variations):** Ĥ ≈ 1 → preserved
-- **High frequencies (noise, rapid variations):** Ĥ ≈ 1/(λω⁴) → attenuated
-- **Cutoff frequency:** ω_c ~ λ^(-1/4)
+- **Low frequencies (slow variations):** $\hat{H} \approx 1$ → preserved
+- **High frequencies (noise, rapid variations):** $\hat{H} \approx 1/(\lambda \omega^4)$ → attenuated
+- **Cutoff frequency:** $\omega_c \sim \lambda^{-1/4}$
 
-**This means:**
-```
-Larger λ  → Lower cutoff → More aggressive low-pass filtering → Smoother result
-Smaller λ → Higher cutoff → Less filtering → Result closer to data
-```
+**This means:** Larger $\lambda$ → lower cutoff → more aggressive low-pass filtering → smoother result. Smaller $\lambda$ → higher cutoff → less filtering → result closer to data.
 
 #### Practical Guidelines for λ Selection
 
@@ -553,317 +496,200 @@ For highly non-uniform grids (CV > 0.2):
 #### λ and Grid Spacing
 
 The effective regularization strength depends on grid spacing:
-```
-Effective strength ~ λ / h²_avg
 
-Same λ on finer grid   → weaker smoothing
-Same λ on coarser grid → stronger smoothing
-```
+$$\text{Effective strength} \sim \frac{\lambda}{h_{\text{avg}}^4}$$
 
-For dimensional consistency, λ has units [Length²].
+Same $\lambda$ on finer grid → weaker smoothing; same $\lambda$ on coarser grid → stronger smoothing.
 
-### Second Derivative Discretization (Hybrid Method)
+For dimensional consistency, $\lambda$ has units $[\text{Length}^4]$ (since it scales the squared second derivative).
+
+### Second Derivative Penalty: (D²)ᵀWD² Gram Matrix
+
+The regularization term $\|D^2 \mathbf{u}\|^2$ is discretized using the **Gram matrix** of the second derivative operator $D^2$. The operator $D^2$ is an $(n-2) \times n$ matrix — it has rows only for interior points ($k = 1, \ldots, n-2$). This means natural boundary conditions ($D^2 u = 0$ at endpoints) are **implicit**: there are simply no $D^2$ rows for boundary points.
+
+The penalty matrix is constructed as a sum of rank-1 contributions:
+
+$$(D^2)^T W D^2 = \sum_{k=1}^{n-2} w_k \cdot \mathbf{d}_k^T \cdot \mathbf{d}_k$$
+
+where $\mathbf{d}_k$ is the $k$-th row of $D^2$ (a 3-element stencil at positions $k{-}1, k, k{+}1$) and $w_k$ is the integration weight. Since each $\mathbf{d}_k$ touches 3 consecutive points, the Gram matrix is **pentadiagonal** (bandwidth $kd = 2$).
 
 Automatic selection between two discretization schemes based on grid uniformity.
 
 #### Grid Uniformity Detection
-```
-CV = coefficient of variation (h_std / h_avg)
 
-CV < 0.15:  Nearly uniform    → Average Coefficient Method
-CV ≥ 0.15:  Highly non-uniform → Local Spacing Method
-```
+$$CV = \frac{h_{\text{std}}}{h_{\text{avg}}}$$
+
+| CV range | Discretization |
+|----------|---------------|
+| $CV < 0.15$ | Average Coefficient Method (nearly uniform) |
+| $CV \ge 0.15$ | Local Spacing Method (non-uniform) |
 
 #### Method 1: Average Coefficient (for CV < 0.15)
 
 Used for uniform and mildly non-uniform grids. More robust numerically.
 
-**Discretization:**
-For interior point `i` with neighbors at spacing h_left and h_right, use **harmonic mean**:
-```
-h_harm = 2·h_left·h_right / (h_left + h_right)
+**$D^2$ stencil:** Each interior row $k$ uses uniform spacing $h_{\text{avg}}$:
 
-D²u_i ≈ (u_{i-1} - 2u_i + u_{i+1}) / h_harm²
-```
+$$\mathbf{d}_k = \frac{1}{h_{\text{avg}}^2} [1, \; -2, \; 1] \qquad \text{at positions } (k{-}1, \; k, \; k{+}1)$$
 
-**Why harmonic mean?** 
-- More accurate than arithmetic mean for averaging intervals
-- Gives greater weight to smaller spacing (physically correct)
-- For h_left = h_right, reduces to standard formula
+**Gram matrix construction:**
 
-**Matrix construction:**
-```
-c = λ · Σ(1/h_i²) / (n-1)    (average coefficient)
+$$(D^2)^T D^2 = \sum_{k=1}^{n-2} \mathbf{d}_k^T \mathbf{d}_k = \frac{1}{h_{\text{avg}}^4} \sum_{k=1}^{n-2} \mathbf{d}_k^T \mathbf{d}_k$$
 
-Tridiagonal matrix A = I + λD^TD:
+The accumulated result is a pentadiagonal matrix with the classical 4th-difference stencil $[1, -4, 6, -4, 1] / h_{\text{avg}}^4$.
 
-    A[i,i]   = 1 + 2c     (diagonal, interior points)
-    A[i,i±1] = -c         (off-diagonals)
+**Example** for $n = 6$ points with $c = \lambda / h^4$:
 
-Example for n=5 points:
+$$A = I + \lambda (D^2)^T D^2 = \begin{pmatrix} 1+c & -2c & c & 0 & 0 & 0 \\ -2c & 1+5c & -4c & c & 0 & 0 \\ c & -4c & 1+6c & -4c & c & 0 \\ 0 & c & -4c & 1+6c & -4c & c \\ 0 & 0 & c & -4c & 1+5c & -2c \\ 0 & 0 & 0 & c & -2c & 1+c \end{pmatrix}$$
 
-         [ 1+2c   -c     0     0     0  ]
-         [  -c   1+2c   -c     0     0  ]
-    A =  [  0     -c   1+2c   -c     0  ]
-         [  0     0     -c   1+2c   -c  ]
-         [  0     0     0     -c   1+2c ]
-```
+Note: Boundary points (first/last rows) receive less regularization because fewer $D^2$ stencils overlap them.
 
 #### Method 2: Local Spacing (for CV ≥ 0.15)
 
 Used for highly non-uniform grids. More accurate for variable spacing.
 
-**Discretization:**
-For point `i` with left spacing `h₁ = x[i] - x[i-1]` and right spacing `h₂ = x[i+1] - x[i]`:
+**$D^2$ stencil:** Each interior row $k$ uses local spacings $h_l = x_k - x_{k-1}$, $h_r = x_{k+1} - x_k$:
 
-```
-D²u_i ≈ (2/(h₁+h₂)) · [u_{i-1}/h₁ - u_i·(1/h₁+1/h₂) + u_{i+1}/h₂]
-```
+$$\mathbf{d}_k = [a_k, \; b_k, \; c_k] \qquad \text{at positions } (k{-}1, \; k, \; k{+}1)$$
+
+where:
+
+$$a_k = \frac{2}{(h_l + h_r) \cdot h_l}, \qquad b_k = \frac{-2}{h_l \cdot h_r}, \qquad c_k = \frac{2}{(h_l + h_r) \cdot h_r}$$
 
 This is the **correct second derivative formula** for non-uniform grids derived from Taylor expansion.
 
-**Matrix construction:**
-```
-For each interior point i, compute weight:
-    w_i = 2λ / (h_{i-1} + h_i)
+**Integration weight:** $w_k = (h_l + h_r) / 2$
 
-where h_{i-1} = x[i] - x[i-1], h_i = x[i+1] - x[i]
+**Gram matrix construction:**
 
-Tridiagonal matrix A = I + λD^TD:
+$$(D^2)^T W D^2 = \sum_{k=1}^{n-2} w_k \cdot \mathbf{d}_k^T \mathbf{d}_k$$
 
-    A[i,i]   = 1 + w_i·(1/h_{i-1} + 1/h_i)    (diagonal)
-    A[i,i-1] = -w_i/h_{i-1}                   (lower diagonal)
-    A[i,i+1] = -w_i/h_i                       (upper diagonal)
-
-Example structure for n=5 points (non-uniform spacing):
-
-         [  d0    u0     0      0      0   ]
-         [  l1    d1    u1      0      0   ]
-    A =  [  0     l2    d2     u2      0   ]
-         [  0     0     l3     d3     u3   ]
-         [  0     0      0     l4     d4   ]
-
-where d_i, u_i, l_i vary with local spacing
-```
+For each interior point $k$, the rank-1 outer product $w_k \cdot \mathbf{d}_k^T \mathbf{d}_k$ is accumulated into the pentadiagonal matrix (upper triangle only): diagonal, 1st superdiagonal, and 2nd superdiagonal.
 
 **The resulting matrix is:**
-- Symmetric (u_i = l_{i+1})
+- Symmetric (Gram matrix structure guarantees this automatically)
 - Positive definite
-- Tridiagonal (bandwidth = 1)
+- Pentadiagonal (bandwidth $kd = 2$)
 
-#### Boundary Conditions
+#### Natural Boundary Conditions
 
-Natural boundary conditions (second derivative = 0 at ends):
+Natural boundary conditions ($D^2 u = 0$ at endpoints) are **implicit** in the Gram matrix construction:
 
-**Matrix construction uses simplified two-point formula:**
+- $D^2$ is an $(n{-}2) \times n$ matrix with rows only for interior points $k = 1, \ldots, n{-}2$
+- No boundary rows exist in $D^2$, so no explicit boundary penalty is applied
+- Boundary points ($i = 0$, $i = n{-}1$) are regularized only through their participation in nearby interior stencils
+- This approach avoids the need for explicit boundary formulas and produces cleaner edge behavior
 
-**Left boundary (i=0):**
-```
-Penalty: λ·[(u_1 - u_0) / h_0²]²
-
-A[0,0] += λ/h_0²
-A[0,1] += -λ/h_0²
-```
-
-**Right boundary (i=n-1):**
-```
-Penalty: λ·[(u_{n-1} - u_{n-2}) / h_{n-1}²]²
-
-A[n-1,n-1] += λ/h_{n-1}²
-```
-
-**Implementation note:** The boundary superdiagonal element A[0,1] is properly included to prevent isolation of the first point.
-
-**Functional computation uses more accurate three-point formula** (as shown in the Functional Computation section above) for better accuracy when evaluating the objective function value.
-
-#### Boundary Effects and Edge Artifacts
-
-**Important:** Natural boundary conditions can cause **oscillations near data endpoints**, especially on non-uniform grids with small λ values.
-
-**Observed behavior:**
-- **Uniform grids (CV < 0.15):** Minimal boundary effects, typically < 5% deviation
-- **Non-uniform grids (CV > 0.15):** Significant boundary artifacts possible:
-  - Last 2-3 points may show deviations up to 30-60% from expected values
-  - Effect increases with grid non-uniformity and decreases with larger λ
-  - More pronounced with Local Spacing Method discretization
-
-**Example (documented in unit tests):**
-```
-Grid: CV = 0.176, N = 100, λ = 0.01
-Expected y_max ≈ 32 (parabolic function)
-Observed y_max ≈ 52 at last point (+61% overshoot)
-```
-
-**Practical recommendations:**
-
-1. **Discard edge points in analysis:**
-   ```bash
-   # Process data and remove first/last 3 points
-   ./smooth -m 2 -l 0.01 data.txt | tail -n +4 | head -n -3
-   ```
-
-2. **Use larger λ for stability:**
-   ```bash
-   # Increase λ to reduce boundary oscillations
-   ./smooth -m 2 -l 0.1 data.txt    # Instead of 0.01
-   ```
-
-3. **Add padding data:**
-   - Extend dataset by extrapolating 5-10 points at each end
-   - Apply smoothing to extended data
-   - Use only interior region of smoothed result
-
-4. **Use GCV with caution on non-uniform grids:**
-   ```bash
-   # GCV may select λ too small for stable boundaries
-   ./smooth -m 2 -l auto data.txt
-
-   # Verify boundary behavior visually
-   # Consider manually increasing λ if needed
-   ```
-
-5. **Grid-specific guidelines:**
-   - **CV < 0.05:** Edge artifacts negligible (< 2%)
-   - **CV 0.05-0.15:** Monitor last 1-2 points (< 10% typical)
-   - **CV > 0.15:** **Discard last 2-3 points** (artifacts up to 60%)
-
-**Why this happens:**
-- Natural boundary conditions impose `u'' = 0` at endpoints
-- On non-uniform grids, this constraint conflicts with data fidelity
-- Small λ amplifies this conflict (weak regularization)
-- Result: The solver "overshoots" to satisfy both constraints
-
-**This is not a bug** - it is inherent to the variational formulation with natural boundary conditions on non-uniform domains.
+**Boundary behavior:**
+- Boundary points receive less regularization pressure than interior points
+- For very small λ, boundary points may track the data more closely than interior points
+- This is generally desirable: edges are less constrained, avoiding artificial boundary effects
 
 ### Functional Computation
 
 The actual value of the minimized functional is computed for diagnostic purposes:
 
 **Data term:**
-```
-||y - u||² = Σ(y_i - u_i)²
-```
 
-**Regularization term:**
+$$\|\mathbf{y} - \mathbf{u}\|^2 = \sum_{i=0}^{n-1} (y_i - u_i)^2$$
+
+**Regularization term (interior points only):**
+
+Consistent with the Gram matrix construction, the regularization term sums only over interior points (natural BCs are implicit — no boundary terms):
 
 For **average coefficient method:**
-```
-||D²u||² = Σ_{interior} [(u_{i-1} - 2u_i + u_{i+1})/h_harm²]²
-         + 0.5·[D²u_left]²
-         + 0.5·[D²u_right]²
-```
 
-where boundary second derivatives use forward/backward three-point formulas:
-```
-D²u_left  = 2·(h₁·u₀ - (h₀+h₁)·u₁ + h₀·u₂) / (h₀·h₁·(h₀+h₁))
-D²u_right = 2·(h_{n-2}·u_{n-1} - (h_{n-3}+h_{n-2})·u_{n-2} + h_{n-3}·u_{n-3}) / (h_{n-3}·h_{n-2}·(h_{n-3}+h_{n-2}))
-```
+$$\|D^2 \mathbf{u}\|^2 = \sum_{i=1}^{n-2} \left[\frac{u_{i-1} - 2u_i + u_{i+1}}{h_{\text{avg}}^2}\right]^2$$
 
 For **local spacing method:**
-```
-||D²u||² = Σ_{interior} [D²u_i]² · (h₁+h₂)/2
-         + 0.5·[D²u_left]² · h₀
-         + 0.5·[D²u_right]² · h_{n-1}
-```
 
-where the boundary terms use the same three-point formulas as above, and weighting factors ensure proper integration over non-uniform grid.
+$$\|D^2 \mathbf{u}\|_W^2 = \sum_{i=1}^{n-2} (D^2 u_i)^2 \cdot \frac{h_l + h_r}{2}$$
+
+where $D^2 u_i = \frac{2}{h_l + h_r} \left[\frac{u_{i-1}}{h_l} - u_i \left(\frac{1}{h_l} + \frac{1}{h_r}\right) + \frac{u_{i+1}}{h_r}\right]$
 
 **Total functional:**
-```
-J[u] = ||y - u||² + λ||D²u||²
-```
+
+$$J[\mathbf{u}] = \|\mathbf{y} - \mathbf{u}\|^2 + \lambda \|D^2 \mathbf{u}\|^2$$
 
 ### Variational Approach
 
-The minimum of functional J[u] satisfies the Euler-Lagrange equation:
+The minimum of functional $J[\mathbf{u}]$ satisfies the Euler-Lagrange equation:
 
-```
-∂J/∂u_i = 0  ==>  -2(y_i - u_i) + 2λ(D^T D u)_i = 0
-```
+$$\frac{\partial J}{\partial u_i} = 0 \implies -2(y_i - u_i) + 2\lambda \left((D^2)^T W D^2 \, \mathbf{u}\right)_i = 0$$
 
 which leads to the linear system:
-```
-(I + λD^T D)u = y
-```
+
+$$(I + \lambda (D^2)^T W D^2) \, \mathbf{u} = \mathbf{y}$$
+
+where $(D^2)^T W D^2$ is the Gram matrix of the second derivative operator $D^2$.
 
 ### Matrix Representation
 
-The linear system `(I + λD^T D)u = y` has matrix `A = I + λD^T D` with structure:
+The linear system $(I + \lambda (D^2)^T W D^2) \, \mathbf{u} = \mathbf{y}$ has matrix $A = I + \lambda (D^2)^T W D^2$ with structure:
 
 **Properties:**
-- Symmetric
+- Symmetric (Gram matrix structure guarantees this)
 - Positive definite
-- Tridiagonal (banded with bandwidth 1)
+- Pentadiagonal (banded with bandwidth $kd = 2$)
 
-**General tridiagonal form:**
-```
-         [  d0    c0     0      0     ...   0   ]
-         [  c0    d1    c1      0     ...   0   ]
-         [   0    c1    d2     c2     ...   0   ]
-    A =  [   0     0    c2     d3     ...   0   ]
-         [ ...   ...   ...    ...     ...  ...  ]
-         [   0     0     0      0     c_{n-2} d_{n-1} ]
+**General pentadiagonal form:**
 
-where d_i = diagonal, c_i = off-diagonal elements
-```
+$$A = \begin{pmatrix} d_0 & e_0 & f_0 & 0 & \cdots & 0 \\ e_0 & d_1 & e_1 & f_1 & \cdots & 0 \\ f_0 & e_1 & d_2 & e_2 & \cdots & 0 \\ 0 & f_1 & e_2 & d_3 & \cdots & 0 \\ \vdots & & & & \ddots & \vdots \\ 0 & 0 & 0 & 0 & e_{n-2} & d_{n-1} \end{pmatrix}$$
+
+where $d_i$ = diagonal, $e_i$ = 1st off-diagonal, $f_i$ = 2nd off-diagonal.
+
+The pentadiagonal structure arises because each row of $D^2$ touches 3 consecutive points ($k{-}1, k, k{+}1$), so the Gram matrix $(D^2)^T D^2$ couples points up to 2 positions apart.
 
 This structure allows efficient solution using LAPACK's banded solver `dpbsv`.
 
 ### Generalized Cross Validation (GCV)
 
-For automatic λ selection (`-l auto`), we minimize the GCV criterion:
+For automatic $\lambda$ selection (`-l auto`), we minimize the GCV criterion:
 
-```
-GCV(λ) = n·RSS(λ) / (n - tr(H_λ))²
-```
+$$\text{GCV}(\lambda) = \frac{n \cdot \text{RSS}(\lambda)}{(n - \text{tr}(H_\lambda))^2}$$
 
 where:
-- `RSS(λ) = ||y - u_λ||²` is the residual sum of squares
-- `H_λ = (I + λD^T D)^{-1}` is the influence matrix (smoother matrix)
-- `tr(H_λ)` is the trace (effective number of parameters)
+- $\text{RSS}(\lambda) = \|\mathbf{y} - \mathbf{u}_\lambda\|^2$ is the residual sum of squares
+- $H_\lambda = (I + \lambda (D^2)^T W D^2)^{-1}$ is the influence matrix (smoother matrix)
+- $\text{tr}(H_\lambda)$ is the trace (effective number of parameters)
 
 **Interpretation:**
-- `tr(H_λ)` measures model complexity (degrees of freedom)
-- Small λ: tr(H) ≈ n (interpolation, overfitting)
-- Large λ: tr(H) ≈ 2 (straight line, underfitting)
-- Optimal λ: minimizes prediction error
+- $\text{tr}(H_\lambda)$ measures model complexity (degrees of freedom)
+- Small $\lambda$: $\text{tr}(H) \approx n$ (interpolation, overfitting)
+- Large $\lambda$: $\text{tr}(H) \to 2$ (linear fit, underfitting — $D^2$ null space is constants + linear)
+- Optimal $\lambda$: minimizes prediction error
 
 **Trace estimation using eigenvalues:**
 
-For uniform grids with natural boundary conditions:
-```
-tr(H_λ) ≈ Σ_{k=1}^n 1/(1 + λμ_k)
+For uniform grids, the eigenvalues of $(D^2)^T D^2$ are the squares of the eigenvalues of $D^T D$ (first-derivative operator):
 
-where eigenvalues:
-θ_k = πk/n
-μ_k = 4·sin²(θ_k/2) / h²
-```
+$$\text{tr}(H_\lambda) \approx 2 + \sum_{k=1}^{n-2} \frac{1}{1 + \lambda \mu_k}$$
+
+where the eigenvalues of $(D^2)^T D^2$ are:
+
+$$\theta_k = \frac{\pi k}{n}, \qquad \mu_k = \left(\frac{4 \sin^2(\theta_k / 2)}{h^2}\right)^2$$
+
+The null space of $D^2$ is 2-dimensional (constants and linear functions), so trace starts at 2.0 (these two modes are unpenalized: $1/(1+0) = 1$ each).
 
 **Note:** This approximation is exact for uniform grids but approximate for non-uniform grids. For highly non-uniform grids (CV > 0.2), the program issues a warning.
 
 #### Enhanced GCV
 
-**Over-fitting penalty:**
-```
-If tr(H)/n > 0.7:
-    GCV_modified = GCV · exp(10·(tr(H)/n - 0.7))
-```
+**Over-fitting penalty:** If $\text{tr}(H)/n > 0.7$:
 
-This exponential penalty prevents selection of too-small λ that would lead to overfitting.
+$$\text{GCV}_{\text{modified}} = \text{GCV} \cdot \exp\!\left(10 \cdot \left(\frac{\text{tr}(H)}{n} - 0.7\right)\right)$$
+
+This exponential penalty prevents selection of too-small $\lambda$ that would lead to overfitting.
 
 **L-curve backup (for n > 20000):**
 
-For very large datasets, GCV trace approximation may be inaccurate. The program also computes the L-curve (plot of ||D²u||² vs ||y-u||²) and finds the corner point with maximum curvature:
+For very large datasets, GCV trace approximation may be inaccurate. The program also computes the L-curve (plot of $\|D^2 \mathbf{u}\|^2$ vs $\|\mathbf{y} - \mathbf{u}\|^2$) and finds the corner point with maximum curvature:
 
-```
-κ = |x'y'' - y'x''| / (x'² + y'²)^(3/2)
+$$\kappa = \frac{|x' y'' - y' x''|}{(x'^2 + y'^2)^{3/2}}$$
 
-where:
-x = log(||y - u||²)
-y = log(||D²u||²)
-```
+where $x = \log\|\mathbf{y} - \mathbf{u}\|^2$ and $y = \log\|D^2 \mathbf{u}\|^2$.
 
-If GCV and L-curve disagree significantly, the program uses the more conservative (larger) λ.
+If GCV and L-curve disagree significantly, the program uses the more conservative (larger) $\lambda$.
 
 ### Efficient Implementation
 
@@ -871,25 +697,27 @@ The program uses LAPACK routine `dpbsv` for solving symmetric positive definite 
 
 ```c
 // Banded matrix storage (LAPACK column-major format)
-// For tridiagonal symmetric matrix A with bandwidth kd=1:
+// For pentadiagonal symmetric matrix A with bandwidth kd=2:
 //
-//     [ AB[0,j] ]  = superdiagonal elements  (a[i,i+1])
-//     [ AB[1,j] ]  = diagonal elements       (a[i,i])
+//     [ AB[0,j] ]  = 2nd superdiagonal elements  (a[i,i+2])
+//     [ AB[1,j] ]  = 1st superdiagonal elements  (a[i,i+1])
+//     [ AB[2,j] ]  = diagonal elements            (a[i,i])
 //
-// Storage layout for tridiagonal matrix:
+// Storage layout for pentadiagonal matrix:
 //
-//         [ *    a01  a12  a23  a34  ... ]   <- row 0 (superdiagonal)
-//    AB = [ a00  a11  a22  a33  a44  ... ]   <- row 1 (diagonal)
+//         [ *    *    a02  a13  a24  ... ]   <- row 0 (2nd superdiagonal)
+//         [ *    a01  a12  a23  a34  ... ]   <- row 1 (1st superdiagonal)
+//    AB = [ a00  a11  a22  a33  a44  ... ]   <- row 2 (diagonal)
 //
-// System solution
+// System solution (kd=2, ldab=3)
 dpbsv_(&uplo, &n, &kd, &nrhs, AB, &ldab, b, &n, &info);
 ```
 
 **Complexity:**
-- Memory: O(n) for banded storage
+- Memory: O(n) for banded storage (3n elements)
 - Time: O(n) for factorization and back-substitution
 
-This is **optimal** for tridiagonal systems.
+This is **optimal** for pentadiagonal systems.
 
 ### Implementation Details
 
@@ -905,10 +733,11 @@ typedef struct {
 } TikhonovResult;
 
 // Main function
-TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda);
+TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda,
+                                GridAnalysis *grid_info);
 
 // Automatic λ selection
-double find_optimal_lambda_gcv(double *x, double *y, int n);
+double find_optimal_lambda_gcv(double *x, double *y, int n, GridAnalysis *grid_info);
 
 // Memory cleanup
 void free_tikhonov_result(TikhonovResult *result);
@@ -953,14 +782,13 @@ The filter is characterized by a **maximally flat magnitude response** in the pa
 **Filter Transfer Function:**
 
 In the analog domain (s-domain), the Butterworth filter has magnitude response:
-```
-|H(jω)|² = 1 / (1 + (ω/ωc)^(2N))
-```
+
+$$|H(j\omega)|^2 = \frac{1}{1 + (\omega / \omega_c)^{2N}}$$
 
 where:
-- `N` = filter order (4 in our implementation)
-- `ωc` = cutoff frequency (3dB point)
-- `ω` = frequency
+- $N$ = filter order (4 in our implementation)
+- $\omega_c$ = cutoff frequency (3dB point)
+- $\omega$ = frequency
 
 **Key Properties:**
 - **Maximally flat passband:** No ripples for ω < ωc
@@ -975,31 +803,26 @@ The smooth program implements a **4th-order digital Butterworth low-pass filter*
 **Step 1: Pole Calculation**
 
 Butterworth poles lie on unit circle in s-domain at angles:
-```
-θk = π/2 + π(2k+1)/(2N),  k = 0, 1, …, N−1
-```
 
-For N=4:
-```
-s_poles[k] = exp(j·θk)  where θ = {5π/8, 7π/8, 9π/8, 11π/8}
-```
+$$\theta_k = \frac{\pi}{2} + \frac{\pi(2k+1)}{2N}, \qquad k = 0, 1, \ldots, N{-}1$$
+
+For $N = 4$:
+
+$$s_{\text{poles}}[k] = e^{j\theta_k} \qquad \text{where } \theta \in \left\{\frac{5\pi}{8}, \frac{7\pi}{8}, \frac{9\pi}{8}, \frac{11\pi}{8}\right\}$$
 
 **Step 2: Frequency Scaling**
 
 Scale poles by prewarped cutoff frequency:
-```
-wc = tan(π·fc/2)    (prewarp for bilinear transform)
-s_poles_scaled = wc · s_poles
-```
 
-**Prewarping correction:** The bilinear transform introduces frequency warping. The factor `tan(π·fc/2)` compensates for this, ensuring the digital filter's cutoff matches the desired normalized frequency `fc`.
+$$\omega_c = \tan(\pi f_c / 2), \qquad s_{\text{scaled}} = \omega_c \cdot s_{\text{poles}}$$
+
+**Prewarping correction:** The bilinear transform introduces frequency warping. The factor $\tan(\pi f_c / 2)$ compensates for this, ensuring the digital filter's cutoff matches the desired normalized frequency $f_c$.
 
 **Step 3: Bilinear Transform**
 
 Convert analog poles to digital domain:
-```
-z_poles = (2 + s_poles_scaled) / (2 - s_poles_scaled)
-```
+
+$$z_{\text{poles}} = \frac{2 + s_{\text{scaled}}}{2 - s_{\text{scaled}}}$$
 
 The bilinear transformation maps:
 - Left half of s-plane → inside unit circle in z-plane
@@ -1009,11 +832,8 @@ The bilinear transformation maps:
 **Step 4: Biquad Cascade**
 
 Form two 2nd-order sections (biquads) from conjugate pole pairs:
-```
-H(z) = H1(z) · H2(z)
 
-Each biquad: H_i(z) = (b0 + b1·z⁻¹ + b2·z⁻²) / (1 + a1·z⁻¹ + a2·z⁻²)
-```
+$$H(z) = H_1(z) \cdot H_2(z), \qquad H_i(z) = \frac{b_0 + b_1 z^{-1} + b_2 z^{-2}}{1 + a_1 z^{-1} + a_2 z^{-2}}$$
 
 This approach provides better numerical stability than direct 4th-order implementation.
 
@@ -1031,41 +851,32 @@ The **filtfilt** (forward-backward filtering) eliminates phase distortion:
 
 **Effect:**
 - **Zero phase lag:** No signal delay
-- **Effective order:** 2N = 8 (squared magnitude response)
-- **Steeper rolloff:** |H_eff(jω)|² = |H(jω)|⁴
+- **Effective order:** $2N = 8$ (squared magnitude response)
+- **Steeper rolloff:** $|H_{\text{eff}}(j\omega)|^2 = |H(j\omega)|^4$
 
 ### Initial Conditions (Biquad IC)
 
 To minimize edge transients, we compute initial filter state for each **biquad section** using an **analytical solution**:
 
-**Problem:** For each 2nd-order biquad section, find initial state `zi` such that for constant input `x = c`:
-```
-zi = A·zi + B·c
-```
+**Problem:** For each 2nd-order biquad section, find initial state $\mathbf{z}_i$ such that for constant input $x = c$:
+
+$$\mathbf{z}_i = A \cdot \mathbf{z}_i + B \cdot c$$
 
 This ensures each biquad starts in steady-state, eliminating startup transients.
 
-**Solution for 2nd-order biquad:** Solve the 2×2 linear system analytically:
-```
-(I - A)·zi = B
+**Solution for 2nd-order biquad:** Solve the $2 \times 2$ linear system analytically:
+
+$$(I - A) \cdot \mathbf{z}_i = \mathbf{B}$$
 
 where for Transposed Direct Form II:
-  (I - A) = [[1+a1, -1], [a2, 1]]
-  B = [b1 - a1·b0, b2 - a2·b0]
-```
+
+$$I - A = \begin{pmatrix} 1+a_1 & -1 \\ a_2 & 1 \end{pmatrix}, \qquad \mathbf{B} = \begin{pmatrix} b_1 - a_1 b_0 \\ b_2 - a_2 b_0 \end{pmatrix}$$
 
 **Analytical solution using Cramer's rule:**
 
-The determinant of (I - A) is:
-```
-det = (1 + a1)·1 - (-1)·a2 = 1 + a1 + a2
-```
+$$\det(I - A) = 1 + a_1 + a_2$$
 
-The solution is:
-```
-zi[0] = (B[0] + B[1]) / det
-zi[1] = (-a2·B[0] + (1 + a1)·B[1]) / det
-```
+$$z_i[0] = \frac{B_0 + B_1}{\det}, \qquad z_i[1] = \frac{-a_2 B_0 + (1 + a_1) B_1}{\det}$$
 
 **Implementation advantages:**
 - **No LAPACK dependency** for initial conditions (purely analytical)
@@ -1086,17 +897,11 @@ The cutoff frequency `fc` is **normalized** to the sampling rate and is the **mo
 - Valid range: `0 < fc < 1.0` (Nyquist limit)
 
 **Technical details:**
-```
-fc = f_cutoff / f_Nyquist = f_cutoff / (f_sample / 2)
 
-where:
-  f_cutoff = desired cutoff frequency in physical units
-  f_sample = 1 / h_avg  (h_avg = average data spacing)
-  f_Nyquist = f_sample / 2  (Nyquist frequency)
-```
+$$f_c = \frac{f_{\text{cutoff}}}{f_{\text{Nyquist}}} = \frac{f_{\text{cutoff}}}{f_{\text{sample}} / 2}, \qquad f_{\text{sample}} = \frac{1}{h_{\text{avg}}}$$
 
-**Nyquist Constraint:** `0 < fc < 1.0`
-- `fc = 1.0` corresponds to Nyquist frequency (f_sample/2) - maximum possible
+**Nyquist Constraint:** $0 < f_c < 1.0$
+- $f_c = 1.0$ corresponds to Nyquist frequency ($f_{\text{sample}}/2$) - maximum possible
 - Higher fc -> less filtering (more high frequencies pass)
 - Lower fc -> more filtering (smoother result)
 
@@ -1143,18 +948,11 @@ Each biquad processes conjugate pole pair from Butterworth prototype
 
 Each biquad section uses **Transposed Direct Form II** (TDF-II) for optimal numerical properties:
 
-```
-For each biquad section (applied sequentially):
-For each sample n:
-  y[n] = b[0]·x[n] + z[0]
-  z[0] = b[1]·x[n] - a[1]·y[n] + z[1]
-  z[1] = b[2]·x[n] - a[2]·y[n]
+$$y[n] = b_0 \cdot x[n] + z_0$$
+$$z_0 = b_1 \cdot x[n] - a_1 \cdot y[n] + z_1$$
+$$z_1 = b_2 \cdot x[n] - a_2 \cdot y[n]$$
 
-where:
-  z[2] is the biquad state (2 elements per section)
-  [b0, b1, b2] are numerator coefficients
-  [1, a1, a2] are denominator coefficients (a0 normalized to 1)
-```
+where $\mathbf{z}$ is the biquad state (2 elements per section), $[b_0, b_1, b_2]$ are numerator coefficients, and $[1, a_1, a_2]$ are denominator coefficients ($a_0$ normalized to 1).
 
 **Complete 4th-order filtering:**
 1. Apply first biquad to input → intermediate result
@@ -1227,7 +1025,7 @@ The filter assumes uniform sampling when computing the cutoff frequency. For hig
 - **Robust for extreme cutoffs** (fc < 0.05 handled well by biquad cascade)
 
 **Disadvantages:**
-- **Requires uniform/nearly-uniform grid** (CV < 0.05 enforced)
+- **Requires uniform/nearly-uniform grid** (CV < 0.15 enforced, warning for CV > 0.05)
 - **No derivative output** (Butterworth is smoothing-only)
 - **Less local adaptability** than polynomial methods
 - **Cutoff selection not automatic** (currently manual tuning needed)
@@ -1856,10 +1654,11 @@ smooth/
 +--- tests/             # Unit testing framework (Unity)
     |--- unity.c/h                # Unity testing framework
     |--- unity_internals.h        # Unity internals
-    |--- test_main.c              # Test runner (50+ tests)
+    |--- test_main.c              # Test runner (102 tests)
     |--- test_grid_analysis.c     # Grid analysis tests (7 tests)
-    |--- test_polyfit.c           # Polyfit module tests (18 tests)
+    |--- test_polyfit.c           # Polyfit module tests (21 tests)
     |--- test_savgol.c            # Savgol module tests (16 tests)
+    |--- test_tikhonov.c          # Tikhonov module tests (26 tests)
     +--- test_timestamp.c         # Timestamp module tests (15 tests)
 ```
 
@@ -1878,11 +1677,11 @@ The `smooth` program provides four complementary smoothing methods in a modular 
 ### Key Features
 
 **Robust Testing Infrastructure:**
-- 50+ unit tests using Unity testing framework
+- 102 unit tests using Unity testing framework
 - AAA pattern (Arrange-Act-Assert) for all tests
 - Memory leak detection via Valgrind integration
 - Edge case coverage for robust production use
-- Test modules: grid_analysis (7 tests), polyfit (18 tests), savgol (16 tests), timestamp (15 tests)
+- Test modules: grid_analysis (7), polyfit (21), savgol (16), tikhonov (26), butterworth (17), timestamp (15)
 
 **Advanced Capabilities:**
 - Centralized grid analysis performed once at startup
@@ -1943,14 +1742,15 @@ Each method has a strong mathematical foundation and is optimized for specific d
 
 ---
 
-**Document revision:** 2025-12-07
-**Program version:** smooth v5.10.1
+**Document revision:** 2026-02-07
+**Program version:** smooth v5.11.0
 **Dependencies:** LAPACK, BLAS
 **Testing framework:** Unity (included in tests/)
 **License:** MIT License
 
-**Recent changes (v5.10.1):**
-- Complete rewrite of Butterworth filter module using biquad cascade architecture
-- Analytical initial conditions computation (no LAPACK dependency for IC)
-- Improved numerical stability for extreme cutoff frequencies (fc < 0.05)
-- Enhanced robustness through industry-standard biquad cascade approach
+**Recent changes (v5.11.0):**
+- Tikhonov regularization corrected to use true 2nd-order penalty (D²)ᵀWD²
+- Pentadiagonal Gram matrix (kd=2) replaces previous tridiagonal approximation
+- Natural boundary conditions now implicit (no boundary rows in D²)
+- GCV eigenvalues corrected: μ_k = (4sin²(θ/2)/h²)² with 2D null space
+- 102 unit tests including 26 Tikhonov-specific tests

@@ -112,6 +112,9 @@ void test_tikhonov_boundary_conditions_natural(void);
 void test_tikhonov_memory_allocation_success(void);
 void test_tikhonov_memory_error_handling(void);
 
+// Testy pro tikhonov.c - Null space verification
+void test_tikhonov_linear_exact_null_space(void);
+
 // Testy pro butterworth.c - Basic functionality
 void test_butterworth_returns_valid_result(void);
 void test_butterworth_smooths_noisy_signal(void);
@@ -320,6 +323,9 @@ int main(void) {
     printf("\n--- Memory management tests ---\n");
     RUN_TEST(test_tikhonov_memory_allocation_success);
     RUN_TEST(test_tikhonov_memory_error_handling);
+
+    printf("\n--- Null space verification tests ---\n");
+    RUN_TEST(test_tikhonov_linear_exact_null_space);
 
     printf("\n");
     printf("========================================\n");
