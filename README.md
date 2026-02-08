@@ -1106,7 +1106,7 @@ $$\theta_k = \frac{\pi}{2} + \frac{\pi(2k+1)}{2N}, \qquad k = 0, 1, \ldots, N{-}
 
 For $N = 4$:
 
-$$s_{\text{poles}}[k] = e^{j\theta_k} \qquad \text{where } \theta \in \left\{\frac{5\pi}{8}, \frac{7\pi}{8}, \frac{9\pi}{8}, \frac{11\pi}{8}\right\}$$
+$$s_{\text{poles}}[k] = e^{j\theta_k} \qquad \text{where } \theta \in \left\lbrace\frac{5\pi}{8}, \frac{7\pi}{8}, \frac{9\pi}{8}, \frac{11\pi}{8}\right\rbrace$$
 
 **Step 2: Frequency Scaling**
 
