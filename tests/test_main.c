@@ -161,6 +161,7 @@ void test_convert_timestamps_all_invalid(void);
 void test_convert_timestamps_preserves_format(void);
 void test_convert_timestamps_null_inputs(void);
 void test_free_timestamp_context_null(void);
+void test_parse_timestamp_dst_invariant(void);
 void test_convert_timestamps_subsecond_accuracy(void);
 
 /* ============================================================================
@@ -379,6 +380,9 @@ int main(void) {
     RUN_TEST(test_parse_timestamp_invalid_date);
     RUN_TEST(test_parse_timestamp_null_inputs);
     RUN_TEST(test_parse_timestamp_malformed);
+
+    printf("\n--- DST invariance tests ---\n");
+    RUN_TEST(test_parse_timestamp_dst_invariant);
 
     printf("\n--- Timestamp conversion tests ---\n");
     RUN_TEST(test_convert_timestamps_basic);

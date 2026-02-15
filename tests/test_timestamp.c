@@ -227,6 +227,23 @@ void test_free_timestamp_context_null(void) {
     TEST_ASSERT_TRUE(1);  /* If we get here, test passed */
 }
 
+/* Test: DST transition does not corrupt relative timestamps.
+ * 2025-03-30 is CET→CEST spring-forward in Europe/Prague.
+ * 01:59 CET + 62 min = 03:01 CEST.  With timegm (UTC) the
+ * difference must be exactly 3720s regardless of local TZ. */
+void test_parse_timestamp_dst_invariant(void) {
+    double epoch_before, epoch_after;
+
+    int r1 = parse_timestamp("2025-03-30 01:59:00", &epoch_before);
+    int r2 = parse_timestamp("2025-03-30 03:01:00", &epoch_after);
+
+    TEST_ASSERT_EQUAL(0, r1);
+    TEST_ASSERT_EQUAL(0, r2);
+
+    double diff = epoch_after - epoch_before;
+    TEST_ASSERT_DOUBLE_WITHIN(0.001, 3720.0, diff);  /* exactly 62 minutes */
+}
+
 /* Test: Time difference calculation accuracy */
 void test_convert_timestamps_subsecond_accuracy(void) {
     /* Test data from example.dat (first 3 lines) */

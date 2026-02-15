@@ -1,5 +1,7 @@
 /* timestamp.c - RFC3339-style timestamp parsing and conversion */
 
+#define _DEFAULT_SOURCE  /* for timegm() */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -71,10 +73,10 @@ int parse_timestamp(const char *str, double *epoch_seconds)
     tm_time.tm_hour = hour;
     tm_time.tm_min = min;
     tm_time.tm_sec = sec;
-    tm_time.tm_isdst = -1;          /* Let mktime determine DST */
+    tm_time.tm_isdst = 0;           /* UTC has no DST */
 
-    /* Convert to Unix epoch */
-    time_t epoch = mktime(&tm_time);
+    /* Convert to Unix epoch (UTC, no DST issues) */
+    time_t epoch = timegm(&tm_time);
     if (epoch == -1) {
         return -1;  /* mktime failed (invalid date) */
     }
