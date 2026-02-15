@@ -404,10 +404,11 @@ int main(int argc, char **argv)
       }
 
       /* Update n to reflect actual number of valid points */
+      int n_parsed = n;  // save original count before overwrite
       n = ts_ctx->n;
 
       /* Free original timestamp_strings array (ts_ctx has its own copy) */
-      for (int i = 0; i < n + ts_ctx->errors_encountered; i++) {
+      for (int i = 0; i < n_parsed; i++) {
         free(timestamp_strings[i]);
       }
       free(timestamp_strings);
