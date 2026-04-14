@@ -94,7 +94,7 @@ cat data.txt | ./smooth -m 1 -n 7 -p 2
 - `-n N` - Window size (polyfit, savgol)
 - `-p P` - Polynomial degree (polyfit, savgol, max 12)
 - `-l λ` - Regularization parameter (tikhonov), use `-l auto` for GCV
-- `-f fc` - Cutoff frequency (butterworth, 0 < fc < 0.5), use `-f auto` for default
+- `-f fc` - Cutoff frequency (butterworth, 0 < fc < 1.0), use `-f auto` for default
 - `-d` - Include first derivatives in output
 - `-g` - Show detailed grid uniformity analysis
 
@@ -177,13 +177,13 @@ Grid analysis is central to method selection:
 
 Uses **Unity testing framework** (included in `tests/` directory).
 
-**Current test coverage (102 tests total):**
+**Current test coverage (103 tests total):**
 - `test_grid_analysis.c` - Grid analysis module (7 tests)
 - `test_polyfit.c` - Polynomial fitting module (21 tests)
 - `test_savgol.c` - Savitzky-Golay module (16 tests)
 - `test_tikhonov.c` - Tikhonov module (26 tests)
 - `test_butterworth.c` - Butterworth module (17 tests, 4 have pre-existing valgrind leaks)
-- `test_timestamp.c` - Timestamp module (15 tests)
+- `test_timestamp.c` - Timestamp module (16 tests)
 - `test_main.c` - Test runner
 
 **To add new tests:**
@@ -340,7 +340,7 @@ void free_method_result(MethodResult *result) {
 ## Version History Context
 
 **v5.11.1 (current):** Fix DST corruption in timestamps (`timegm()` instead of `mktime()`), 103 tests
-**v5.11.0:** True 2nd-order Tikhonov penalty $(D^2)^T W D^2$, pentadiagonal matrix, 102 tests
+**v5.11.0:** True 2nd-order Tikhonov penalty $(D^2)^T W D^2$, pentadiagonal matrix
 **v5.10.1:** Butterworth biquad cascade rewrite, analytical IC
 **v5.7.1:** Added polyfit unit tests, small bug fixes
 **v5.6:** First unity tests added

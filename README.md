@@ -1,6 +1,6 @@
 # smooth - Experimental Data Smoothing
 
-**Version 5.11.0** | February 7, 2026
+**Version 5.11.1** | February 15, 2026
 
 A command-line tool for smoothing noisy experimental data and computing derivatives. Implements four methods: polynomial fitting, Savitzky-Golay filtering, Tikhonov regularization, and Butterworth low-pass filtering. Reads two-column ASCII data, outputs smoothed results. Works as a Unix filter.
 
@@ -50,7 +50,7 @@ make                                    # Compile
 ```bash
 make                  # Standard compilation (clang, -O2)
 make debug            # Debug build (-g -O0)
-make test             # Build and run 102 unit tests
+make test             # Build and run 103 unit tests
 make test-valgrind    # Run tests with memory leak detection
 make clean            # Clean build artifacts
 make install-user     # Install to ~/bin
@@ -178,8 +178,8 @@ Need frequency-domain control?
 |-----------|---------|--------|----------|-------------|
 | Uniform (CV <= 0.01) | [OK] | [OK] | [OK] | [OK] |
 | Nearly uniform (CV < 0.05) | [OK] | [WARNING] | [OK] | [OK] |
-| Moderately non-uniform (0.05 < CV < 0.2) | [OK] | [X] | [OK] | [WARNING] |
-| Highly non-uniform (CV > 0.2) | [WARNING] | [X] | [OK] | [WARNING] |
+| Moderately non-uniform (0.05 <= CV < 0.15) | [OK] | [X] | [OK] | [WARNING] |
+| Non-uniform (CV >= 0.15) | [WARNING] | [X] | [OK] | [X] |
 
 **Legend:** [OK] = Recommended, [WARNING] = Usable with caution, [X] = Rejected or not recommended
 
@@ -478,10 +478,10 @@ The `-g` flag provides detailed grid uniformity statistics to help choose approp
 | CV Range | Grid Type | Effect on Methods |
 |----------|-----------|-------------------|
 | CV <= 0.01 | Uniform | All methods work optimally |
-| CV < 0.05 | Nearly uniform | SAVGOL works with warning; all others fine |
-| 0.05 <= CV < 0.15 | Moderately non-uniform | SAVGOL rejected; TIKHONOV uses average coefficient method |
-| 0.15 <= CV < 0.20 | Non-uniform | SAVGOL rejected; TIKHONOV uses local spacing method |
-| CV >= 0.20 | Highly non-uniform | SAVGOL rejected; TIKHONOV uses local spacing method (warning issued) |
+| CV < 0.05 | Nearly uniform | SAVGOL works with warning; BUTTERWORTH info note; all others fine |
+| 0.05 <= CV < 0.15 | Moderately non-uniform | SAVGOL rejected; BUTTERWORTH warns; TIKHONOV uses average coefficient method |
+| 0.15 <= CV < 0.20 | Non-uniform | SAVGOL rejected; BUTTERWORTH rejected; TIKHONOV uses local spacing method |
+| CV >= 0.20 | Highly non-uniform | SAVGOL rejected; BUTTERWORTH rejected; TIKHONOV uses local spacing method (warning issued) |
 
 The coefficient of variation (CV) is defined as: $CV = \sigma(h) / h_{\text{avg}}$
 
@@ -524,7 +524,7 @@ The coefficient of variation (CV) is defined as: $CV = \sigma(h) / h_{\text{avg}
   ...
 ```
 
-In timestamp mode, the original timestamp format from input is preserved exactly in output. Values use scientific notation (`%.5E` format) for numeric data.
+In timestamp mode, the original timestamp format from input is preserved exactly in output. Values use general format (`%10.6lG`) for numeric data.
 
 ---
 
@@ -1420,26 +1420,31 @@ smooth/
 +--- tests/             # Unit testing framework (Unity)
     |--- unity.c/h                # Unity testing framework
     |--- unity_internals.h        # Unity internals
-    |--- test_main.c              # Test runner (102 tests)
+    |--- test_main.c              # Test runner (103 tests)
     |--- test_grid_analysis.c     # Grid analysis tests (7 tests)
     |--- test_polyfit.c           # Polyfit module tests (21 tests)
     |--- test_savgol.c            # Savgol module tests (16 tests)
     |--- test_tikhonov.c          # Tikhonov module tests (26 tests)
-    +--- test_timestamp.c         # Timestamp module tests (15 tests)
+    |--- test_butterworth.c       # Butterworth module tests (17 tests)
+    +--- test_timestamp.c         # Timestamp module tests (16 tests)
 ```
 
 ---
 
 ## Version History
 
-**v5.11.0 (current):** True 2nd-order Tikhonov penalty $(D^2)^T W D^2$, pentadiagonal matrix, 102 tests
+**v5.11.1 (current):** Fix DST corruption in timestamp parsing, use `timegm()` instead of `mktime()`, 103 tests
 
-**Recent changes (v5.11.0):**
+**Recent changes (v5.11.1):**
+- Fix DST corruption in timestamp parsing (use `timegm()` instead of `mktime()`)
+- 103 unit tests including 16 timestamp-specific tests
+
+**v5.11.0:** True 2nd-order Tikhonov penalty $(D^2)^T W D^2$, pentadiagonal matrix
 - Tikhonov regularization corrected to use true 2nd-order penalty (D²)ᵀWD²
 - Pentadiagonal Gram matrix (kd=2) replaces previous tridiagonal approximation
 - Natural boundary conditions now implicit (no boundary rows in D²)
 - GCV eigenvalues corrected: mu_k = (4sin²(theta/2)/h²)² with 2D null space
-- 102 unit tests including 26 Tikhonov-specific tests
+- 26 Tikhonov-specific tests
 
 **Previous versions:**
 - v5.10.1: Butterworth biquad cascade rewrite, analytical IC
@@ -1454,8 +1459,8 @@ smooth/
 
 ---
 
-**Document revision:** 2026-02-07
-**Program version:** smooth v5.11.0
+**Document revision:** 2026-02-15
+**Program version:** smooth v5.11.1
 **Dependencies:** LAPACK, BLAS
 **Testing framework:** Unity (included in tests/)
 **License:** MIT License
