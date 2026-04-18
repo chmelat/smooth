@@ -22,6 +22,7 @@
 #define NEARLY_UNIFORM_CV_THRESHOLD 0.01
 #define CUTOFF_FREQ_MIN 0.0
 #define CUTOFF_FREQ_MAX 1.0
+#define FC_MIN_PRACTICAL 1e-4  /* Poles approach unit circle below this */
 #define CUTOFF_FREQ_STABILITY_WARN 0.95
 #define POLE_RADIUS_WARN   0.99   /* warn when poles approach unit circle */
 #define POLE_RADIUS_ERROR  1.0    /* filter marginally stable / unstable */
@@ -476,6 +477,15 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
     if (fc <= CUTOFF_FREQ_MIN || fc >= CUTOFF_FREQ_MAX) {
         fprintf(stderr, "ERROR: Cutoff frequency must be in range (%.1f, %.1f), got %.4f\n",
                 CUTOFF_FREQ_MIN, CUTOFF_FREQ_MAX, fc);
+        return NULL;
+    }
+
+    if (fc < FC_MIN_PRACTICAL) {
+        fprintf(stderr, "ERROR: Cutoff frequency too small (fc=%.4e < %.4e). "
+                "Filter would be numerically ill-conditioned "
+                "(poles approach unit circle). "
+                "Use a larger fc or a different smoothing method.\n",
+                fc, FC_MIN_PRACTICAL);
         return NULL;
     }
 

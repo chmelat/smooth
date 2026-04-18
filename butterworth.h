@@ -49,7 +49,7 @@ typedef struct {
  *   x           - Array of x-coordinates (strictly monotonic increasing)
  *   y           - Array of y-values to be smoothed
  *   n           - Number of data points (>= BUTTERWORTH_MIN_POINTS)
- *   cutoff_freq - Normalized cutoff frequency (0 < fc < 1)
+ *   cutoff_freq - Normalized cutoff frequency (FC_MIN_PRACTICAL < fc < 1.0)
  *                 fc = f_cutoff / f_Nyquist
  *   auto_cutoff - If > 0, automatically determine cutoff (overrides cutoff_freq)
  *   grid_info   - Grid analysis results (uniformity check, sample rate)

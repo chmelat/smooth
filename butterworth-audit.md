@@ -1,145 +1,217 @@
 # Analýza implementace Butterworthova filtru
 
-**Datum auditu:** 2026-04-18
-**Verze projektu:** smooth v5.11.1
+**Datum auditu:** 2026-04-18 (aktualizováno)
+**Verze projektu:** smooth v5.11.4
 **Auditované soubory:** `butterworth.c` (V1.4/2025-12-07), `butterworth.h`, volající část `smooth.c`
+
+**Historie změn dokumentu:**
+- 2026-04-18 (v5.11.4): #6 přidán explicitní spodní limit `FC_MIN_PRACTICAL = 1e-4`.
+- 2026-04-18 (v5.11.3): #2 `-f auto` implementováno přes Morozovovu discrepancy principle,
+  #4 přidána kontrola stability pólů, #5 konvence `fc` sjednocena v CLAUDE.md.
+- 2026-04-18 (v5.11.1): původní audit.
 
 ---
 
-## Zásadní designové problémy
+## Vyřešené problémy
 
-### 1. Chybějící podpora derivací (narušení API smlouvy)
+### [RESOLVED v5.11.3] 2. `estimate_cutoff_frequency` — nyní plná implementace
 
-`ButterworthResult` nemá pole `y_deriv` (`butterworth.h:34-41`), ačkoli CLAUDE.md
-definuje jako sdílený vzor, že všechny metody vrací `y_smooth`, `y_deriv`, `n`.
-V `smooth.c:564-567` se na to řeší ad-hoc varováním do stderr.
+Dřívější stub vracející konstantu `0.2` byl nahrazen Morozovovou discrepancy principle
+(`butterworth.c:379-426`):
 
-**Doporučení:** Buď dopočítat derivace (např. centrální diferencí z `y_smooth`),
-nebo to explicitně dokumentovat v headeru jako architektonické rozhodnutí.
+1. Odhad šumového `σ̂` z MAD druhých diferencí
+   (normalizace `sqrt(6) * 0.6745 ≈ 1.6528553`).
+2. Iterace přes kandidáty `{0.02, 0.05, 0.1, 0.2, 0.35, 0.5}` — vybere nejmenší `fc`
+   takové, že `std(y - y_smooth) ≤ 1.1 * σ̂`.
+3. Při selhání odhadu šumu / alokace fallback na `AUTO_CUTOFF_FALLBACK = 0.2`
+   s informační zprávou.
 
-### 2. `estimate_cutoff_frequency` je pouze stub
+Diagnostika (`# Auto cutoff: ...`) je vypisována do stdout jako součást hlavičky,
+což je konzistentní s chováním ostatních metod.
 
-`butterworth.c:206-210` — vrací napevno 0.2 nezávisle na datech, ale CLI i header
-dokumentaci inzerují „automatic cutoff selection" (`-f auto`). Uživatel zadávající
-`-f auto` dostane tichý konstantní výsledek — to je funkční lež.
+**Drobná poznámka:** Parametr `x` je v nové implementaci explicitně ignorován
+přes `(void)x;` s komentářem, že `fc` je normalizované k Nyquistově frekvenci.
+To je korektní, ale signatura API zůstává zavádějící (viz #9 níže).
 
-**Doporučení:** Buď implementovat (např. přes odhad SNR / power spectrum), nebo
-`-f auto` odmítnout s jasnou chybou, dokud implementace neexistuje.
+### [RESOLVED v5.11.2] 4. Kontrola stability pólů
 
-### 3. Kaskádovaná iniciační podmínka se spoléhá na skrytou invariantu
+Přidána funkce `check_pole_stability()` (`butterworth.c:119-161`) volaná po designu
+(`butterworth.c:528-531`). Pro každou biquad sekci:
 
-`butterworth.c:330-343`:
+- komplexní póly: `|z| = sqrt(|a2|)`,
+- reálné póly (defenzivně): maximum z `|(-a1 ± sqrt(disc))/2|`.
+
+Prahy:
+- `POLE_RADIUS_WARN = 0.99` → varování na stderr,
+- `POLE_RADIUS_ERROR = 1.0` → tvrdá chyba, `butterworth_filtfilt` vrací NULL.
+
+Tím je zachycen i Issue #6 (extrémně malé `fc`) i Issue #7 (extrémně velké `fc`)
+v praktické rovině — pokud `fc` způsobí posun pólů k jednotkovému kruhu, filtr
+odmítne výpočet nebo varuje. Explicitní spodní limit na `fc` (např. `1e-4`) by byl
+stále žádoucí jako první obranná linie, ale kritičnost je nyní „nízká".
+
+### [RESOLVED] 5. Rozpor v konvenci `fc` s CLAUDE.md
+
+CLAUDE.md (`/home/orangepi/Lang/c/smooth/CLAUDE.md:78`) nyní uvádí
+`0 < fc < 1.0`, což je konzistentní s `butterworth.c:23-24` a CLI validací.
+
+### [RESOLVED v5.11.4] 6. Explicitní spodní limit na `fc`
+
+Přidána konstanta `FC_MIN_PRACTICAL = 1e-4` (`butterworth.c:25`) a nový
+validační blok v `butterworth_filtfilt` (za existujícím MIN/MAX range-checkem):
+
 ```c
-first_val = y_work[0];
-for (int s = 0; s < NUM_BIQUADS; s++) {
-    zi[0] = zi_base[s][0] * first_val;
-    ...
-    first_val = y_work[0];  // výstup i-tého biquadu
+if (fc < FC_MIN_PRACTICAL) {
+    fprintf(stderr, "ERROR: Cutoff frequency too small (fc=%.4e < %.4e). "
+            "Filter would be numerically ill-conditioned "
+            "(poles approach unit circle). "
+            "Use a larger fc or a different smoothing method.\n",
+            fc, FC_MIN_PRACTICAL);
+    return NULL;
 }
 ```
 
-Tento postup funguje jen díky tomu, že každý biquad má DC gain = 1, takže výstup
-po ustálení rovná vstupu. Jenže na prvním samplu filtr ještě ustálený není —
-`y_work[0]` po prvním biquadu není přesně vstupní step. Pro odd-reflection padding,
-kde `padded[0] = 2·y[0] - y[pad_len]`, to navíc znamená, že "step amplitude" pro IC
-není `y[0]`, ale reflektovaná hodnota. V praxi padding transient zatlumí, ale
-logika si zaslouží komentář vysvětlující, proč chain funguje.
+Hodnota `1e-4` je bezpečně pod nejmenším kandidátem auto-selektoru (`0.02`),
+takže Morozov-selektor není ovlivněn. Pro `fc < 1e-4` by pólový poloměr
+vždy přesáhl `POLE_RADIUS_WARN = 0.99` — práh koresponduje s oblastí,
+kde filtr stejně ztrácí numerickou přesnost.
 
-### 4. Žádná kontrola stability navrženého filtru
-
-`design_biquad_sections` spočítá koeficienty, ale nikde se neověří, že póly leží
-uvnitř jednotkového kruhu (tedy `|a2| < 1` a `|a1| < 1 + a2`). Pro platné
-`fc ∈ (0,1)` a numericky zdravý `tan()` by to mělo vždy sedět, ale defenzivní
-check za ~4 řádky by zachytil krajní případy (např. `fc` velmi blízko 0 nebo 1
-s akumulovanou chybou).
+Rozšířen test `test_butterworth_invalid_cutoff_frequency`
+(`tests/test_butterworth.c`) o case `fc = 1e-5`.
 
 ---
 
-## Středně závažné problémy
+## Nadále otevřené problémy
 
-### 5. Rozpor v konvenci `fc` s CLAUDE.md
+### 1. Chybějící podpora derivací (narušení API smlouvy)
 
-CLAUDE.md říká `0 < fc < 0.5`, kód i CLI říkají `0 < fc < 1`
-(`butterworth.c:23-24`, `smooth.c:130, 685-686`). CLAUDE.md je zastaralý — buď
-sjednotit, nebo dokumentaci opravit.
+`ButterworthResult` v `butterworth.h:35-41` stále nemá pole `y_deriv`,
+ačkoli CLAUDE.md definuje jako sdílený vzor (`y_smooth`, `y_deriv`, `n`) pro
+všechny metody. V `smooth.c` se to řeší ad-hoc varováním.
 
-### 6. Žádný dolní limit na `fc`
+**Doporučení:** Buď dopočítat derivace centrální diferencí z `y_smooth`
+(nulové fázové zpoždění díky filtfilt to umožňuje), nebo to explicitně
+dokumentovat v headeru jako architektonické rozhodnutí.
 
-Pro `fc → 0` platí `Wc = tan(π·fc/2) → 0` a numerátor biquadu `≈ Wc²/A0`,
-kde `A0 ≈ 4`. To dává velmi malé `b` koeficienty a `a2 → 1`, což znamená póly
-blízko jednotkového kruhu → ztráta přesnosti.
+**Priorita:** vysoká (po vyřešení #2 je to jediný zbývající rozpor s architekturou).
 
-**Doporučení:** Tvrdý spodní limit (např. `fc > 1e-4`).
+### 3. Kaskádovaná iniciační podmínka se spoléhá na skrytou invariantu
+
+`butterworth.c:225-238` (funkce `apply_cascade`):
+```c
+double first_val = buf[0];
+for (int s = 0; s < NUM_BIQUADS; s++) {
+    zi[0] = zi_base[s][0] * first_val;
+    zi[1] = zi_base[s][1] * first_val;
+    apply_biquad(&sections[s], buf, buf, padded_len, zi);
+    first_val = buf[0];  // výstup předchozího biquadu
+}
+```
+
+Funkční komentář nad funkcí (ř. 220-224) nyní alespoň zmiňuje, že se
+spoléhá na unity DC gain. Stále ale chybí vysvětlení, proč je to korektní
+i pro první sample, kdy filtr ještě není ustálený — v kombinaci s odd-reflection
+paddingem (`padded[0] = 2·y[0] - y[pad_len]`) to v praxi funguje, protože
+padding transient zatlumí, ale logika by si zasloužila explicitní důkaz
+či odkaz na referenci (scipy filtfilt).
+
+**Priorita:** nízká (dokumentační, kód je správně).
 
 ### 7. `CUTOFF_FREQ_STABILITY_WARN = 0.95` je jen warning
 
-`butterworth.c:267-269` — pro `fc` v rozsahu (0.95, 1.0) vzniká `Wc` velmi velké,
-opět numericky rizikové.
+`butterworth.c:482-484` — pro `fc ∈ (0.95, 1.0)` je pouze stderr warning.
+V kombinaci s `check_pole_stability` (ERROR při radius ≥ 1.0) jde o měkčí varování,
+ale konkrétní numerické dopady pro `fc = 0.99` nejsou v komentáři popsány.
 
-**Doporučení:** Zpřísnit na hard error, nebo alespoň tento rozsah dokumentovat
-jako „experimentální".
+**Doporučení:** Dokumentovat v hlavičce `butterworth.h`, že `fc > 0.95` je
+experimentální režim, nebo zpřísnit na hard error.
+
+**Priorita:** nízká.
 
 ### 8. `compute_biquad_ic` tiše nuluje při degenerate case
 
-`butterworth.c:122-126` — komentář říká „should not happen with valid fc", ale
-pokud k tomu dojde, uživatel dostane zkreslený výstup bez jakéhokoliv varování.
+`butterworth.c:186-193` — komentář říká „should not happen with valid fc",
+ale pokud `|det| ≤ 1e-10` nastane, uživatel dostane transient-zatížený výstup
+bez varování.
 
 **Doporučení:** Přidat `fprintf(stderr, ...)` nebo vrátit chybu nahoru.
+Varování je obzvlášť důležité ve světle nového Morozov-selektoru, který může
+iterovat přes extrémní kandidáty.
 
----
+**Priorita:** nízká.
 
-## Drobnosti
+### 9. Parametr `x` zůstává v signatuře `estimate_cutoff_frequency`
 
-### 9. Parametr `x` je v hlavní cestě nepoužitý
+`butterworth.c:379,384` — `(void)x;` explicitně signalizuje nepoužití.
+Z API pohledu by bylo čistší parametr odstranit, ale jde o veřejnou funkci
+v headeru (`butterworth.h:72`).
 
-Vstupuje jen do stub `estimate_cutoff_frequency`. Grid spacing se bere
-z `grid_info->h_avg`. Zavádějící signatura.
+**Priorita:** velmi nízká (kosmetika).
 
 ### 10. `sample_rate` je pouze metadata
 
-Filtr pracuje normalizovaně, `sample_rate = 1/h_avg` slouží jen k tisku hlavičky.
-Pro neuniformní grid (CV blízko 0.15) to může být matoucí, protože skutečný
-„sample rate" neexistuje. Pro méně matoucí výstup by stálo za zvážení uvést
-i `h_avg` s varováním.
+`butterworth.c:502, 522` — `sample_rate = 1/h_avg` slouží jen k tisku hlavičky.
+Pro neuniformní grid (CV blízko 0.15) to může být matoucí.
+
+**Priorita:** velmi nízká.
 
 ### 11. Memory estimate tiskne `GB` i pro menší datasety
 
-`butterworth.c:249-250` — podmínka `n > 50M` to omezuje, ale formát `%.1f GB` je
-matoucí — 50M bodů dává ~0.8 GB.
+`butterworth.c:464-467` — podmínka `n > 50M` to omezuje, ale formát `%.1f GB`
+je matoucí (50M bodů ~0.8 GB).
+
+**Priorita:** velmi nízká (kosmetika).
 
 ### 12. Padding length `3*(order+1)-1 = 14`
 
-Blízko scipy defaultu (15 pro monolitický 4. řád), ale pro biquad by bylo
-konzistentnější `3 * max(len(a), len(b)) = 9`. Rozdíl v praxi zanedbatelný.
+`butterworth.c:54` — blízko scipy defaultu (15 pro monolitický 4. řád),
+ale pro biquad by bylo konzistentnější `3 * max(len(a), len(b)) = 9`.
+Rozdíl v praxi zanedbatelný.
+
+**Priorita:** velmi nízká.
 
 ---
 
-## Shrnutí priorit
+## Aktualizované shrnutí priorit
 
-| # | Problém | Priorita |
-|---|---------|----------|
-| 2 | `-f auto` je stub | **vysoká** (uživatelsky viditelná lež) |
-| 1 | Chybí `y_deriv` | **vysoká** (nekonzistence API) |
-| 4 | Žádná kontrola stability pólů | střední |
-| 3 | Cascade IC spoléhá na skrytou invariantu | střední (dokumentační) |
-| 6, 7 | Chybí limity pro extrémní `fc` | střední |
-| 5 | Rozpor `fc` rozsah v CLAUDE.md | nízká (jen dokumentace) |
-| 8 | Tichý fallback v `compute_biquad_ic` | nízká |
-| 9–12 | Kosmetika / drobná UX | nízká |
+| # | Problém | Priorita | Stav |
+|---|---------|----------|------|
+| 2 | `-f auto` je stub | **vysoká** | **RESOLVED v5.11.3** (Morozov) |
+| 4 | Žádná kontrola stability pólů | střední | **RESOLVED v5.11.2** |
+| 5 | Rozpor `fc` rozsah v CLAUDE.md | nízká | **RESOLVED** |
+| 6 | Chybí explicitní spodní limit `fc` | nízká | **RESOLVED v5.11.4** |
+| 1 | Chybí `y_deriv` | **vysoká** | otevřeno |
+| 3 | Cascade IC spoléhá na skrytou invariantu | nízká | otevřeno (dokumentace) |
+| 7 | `CUTOFF_FREQ_STABILITY_WARN` jen warning | nízká | zmírněno pole-checkem |
+| 8 | Tichý fallback v `compute_biquad_ic` | nízká | otevřeno |
+| 9–12 | Kosmetika / drobná UX | velmi nízká | otevřeno |
 
 ---
 
 ## Závěr
 
+Od původního auditu (v5.11.1) došlo ke třem zlepšením obranné vrstvy:
+
+1. **v5.11.2** — `check_pole_stability()` jako runtime pojistka proti numerické
+   nestabilitě. Efektivně zastřešuje issues #6 a #7 v runtime (warn při radius > 0.99,
+   error při radius ≥ 1.0), takže explicitní mezní hodnoty `fc` jsou již jen
+   „první obranná linie".
+
+2. **v5.11.3** — skutečná implementace `-f auto` přes Morozovovu discrepancy
+   principle (MAD odhad šumu + tolerance 1.1·σ̂). CLI slib „automatic cutoff
+   selection" nyní odpovídá realitě.
+
+3. **v5.11.4** — explicitní spodní limit `FC_MIN_PRACTICAL = 1e-4` pro `fc`.
+   Uživatel s nesmyslně malým `fc` dostane jasnou chybu před designem filtru
+   namísto pozdějšího pole-warning na ztrátu přesnosti.
+
+**Jediný zbývající problém s vysokou prioritou** je absence `y_deriv` v
+`ButterworthResult` (issue #1) — nekonzistence s API smlouvou sdílenou mezi
+metodami (polyfit, savgol, tikhonov). Protože filtfilt je nulově-fázový,
+derivace by se dala spolehlivě dopočítat centrální diferencí z `y_smooth`
+bez zavlečení dalšího fázového zkreslení.
+
 Matematická stránka (bilineární transformace s prewarpingem, TDF-II biquad,
-odd-reflection padding, IC přes Cramerovo pravidlo) je implementovaná **korektně**.
-
-Hlavní slabiny jsou v:
-
-- **API konzistenci** — chybí derivace, které ostatní metody poskytují
-- **Dodržování slibů CLI** — `-f auto` reálně nefunguje
-- **Defenzivních kontrolách** — žádné meze na extrémní `fc`, žádná ověření
-  stability, tiché fallbacky
-
-Žádný problém není kritický pro typické použití (uniformní grid, `fc ∈ [0.05, 0.5]`),
-ale všechny zvyšují riziko tichého selhání mimo tento „happy path".
+odd-reflection padding, IC přes Cramerovo pravidlo, Morozov auto-fc) je
+implementovaná **korektně**. Zbývající problémy (#3, #8–#12) jsou převážně
+dokumentační/kosmetické a neovlivňují typické použití na uniformním gridu.

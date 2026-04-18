@@ -176,6 +176,10 @@ void test_butterworth_invalid_cutoff_frequency(void) {
 
     ButterworthResult *r4 = butterworth_filtfilt(x, y, n, 1.5, 0, grid);
     TEST_ASSERT_NULL(r4);
+
+    // fc below FC_MIN_PRACTICAL (1e-4) should fail as numerically ill-conditioned
+    ButterworthResult *r5 = butterworth_filtfilt(x, y, n, 1e-5, 0, grid);
+    TEST_ASSERT_NULL(r5);
 }
 
 /* ============================================================================
