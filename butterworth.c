@@ -23,7 +23,10 @@
 #define CUTOFF_FREQ_MIN 0.0
 #define CUTOFF_FREQ_MAX 1.0
 #define FC_MIN_PRACTICAL 1e-4  /* Poles approach unit circle below this */
-#define CUTOFF_FREQ_STABILITY_WARN 0.95
+/* Above this threshold the filter is numerically stable (pole radius < 0.75
+ * at fc=0.95, far from unit circle) but passes almost the entire spectrum
+ * unattenuated. See check_pole_stability() for the actual numerical limit. */
+#define CUTOFF_FREQ_INEFFECTIVE_WARN 0.95
 #define POLE_RADIUS_WARN   0.99   /* warn when poles approach unit circle */
 #define POLE_RADIUS_ERROR  1.0    /* filter marginally stable / unstable */
 
@@ -489,8 +492,10 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
         return NULL;
     }
 
-    if (fc > CUTOFF_FREQ_STABILITY_WARN) {
-        fprintf(stderr, "Warning: fc = %.4f is close to Nyquist limit\n", fc);
+    if (fc > CUTOFF_FREQ_INEFFECTIVE_WARN) {
+        fprintf(stderr, "Warning: fc = %.4f is close to Nyquist limit. "
+                "Filter passes nearly the entire spectrum unattenuated; "
+                "consider a smaller fc for meaningful smoothing.\n", fc);
     }
 
     /* Check grid uniformity */

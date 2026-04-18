@@ -5,6 +5,8 @@
 **Auditované soubory:** `butterworth.c` (V1.4/2025-12-07), `butterworth.h`, volající část `smooth.c`
 
 **Historie změn dokumentu:**
+- 2026-04-18 (v5.11.5): #7 pojmenování konstanty opraveno (`CUTOFF_FREQ_INEFFECTIVE_WARN`),
+  zpřesněn text varování a doplněna dokumentace parametru v `butterworth.h`.
 - 2026-04-18 (v5.11.4): #6 přidán explicitní spodní limit `FC_MIN_PRACTICAL = 1e-4`.
 - 2026-04-18 (v5.11.3): #2 `-f auto` implementováno přes Morozovovu discrepancy principle,
   #4 přidána kontrola stability pólů, #5 konvence `fc` sjednocena v CLAUDE.md.
@@ -79,6 +81,40 @@ kde filtr stejně ztrácí numerickou přesnost.
 Rozšířen test `test_butterworth_invalid_cutoff_frequency`
 (`tests/test_butterworth.c`) o case `fc = 1e-5`.
 
+### [RESOLVED v5.11.5] 7. `CUTOFF_FREQ_STABILITY_WARN` — nesprávné pojmenování
+
+Numerická analýza odhalila, že původní pojmenování bylo zavádějící.
+Pro biquad sekci s úhlem `θ = π/8` (worst-case pro stabilitu blízko Nyquistu):
+
+| `fc` | `Wc = tan(π·fc/2)` | `a2` | pólový poloměr |
+|------|--------------------|------|----------------|
+| 0.95 | 12.706 | 0.5579 | **0.747** |
+| 0.99 | 63.657 | 0.8904 | 0.944 |
+| 0.9983 | 374.5 | 0.9805 | ~0.990 |
+| 0.9999 | 6366.2 | 0.9988 | 0.999 |
+
+Při `fc = 0.95` jsou póly na poloměru pouze **0.747** — velmi daleko od
+jednotkového kruhu. Skutečná numerická nestabilita (radius > `POLE_RADIUS_WARN = 0.99`)
+nastává až za `fc ≈ 0.9983`, což již plně pokrývá `check_pole_stability()`
+(issue #4, vyřešeno v v5.11.2).
+
+Původní konstanta tedy nevarovala před numerickým problémem, ale před tím,
+že **filtr při fc blízko Nyquistu prakticky nic netlumí** (v pásmu propustnosti
+má téměř jednotkový přenos). To je UX problém, nikoli numerický.
+
+**Provedené změny (v5.11.5):**
+
+- Přejmenování `CUTOFF_FREQ_STABILITY_WARN` → `CUTOFF_FREQ_INEFFECTIVE_WARN`
+  (`butterworth.c:26-29`) s komentářem vysvětlujícím skutečný smysl prahu.
+- Zpřesnění textu varování — nyní uživateli říká, *proč* je to problém
+  („Filter passes nearly the entire spectrum unattenuated").
+- Dokumentace parametru `cutoff_freq` v `butterworth.h:54-56` — popisuje
+  typický užitečný rozsah (`0.01 - 0.5`) a chování nad 0.95.
+
+Žádný hard-reject nebyl přidán: `fc ∈ (0.95, 1.0)` je numericky zcela
+korektní, jen málo užitečný. Rozhodnutí o použitelnosti je ponecháno na
+uživateli, jemuž warning vysvětlí důsledky.
+
 ---
 
 ## Nadále otevřené problémy
@@ -116,17 +152,6 @@ padding transient zatlumí, ale logika by si zasloužila explicitní důkaz
 či odkaz na referenci (scipy filtfilt).
 
 **Priorita:** nízká (dokumentační, kód je správně).
-
-### 7. `CUTOFF_FREQ_STABILITY_WARN = 0.95` je jen warning
-
-`butterworth.c:482-484` — pro `fc ∈ (0.95, 1.0)` je pouze stderr warning.
-V kombinaci s `check_pole_stability` (ERROR při radius ≥ 1.0) jde o měkčí varování,
-ale konkrétní numerické dopady pro `fc = 0.99` nejsou v komentáři popsány.
-
-**Doporučení:** Dokumentovat v hlavičce `butterworth.h`, že `fc > 0.95` je
-experimentální režim, nebo zpřísnit na hard error.
-
-**Priorita:** nízká.
 
 ### 8. `compute_biquad_ic` tiše nuluje při degenerate case
 
@@ -180,9 +205,9 @@ Rozdíl v praxi zanedbatelný.
 | 4 | Žádná kontrola stability pólů | střední | **RESOLVED v5.11.2** |
 | 5 | Rozpor `fc` rozsah v CLAUDE.md | nízká | **RESOLVED** |
 | 6 | Chybí explicitní spodní limit `fc` | nízká | **RESOLVED v5.11.4** |
+| 7 | `CUTOFF_FREQ_STABILITY_WARN` jen warning | nízká | **RESOLVED v5.11.5** (rename + docs) |
 | 1 | Chybí `y_deriv` | **vysoká** | otevřeno |
 | 3 | Cascade IC spoléhá na skrytou invariantu | nízká | otevřeno (dokumentace) |
-| 7 | `CUTOFF_FREQ_STABILITY_WARN` jen warning | nízká | zmírněno pole-checkem |
 | 8 | Tichý fallback v `compute_biquad_ic` | nízká | otevřeno |
 | 9–12 | Kosmetika / drobná UX | velmi nízká | otevřeno |
 
@@ -190,12 +215,10 @@ Rozdíl v praxi zanedbatelný.
 
 ## Závěr
 
-Od původního auditu (v5.11.1) došlo ke třem zlepšením obranné vrstvy:
+Od původního auditu (v5.11.1) došlo ke čtyřem zlepšením obranné vrstvy:
 
 1. **v5.11.2** — `check_pole_stability()` jako runtime pojistka proti numerické
-   nestabilitě. Efektivně zastřešuje issues #6 a #7 v runtime (warn při radius > 0.99,
-   error při radius ≥ 1.0), takže explicitní mezní hodnoty `fc` jsou již jen
-   „první obranná linie".
+   nestabilitě (warn při radius > 0.99, error při radius ≥ 1.0).
 
 2. **v5.11.3** — skutečná implementace `-f auto` přes Morozovovu discrepancy
    principle (MAD odhad šumu + tolerance 1.1·σ̂). CLI slib „automatic cutoff
@@ -204,6 +227,10 @@ Od původního auditu (v5.11.1) došlo ke třem zlepšením obranné vrstvy:
 3. **v5.11.4** — explicitní spodní limit `FC_MIN_PRACTICAL = 1e-4` pro `fc`.
    Uživatel s nesmyslně malým `fc` dostane jasnou chybu před designem filtru
    namísto pozdějšího pole-warning na ztrátu přesnosti.
+
+4. **v5.11.5** — oprava pojmenování `CUTOFF_FREQ_STABILITY_WARN` → `_INEFFECTIVE_WARN`,
+   zpřesnění textu varování a dokumentace typického užitečného rozsahu `fc`.
+   Vyjasněno, že blízkost Nyquistu není numerický, nýbrž UX problém.
 
 **Jediný zbývající problém s vysokou prioritou** je absence `y_deriv` v
 `ButterworthResult` (issue #1) — nekonzistence s API smlouvou sdílenou mezi

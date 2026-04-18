@@ -51,6 +51,9 @@ typedef struct {
  *   n           - Number of data points (>= BUTTERWORTH_MIN_POINTS)
  *   cutoff_freq - Normalized cutoff frequency (FC_MIN_PRACTICAL < fc < 1.0)
  *                 fc = f_cutoff / f_Nyquist
+ *                 Values above ~0.95 are accepted but warn: the filter is
+ *                 numerically stable yet barely attenuates any component
+ *                 (nearly unity passband). Typical useful range: 0.01 - 0.5.
  *   auto_cutoff - If > 0, automatically determine cutoff (overrides cutoff_freq)
  *   grid_info   - Grid analysis results (uniformity check, sample rate)
  *
