@@ -23,9 +23,12 @@
 #define CUTOFF_FREQ_MIN 0.0
 #define CUTOFF_FREQ_MAX 1.0
 #define CUTOFF_FREQ_STABILITY_WARN 0.95
+#define POLE_RADIUS_WARN   0.99   /* warn when poles approach unit circle */
+#define POLE_RADIUS_ERROR  1.0    /* filter marginally stable / unstable */
 
 /* Internal function prototypes */
 static void design_biquad_sections(double fc, BiquadSection *sections);
+static int  check_pole_stability(const BiquadSection *sections);
 static void compute_biquad_ic(const BiquadSection *bq, double *zi_base);
 static void apply_biquad(const BiquadSection *bq, const double *x, double *y, 
                          size_t n, double z[2]);
@@ -91,6 +94,57 @@ static void design_biquad_sections(double fc, BiquadSection *sections)
         sections[i].b[1] = 2.0 * gain;
         sections[i].b[2] = gain;
     }
+}
+
+/* Check that filter poles lie safely inside the unit circle.
+ * Returns 0 on success, -1 if any pole is on or outside the unit circle.
+ * Prints a warning to stderr if any pole exceeds POLE_RADIUS_WARN.
+ *
+ * For biquad denominator 1 + a1·z^-1 + a2·z^-2, poles are roots of
+ * z^2 + a1·z + a2 = 0.
+ */
+static int check_pole_stability(const BiquadSection *sections)
+{
+    double max_radius = 0.0;
+    int worst_section = 0;
+
+    for (int i = 0; i < NUM_BIQUADS; i++) {
+        double a1 = sections[i].a[1];
+        double a2 = sections[i].a[2];
+        double disc = a1 * a1 - 4.0 * a2;
+        double radius;
+
+        if (disc < 0.0) {
+            /* Complex conjugate poles: |z| = sqrt(a2) */
+            radius = sqrt(fabs(a2));
+        } else {
+            /* Real poles (shouldn't happen for Butterworth, handle defensively) */
+            double sq = sqrt(disc);
+            double r1 = fabs((-a1 + sq) * 0.5);
+            double r2 = fabs((-a1 - sq) * 0.5);
+            radius = (r1 > r2) ? r1 : r2;
+        }
+
+        if (radius > max_radius) {
+            max_radius = radius;
+            worst_section = i;
+        }
+    }
+
+    if (max_radius >= POLE_RADIUS_ERROR) {
+        fprintf(stderr, "ERROR: Filter is unstable: pole radius %.6f >= 1.0 "
+                "in biquad section %d\n", max_radius, worst_section);
+        return -1;
+    }
+
+    if (max_radius > POLE_RADIUS_WARN) {
+        fprintf(stderr, "Warning: Filter poles very close to unit circle "
+                "(max radius %.6f in biquad %d). Numerical precision may suffer. "
+                "Consider a less extreme cutoff frequency.\n",
+                max_radius, worst_section);
+    }
+
+    return 0;
 }
 
 /* Compute initial conditions for one biquad section
@@ -309,6 +363,11 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
     /* Design filter (2 biquad sections) */
     BiquadSection sections[NUM_BIQUADS];
     design_biquad_sections(fc, sections);
+
+    /* Verify pole stability (warn if close to unit circle, error if outside) */
+    if (check_pole_stability(sections) != 0) {
+        goto error;
+    }
 
     /* Compute initial conditions for each biquad */
     double zi_base[NUM_BIQUADS][2];

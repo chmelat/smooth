@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `smooth` is a scientific data smoothing program implementing four mathematical methods for noise reduction and derivative computation in experimental data. The codebase is ~3,600 lines of modular C code with LAPACK dependencies.
 
-**Current version:** 5.11.1 (2026-02-15)
+**Current version:** 5.11.2 (2026-04-18)
 
 ## Documentation Guidelines
 
@@ -339,7 +339,8 @@ void free_method_result(MethodResult *result) {
 
 ## Version History Context
 
-**v5.11.1 (current):** Fix DST corruption in timestamps (`timegm()` instead of `mktime()`), 103 tests
+**v5.11.2 (current):** Butterworth pole-stability check (warns when poles approach unit circle)
+**v5.11.1:** Fix DST corruption in timestamps (`timegm()` instead of `mktime()`), 103 tests
 **v5.11.0:** True 2nd-order Tikhonov penalty $(D^2)^T W D^2$, pentadiagonal matrix
 **v5.10.1:** Butterworth biquad cascade rewrite, analytical IC
 **v5.7.1:** Added polyfit unit tests, small bug fixes

@@ -1,6 +1,6 @@
 # smooth - Experimental Data Smoothing
 
-**Version 5.11.1** | February 15, 2026
+**Version 5.11.2** | April 18, 2026
 
 A command-line tool for smoothing noisy experimental data and computing derivatives. Implements four methods: polynomial fitting, Savitzky-Golay filtering, Tikhonov regularization, and Butterworth low-pass filtering. Reads two-column ASCII data, outputs smoothed results. Works as a Unix filter.
 
@@ -1433,9 +1433,14 @@ smooth/
 
 ## Version History
 
-**v5.11.1 (current):** Fix DST corruption in timestamp parsing, use `timegm()` instead of `mktime()`, 103 tests
+**v5.11.2 (current):** Butterworth pole-stability check — warns when filter poles approach the unit circle (numerical precision risk)
 
-**Recent changes (v5.11.1):**
+**Recent changes (v5.11.2):**
+- Added `check_pole_stability()` in `butterworth.c` that computes pole radii per biquad section
+- Warning emitted when `max |pole| > 0.99`, hard error at `>= 1.0`
+- Catches extreme `fc` values (both near 0 and near 1) that were previously silent numerical hazards
+
+**v5.11.1:** Fix DST corruption in timestamp parsing, use `timegm()` instead of `mktime()`, 103 tests
 - Fix DST corruption in timestamp parsing (use `timegm()` instead of `mktime()`)
 - 103 unit tests including 16 timestamp-specific tests
 
@@ -1459,8 +1464,8 @@ smooth/
 
 ---
 
-**Document revision:** 2026-02-15
-**Program version:** smooth v5.11.1
+**Document revision:** 2026-04-18
+**Program version:** smooth v5.11.2
 **Dependencies:** LAPACK, BLAS
 **Testing framework:** Unity (included in tests/)
 **License:** MIT License
