@@ -1,10 +1,12 @@
 # Analýza implementace Butterworthova filtru
 
 **Datum auditu:** 2026-04-18 (aktualizováno)
-**Verze projektu:** smooth v5.11.4
+**Verze projektu:** smooth v5.11.7
 **Auditované soubory:** `butterworth.c` (V1.4/2025-12-07), `butterworth.h`, volající část `smooth.c`
 
 **Historie změn dokumentu:**
+- 2026-04-18 (v5.11.7): #1 doplněna podpora derivací přes 5-bodové stencily O(h⁴)
+  na vyhlazeném výstupu; `-d` flag nyní funguje pro Butterworth, 106 testů.
 - 2026-04-18 (v5.11.6): #9 odstraněn nepoužívaný parametr `x`, #10 vyjasněn output
   (label „Effective sample rate" + komentář `= 1/h_avg`), #11 MB/GB formát adaptivní.
 - 2026-04-18 (v5.11.5): #7 pojmenování konstanty opraveno (`CUTOFF_FREQ_INEFFECTIVE_WARN`),
@@ -138,19 +140,26 @@ práh (`n > 50M` ≈ 0.8 GB) se nyní vypíše `~800 MB` místo matoucího `0.8 
 
 ---
 
+### [RESOLVED v5.11.7] 1. Podpora derivací (API smlouva)
+
+`ButterworthResult` nyní obsahuje pole `double *y_deriv` (`butterworth.h:37`).
+Derivace jsou počítány 5-bodovými stencily O(h⁴) z již vyhlazeného výstupu —
+`compute_derivatives_5pt()` v `butterworth.c`. Volba vyššího řádu než
+Tikhonovova 2-bodová central difference je odůvodněná: filtfilt výstup je
+extrémně hladký (efektivní 8. řád, nulová fáze), takže typický handicap
+vyšších stencilů (amplifikace šumu) odpadá. Pro uniformní krok `h = h_avg`
+dává O(h⁴) řádově 1000× nižší truncation error než O(h²). Okraje pokryty
+forward/backward 5-bodovými stencily, vnitřek klasickou central 5-point
+formulí `(-y[i+2] + 8y[i+1] - 8y[i-1] + y[i-2])/(12h)`.
+
+Ad-hoc varování v `smooth.c` odstraněno, `-d` flag nyní produkuje `x y_smooth
+y_deriv` stejně jako ostatní metody. Testy `test_butterworth_derivative_*`
+(konstanta, lineární, sinus) ověřují 5-bodovou stencil s tolerancí
+odpovídající filtrovému reziduálu, ne chybě stencilu.
+
+---
+
 ## Nadále otevřené problémy
-
-### 1. Chybějící podpora derivací (narušení API smlouvy)
-
-`ButterworthResult` v `butterworth.h:35-41` stále nemá pole `y_deriv`,
-ačkoli CLAUDE.md definuje jako sdílený vzor (`y_smooth`, `y_deriv`, `n`) pro
-všechny metody. V `smooth.c` se to řeší ad-hoc varováním.
-
-**Doporučení:** Buď dopočítat derivace centrální diferencí z `y_smooth`
-(nulové fázové zpoždění díky filtfilt to umožňuje), nebo to explicitně
-dokumentovat v headeru jako architektonické rozhodnutí.
-
-**Priorita:** vysoká (po vyřešení #2 je to jediný zbývající rozpor s architekturou).
 
 ### 3. Kaskádovaná iniciační podmínka se spoléhá na skrytou invariantu
 
@@ -208,7 +217,7 @@ Rozdíl v praxi zanedbatelný.
 | 9 | Nepoužívaný parametr `x` | velmi nízká | **RESOLVED v5.11.6** |
 | 10 | Matoucí label `sample_rate` | velmi nízká | **RESOLVED v5.11.6** |
 | 11 | GB formát pro menší datasety | velmi nízká | **RESOLVED v5.11.6** |
-| 1 | Chybí `y_deriv` | **vysoká** | otevřeno |
+| 1 | Chybí `y_deriv` | **vysoká** | **RESOLVED v5.11.7** (5-bodové stencily O(h⁴)) |
 | 3 | Cascade IC spoléhá na skrytou invariantu | nízká | otevřeno (dokumentace) |
 | 8 | Tichý fallback v `compute_biquad_ic` | nízká | otevřeno |
 | 12 | Padding length 14 vs. 9 | velmi nízká | otevřeno |
@@ -217,7 +226,7 @@ Rozdíl v praxi zanedbatelný.
 
 ## Závěr
 
-Od původního auditu (v5.11.1) došlo ke čtyřem zlepšením obranné vrstvy:
+Od původního auditu (v5.11.1) bylo postupně vyřešeno 8 problémů:
 
 1. **v5.11.2** — `check_pole_stability()` jako runtime pojistka proti numerické
    nestabilitě (warn při radius > 0.99, error při radius ≥ 1.0).
@@ -234,13 +243,19 @@ Od původního auditu (v5.11.1) došlo ke čtyřem zlepšením obranné vrstvy:
    zpřesnění textu varování a dokumentace typického užitečného rozsahu `fc`.
    Vyjasněno, že blízkost Nyquistu není numerický, nýbrž UX problém.
 
-**Jediný zbývající problém s vysokou prioritou** je absence `y_deriv` v
-`ButterworthResult` (issue #1) — nekonzistence s API smlouvou sdílenou mezi
-metodami (polyfit, savgol, tikhonov). Protože filtfilt je nulově-fázový,
-derivace by se dala spolehlivě dopočítat centrální diferencí z `y_smooth`
-bez zavlečení dalšího fázového zkreslení.
+5. **v5.11.6** — drobné úklidy (#9, #10, #11): odstranění nepoužívaného
+   parametru `x` z `estimate_cutoff_frequency`, vyjasnění labelu „Effective
+   sample rate" s komentářem `= 1/h_avg`, adaptivní MB/GB formát v `stderr`.
+
+6. **v5.11.7** — doplněna podpora derivací (#1): `ButterworthResult.y_deriv`
+   počítaný 5-bodovým stencilem O(h⁴) z vyhlazeného výstupu. `-d` flag nyní
+   funguje pro Butterworth stejně jako pro ostatní metody. 106 testů (3 nové
+   derivation unit tests).
+
+**Žádný vysoce prioritní problém už nezbyl.** Zbývající otevřené položky
+(#3, #8, #12) jsou dokumentační/kosmetické a neovlivňují typické použití
+na uniformním gridu.
 
 Matematická stránka (bilineární transformace s prewarpingem, TDF-II biquad,
-odd-reflection padding, IC přes Cramerovo pravidlo, Morozov auto-fc) je
-implementovaná **korektně**. Zbývající problémy (#3, #8–#12) jsou převážně
-dokumentační/kosmetické a neovlivňují typické použití na uniformním gridu.
+odd-reflection padding, IC přes Cramerovo pravidlo, Morozov auto-fc,
+5-point stencil derivatives) je implementovaná **korektně**.

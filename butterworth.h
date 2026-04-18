@@ -34,6 +34,7 @@ typedef struct {
 /* Structure for Butterworth filter results */
 typedef struct {
     double *y_smooth;     /* Smoothed values */
+    double *y_deriv;      /* First derivatives via 5-point stencils */
     int n;                /* Number of points */
     int order;            /* Filter order (BUTTERWORTH_ORDER) */
     double cutoff_freq;   /* Normalized cutoff frequency (0 < fc < 1) */

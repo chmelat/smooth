@@ -183,6 +183,79 @@ void test_butterworth_invalid_cutoff_frequency(void) {
 }
 
 /* ============================================================================
+ * DERIVATIVE TESTS (5-point stencil, O(h^4))
+ * ============================================================================ */
+
+void test_butterworth_derivative_constant(void) {
+    /* y = const => dy/dx = 0 everywhere (stencil is exact for polynomials up to 4th order) */
+    const int n = 30;
+    double x[n], y[n];
+    create_uniform_grid(x, n, 0.0, 0.1);
+    for (int i = 0; i < n; i++) y[i] = 3.14;
+
+    GridAnalysis *grid = analyze_grid(x, n, 0);
+    ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.2, 0, grid);
+
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_NOT_NULL(result->y_deriv);
+    for (int i = 0; i < n; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(1e-8, 0.0, result->y_deriv[i]);
+    }
+
+    free_butterworth_result(result);
+    free(grid);
+}
+
+void test_butterworth_derivative_linear(void) {
+    /* y = a + b*x => dy/dx = b in interior. Filtfilt transients affect
+     * edges even for linear signals (padding is not perfect compensation
+     * for 4th-order filter), so skip boundary region. */
+    const int n = 50;
+    const double slope = 2.5;
+    double x[n], y[n];
+    create_uniform_grid(x, n, 0.0, 0.1);
+    for (int i = 0; i < n; i++) y[i] = 1.0 + slope * x[i];
+
+    GridAnalysis *grid = analyze_grid(x, n, 0);
+    ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.3, 0, grid);
+
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_NOT_NULL(result->y_deriv);
+    /* Skip first/last 15 points (filter edge transients).
+     * Filter itself (not the stencil) introduces ~7e-3 residual ripple
+     * even for linear signals due to finite-order response on short data. */
+    for (int i = 15; i < n - 15; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(1e-2, slope, result->y_deriv[i]);
+    }
+
+    free_butterworth_result(result);
+    free(grid);
+}
+
+void test_butterworth_derivative_sine(void) {
+    /* y = sin(x), check that derivative approximates cos(x) in interior.
+     * Tolerance 0.02 reflects residual filter attenuation and edge effects,
+     * not stencil truncation (which is ~h^4 ~ 6e-6 at h=0.05). */
+    const int n = 200;
+    double x[n], y[n];
+    create_uniform_grid(x, n, 0.0, 0.05);
+    for (int i = 0; i < n; i++) y[i] = sin(x[i]);
+
+    GridAnalysis *grid = analyze_grid(x, n, 0);
+    ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.3, 0, grid);
+
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_NOT_NULL(result->y_deriv);
+    /* Skip first/last 10 points (filter edge transients) */
+    for (int i = 10; i < n - 10; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(0.02, cos(x[i]), result->y_deriv[i]);
+    }
+
+    free_butterworth_result(result);
+    free(grid);
+}
+
+/* ============================================================================
  * ZERO-PHASE FILTERING (FILTFILT) TESTS
  * ============================================================================ */
 

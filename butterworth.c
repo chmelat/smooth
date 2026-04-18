@@ -47,6 +47,8 @@ static void apply_cascade(const BiquadSection *sections,
                           double *buf, size_t padded_len);
 static double* pad_signal(const double *y, int n, int pad_len, size_t *total_len);
 static void reverse_array_inplace(double *arr, size_t n);
+static void compute_derivatives_5pt(const double *y_smooth, int n,
+                                    double h, double *y_deriv);
 static int    compare_double(const void *a, const void *b);
 static double estimate_noise_sigma(const double *y, int n);
 static double residual_std(const double *y, const double *y_smooth, int n);
@@ -253,6 +255,41 @@ static void reverse_array_inplace(double *arr, size_t n)
         i++;
         j--;
     }
+}
+
+/* Compute first derivatives of filtered signal using 5-point stencils,
+ * O(h^4) accuracy with uniform spacing assumption (h = grid->h_avg).
+ * Butterworth already requires CV <= 0.15, so using h_avg adds only
+ * O(CV*h^2) additional error, well within filter assumptions.
+ *
+ * Requires n >= 5 (guaranteed by BUTTERWORTH_MIN_POINTS = 20).
+ */
+static void compute_derivatives_5pt(const double *y_smooth, int n,
+                                    double h, double *y_deriv)
+{
+    const double inv12h = 1.0 / (12.0 * h);
+
+    /* Left boundary (forward 5-point stencils) */
+    y_deriv[0] = (-25.0*y_smooth[0] + 48.0*y_smooth[1]
+                  - 36.0*y_smooth[2] + 16.0*y_smooth[3]
+                  -  3.0*y_smooth[4]) * inv12h;
+    y_deriv[1] = (-3.0*y_smooth[0] - 10.0*y_smooth[1]
+                  + 18.0*y_smooth[2] -  6.0*y_smooth[3]
+                  +       y_smooth[4]) * inv12h;
+
+    /* Interior (central 5-point stencil) */
+    for (int i = 2; i < n - 2; i++) {
+        y_deriv[i] = (-y_smooth[i+2] + 8.0*y_smooth[i+1]
+                      - 8.0*y_smooth[i-1] + y_smooth[i-2]) * inv12h;
+    }
+
+    /* Right boundary (backward 5-point stencils) */
+    y_deriv[n-2] = (       -y_smooth[n-5] +  6.0*y_smooth[n-4]
+                    - 18.0*y_smooth[n-3] + 10.0*y_smooth[n-2]
+                    +  3.0*y_smooth[n-1]) * inv12h;
+    y_deriv[n-1] = ( 3.0*y_smooth[n-5] - 16.0*y_smooth[n-4]
+                    + 36.0*y_smooth[n-3] - 48.0*y_smooth[n-2]
+                    + 25.0*y_smooth[n-1]) * inv12h;
 }
 
 /* Pad signal using odd reflection (anti-symmetric extension)
@@ -528,10 +565,17 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
         goto error;
     }
     result->y_smooth = NULL;
+    result->y_deriv = NULL;
 
     result->y_smooth = (double*)malloc((size_t)n * sizeof(double));
     if (result->y_smooth == NULL) {
         fprintf(stderr, "ERROR: Memory allocation failed (result buffer)\n");
+        goto error;
+    }
+
+    result->y_deriv = (double*)malloc((size_t)n * sizeof(double));
+    if (result->y_deriv == NULL) {
+        fprintf(stderr, "ERROR: Memory allocation failed (derivative buffer)\n");
         goto error;
     }
 
@@ -575,6 +619,11 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
         result->y_smooth[i] = y_work[pad_len + i];
     }
 
+    /* Compute first derivatives via 5-point stencils, O(h^4) accuracy.
+     * Using h_avg is valid because filter requires CV <= 0.15. */
+    compute_derivatives_5pt(result->y_smooth, n, grid_info->h_avg,
+                            result->y_deriv);
+
     /* --- CLEANUP (Success) --- */
     free(y_work);
 
@@ -594,6 +643,9 @@ void free_butterworth_result(ButterworthResult *result)
     if (result != NULL) {
         if (result->y_smooth != NULL) {
             free(result->y_smooth);
+        }
+        if (result->y_deriv != NULL) {
+            free(result->y_deriv);
         }
         free(result);
     }

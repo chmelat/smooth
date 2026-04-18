@@ -125,6 +125,11 @@ void test_butterworth_preserves_linear_trend(void);
 void test_butterworth_higher_cutoff_less_smoothing(void);
 void test_butterworth_invalid_cutoff_frequency(void);
 
+// Testy pro butterworth.c - Derivatives (5-point stencil)
+void test_butterworth_derivative_constant(void);
+void test_butterworth_derivative_linear(void);
+void test_butterworth_derivative_sine(void);
+
 // Testy pro butterworth.c - Zero-phase filtering
 void test_butterworth_zero_phase_no_delay(void);
 
@@ -342,6 +347,10 @@ int main(void) {
     printf("\n--- Cutoff frequency tests ---\n");
     RUN_TEST(test_butterworth_higher_cutoff_less_smoothing);
     RUN_TEST(test_butterworth_invalid_cutoff_frequency);
+
+    RUN_TEST(test_butterworth_derivative_constant);
+    RUN_TEST(test_butterworth_derivative_linear);
+    RUN_TEST(test_butterworth_derivative_sine);
 
     printf("\n--- Zero-phase filtering tests ---\n");
     RUN_TEST(test_butterworth_zero_phase_no_delay);

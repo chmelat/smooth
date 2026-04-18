@@ -560,12 +560,6 @@ int main(int argc, char **argv)
       {
         ButterworthResult *result;
 
-        /* Warn if derivative output was requested */
-        if (show_derivative) {
-          fprintf(stderr, "# WARNING: Derivative output (-d) not supported for Butterworth method\n");
-          fprintf(stderr, "#          Outputting smoothed values only\n");
-        }
-
         /* Apply Butterworth filtfilt */
         result = butterworth_filtfilt(x, y, n, cutoff_freq, auto_cutoff, grid_info);
 
@@ -583,17 +577,29 @@ int main(int argc, char **argv)
                result->cutoff_freq * result->sample_rate / 2.0);
         printf("# Effective order after filtfilt: %d\n", 2 * result->order);
         if (timestamp_mode) {
-          printf("#    timestamp          y\n");
+          printf(show_derivative ? "#    timestamp          y          y'\n"
+                                 : "#    timestamp          y\n");
         } else {
-          printf("#    x          y\n");
+          printf(show_derivative ? "#    x          y          y'\n"
+                                 : "#    x          y\n");
         }
 
-        /* Output results - Butterworth doesn't have derivatives */
+        /* Output results */
         for (i = 0; i < n; i++) {
-          if (timestamp_mode) {
-            printf("%s %10.6lG\n", ts_ctx->original_timestamps[i], result->y_smooth[i]);
+          if (show_derivative) {
+            if (timestamp_mode) {
+              printf("%s %10.6lG %10.6lG\n", ts_ctx->original_timestamps[i],
+                     result->y_smooth[i], result->y_deriv[i]);
+            } else {
+              printf("%12.8lG %10.6lG %10.6lG\n", x[i],
+                     result->y_smooth[i], result->y_deriv[i]);
+            }
           } else {
-            printf("%12.8lG %10.6lG\n", x[i], result->y_smooth[i]);
+            if (timestamp_mode) {
+              printf("%s %10.6lG\n", ts_ctx->original_timestamps[i], result->y_smooth[i]);
+            } else {
+              printf("%12.8lG %10.6lG\n", x[i], result->y_smooth[i]);
+            }
           }
         }
 
