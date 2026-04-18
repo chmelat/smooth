@@ -26,14 +26,27 @@
 #define POLE_RADIUS_WARN   0.99   /* warn when poles approach unit circle */
 #define POLE_RADIUS_ERROR  1.0    /* filter marginally stable / unstable */
 
+/* Auto cutoff selection (Morozov's discrepancy principle) */
+#define NOISE_MAD_NORMALIZATION  1.6528553  /* sqrt(6) * 0.6745 */
+#define DISCREPANCY_TOLERANCE    1.1
+#define AUTO_CUTOFF_FALLBACK     0.2
+#define N_AUTO_CANDIDATES        6
+
 /* Internal function prototypes */
 static void design_biquad_sections(double fc, BiquadSection *sections);
 static int  check_pole_stability(const BiquadSection *sections);
 static void compute_biquad_ic(const BiquadSection *bq, double *zi_base);
-static void apply_biquad(const BiquadSection *bq, const double *x, double *y, 
+static void apply_biquad(const BiquadSection *bq, const double *x, double *y,
                          size_t n, double z[2]);
+static void apply_cascade(const BiquadSection *sections,
+                          const double zi_base[][2],
+                          double *buf, size_t padded_len);
 static double* pad_signal(const double *y, int n, int pad_len, size_t *total_len);
 static void reverse_array_inplace(double *arr, size_t n);
+static int    compare_double(const void *a, const void *b);
+static double estimate_noise_sigma(const double *y, int n);
+static double residual_std(const double *y, const double *y_smooth, int n);
+static int    run_filtfilt_trial(const double *y, double *out, int n, double fc);
 
 /* Calculate padding length (3 * filter_order for biquad cascade) */
 static inline int calculate_pad_length(int n)
@@ -204,6 +217,26 @@ static void apply_biquad(const BiquadSection *bq, const double *x, double *y,
     }
 }
 
+/* Apply biquad cascade in-place with IC scaled by the signal's first value.
+ * Used by both forward and backward passes of filtfilt.
+ * Each biquad's IC is scaled to match the step amplitude seen at its input
+ * (output of previous biquad), relying on unity DC gain of each section.
+ */
+static void apply_cascade(const BiquadSection *sections,
+                          const double zi_base[][2],
+                          double *buf, size_t padded_len)
+{
+    double zi[2];
+    double first_val = buf[0];
+
+    for (int s = 0; s < NUM_BIQUADS; s++) {
+        zi[0] = zi_base[s][0] * first_val;
+        zi[1] = zi_base[s][1] * first_val;
+        apply_biquad(&sections[s], buf, buf, padded_len, zi);
+        first_val = buf[0];
+    }
+}
+
 /* Reverse array in-place */
 static void reverse_array_inplace(double *arr, size_t n)
 {
@@ -256,11 +289,140 @@ static double* pad_signal(const double *y, int n, int pad_len, size_t *total_len
     return padded;
 }
 
-/* Automatic cutoff frequency estimation (placeholder) */
+/* Ascending double comparator for qsort */
+static int compare_double(const void *a, const void *b)
+{
+    double da = *(const double*)a, db = *(const double*)b;
+    return (da > db) - (da < db);
+}
+
+/* Estimate noise standard deviation from second differences of y.
+ * Uses MAD of Delta^2 y with MAD-to-sigma normalization for Gaussian noise.
+ * For white noise: Var(Delta^2 y) = 6 * sigma^2, MAD = 0.6745 * sigma.
+ * Returns -1.0 on failure (n too small, allocation, or zero MAD).
+ */
+static double estimate_noise_sigma(const double *y, int n)
+{
+    if (n < 3) return -1.0;
+
+    int m = n - 2;
+    double *d2 = (double*)malloc((size_t)m * sizeof(double));
+    if (d2 == NULL) return -1.0;
+
+    for (int i = 0; i < m; i++) {
+        d2[i] = y[i+2] - 2.0 * y[i+1] + y[i];
+    }
+
+    qsort(d2, (size_t)m, sizeof(double), compare_double);
+    double median = (m % 2) ? d2[m/2] : 0.5 * (d2[m/2 - 1] + d2[m/2]);
+
+    for (int i = 0; i < m; i++) {
+        d2[i] = fabs(d2[i] - median);
+    }
+    qsort(d2, (size_t)m, sizeof(double), compare_double);
+    double mad = (m % 2) ? d2[m/2] : 0.5 * (d2[m/2 - 1] + d2[m/2]);
+
+    free(d2);
+
+    if (mad <= 0.0) return -1.0;
+    return mad / NOISE_MAD_NORMALIZATION;
+}
+
+/* Compute sample standard deviation of residuals r = y - y_smooth */
+static double residual_std(const double *y, const double *y_smooth, int n)
+{
+    double sum = 0.0, sum_sq = 0.0;
+    for (int i = 0; i < n; i++) {
+        double r = y[i] - y_smooth[i];
+        sum += r;
+        sum_sq += r * r;
+    }
+    double mean = sum / (double)n;
+    double var = sum_sq / (double)n - mean * mean;
+    return (var > 0.0) ? sqrt(var) : 0.0;
+}
+
+/* Lightweight filtfilt for a single cutoff candidate — no validation, no prints.
+ * Writes n smoothed samples to `out`. Returns 0 on success, -1 on alloc failure.
+ */
+static int run_filtfilt_trial(const double *y, double *out, int n, double fc)
+{
+    BiquadSection sections[NUM_BIQUADS];
+    double zi_base[NUM_BIQUADS][2];
+
+    design_biquad_sections(fc, sections);
+    for (int i = 0; i < NUM_BIQUADS; i++) {
+        compute_biquad_ic(&sections[i], zi_base[i]);
+    }
+
+    int pad_len = calculate_pad_length(n);
+    size_t padded_len;
+    double *buf = pad_signal(y, n, pad_len, &padded_len);
+    if (buf == NULL) return -1;
+
+    apply_cascade(sections, zi_base, buf, padded_len);
+    reverse_array_inplace(buf, padded_len);
+    apply_cascade(sections, zi_base, buf, padded_len);
+    reverse_array_inplace(buf, padded_len);
+
+    memcpy(out, buf + pad_len, (size_t)n * sizeof(double));
+    free(buf);
+    return 0;
+}
+
+/* Automatic cutoff frequency selection via Morozov's discrepancy principle.
+ * 1. Estimate noise sigma from MAD of second differences.
+ * 2. For increasing fc candidates, find smallest fc where residual std
+ *    does not exceed DISCREPANCY_TOLERANCE * sigma_hat (signal preserved).
+ * 3. On failure, return AUTO_CUTOFF_FALLBACK.
+ */
 double estimate_cutoff_frequency(const double *x, const double *y, int n)
 {
-    (void)x; (void)y; (void)n;
-    return 0.2;
+    static const double fc_candidates[N_AUTO_CANDIDATES] = {
+        0.02, 0.05, 0.1, 0.2, 0.35, 0.5
+    };
+    (void)x;  /* fc is normalized to Nyquist — physical spacing not needed */
+
+    double sigma_hat = estimate_noise_sigma(y, n);
+    if (sigma_hat <= 0.0) {
+        printf("# Auto cutoff: noise estimation failed, using fallback fc=%.2f\n",
+               AUTO_CUTOFF_FALLBACK);
+        return AUTO_CUTOFF_FALLBACK;
+    }
+
+    double *trial = (double*)malloc((size_t)n * sizeof(double));
+    if (trial == NULL) {
+        printf("# Auto cutoff: allocation failed, using fallback fc=%.2f\n",
+               AUTO_CUTOFF_FALLBACK);
+        return AUTO_CUTOFF_FALLBACK;
+    }
+
+    double selected = AUTO_CUTOFF_FALLBACK;
+    double selected_res = -1.0;
+
+    for (int k = 0; k < N_AUTO_CANDIDATES; k++) {
+        double fc = fc_candidates[k];
+        if (run_filtfilt_trial(y, trial, n, fc) != 0) continue;
+        double res = residual_std(y, trial, n);
+        if (res <= DISCREPANCY_TOLERANCE * sigma_hat) {
+            selected = fc;
+            selected_res = res;
+            break;
+        }
+    }
+
+    free(trial);
+
+    printf("# Auto cutoff: noise sigma estimate = %.4e\n", sigma_hat);
+    if (selected_res >= 0.0) {
+        printf("# Auto cutoff: selected fc = %.4f (residual std = %.4e)\n",
+               selected, selected_res);
+    } else {
+        printf("# Auto cutoff: selected fc = %.4f (fallback, no candidate satisfied discrepancy)\n",
+               selected);
+    }
+
+    return selected;
 }
 
 /* Main filtfilt function using biquad cascade with proper IC */
@@ -308,7 +470,6 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
     double fc = cutoff_freq;
     if (auto_cutoff > 0) {
         fc = estimate_cutoff_frequency(x, y, n);
-        printf("# Auto-selected cutoff frequency: fc = %.4f\n", fc);
     }
 
     /* Validate cutoff frequency */
@@ -383,41 +544,10 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
         goto error;
     }
 
-    /* --- FORWARD FILTERING --- */
-    
-    /* Apply biquads in cascade with scaled IC */
-    double zi[2];
-    double first_val = y_work[0];
-    
-    for (int s = 0; s < NUM_BIQUADS; s++) {
-        /* Scale IC by first sample value */
-        zi[0] = zi_base[s][0] * first_val;
-        zi[1] = zi_base[s][1] * first_val;
-        
-        /* Apply biquad (in-place: y_work -> y_work) */
-        apply_biquad(&sections[s], y_work, y_work, padded_len, zi);
-        
-        /* Update first_val for next section (output of this section) */
-        first_val = y_work[0];
-    }
-
-    /* --- BACKWARD FILTERING --- */
-    /* Reverse the forward-filtered signal */
+    /* --- FORWARD + BACKWARD FILTERING (filtfilt) --- */
+    apply_cascade(sections, zi_base, y_work, padded_len);
     reverse_array_inplace(y_work, padded_len);
-    
-    /* Apply biquads again with IC based on reversed signal's first value */
-    first_val = y_work[0];
-    
-    for (int s = 0; s < NUM_BIQUADS; s++) {
-        zi[0] = zi_base[s][0] * first_val;
-        zi[1] = zi_base[s][1] * first_val;
-        
-        apply_biquad(&sections[s], y_work, y_work, padded_len, zi);
-        
-        first_val = y_work[0];
-    }
-
-    /* Reverse back to original order */
+    apply_cascade(sections, zi_base, y_work, padded_len);
     reverse_array_inplace(y_work, padded_len);
 
     /* --- EXTRACT RESULT --- */

@@ -1,6 +1,6 @@
 # smooth - Experimental Data Smoothing
 
-**Version 5.11.2** | April 18, 2026
+**Version 5.11.3** | April 18, 2026
 
 A command-line tool for smoothing noisy experimental data and computing derivatives. Implements four methods: polynomial fitting, Savitzky-Golay filtering, Tikhonov regularization, and Butterworth low-pass filtering. Reads two-column ASCII data, outputs smoothed results. Works as a Unix filter.
 
@@ -1433,9 +1433,16 @@ smooth/
 
 ## Version History
 
-**v5.11.2 (current):** Butterworth pole-stability check — warns when filter poles approach the unit circle (numerical precision risk)
+**v5.11.3 (current):** Butterworth automatic cutoff frequency selection via Morozov's discrepancy principle
 
-**Recent changes (v5.11.2):**
+**Recent changes (v5.11.3):**
+- Implemented real `-f auto` (previously a stub returning a constant)
+- Noise σ estimated from MAD of second differences (Donoho-Johnstone)
+- Candidate grid {0.02, 0.05, 0.1, 0.2, 0.35, 0.5}; smallest fc satisfying `std(residual) ≤ 1.1·σ̂` selected
+- Internal refactor: extracted `apply_cascade()` helper used by both `filtfilt` passes and trial filtering
+- Fallback to fc=0.2 when noise estimation or discrepancy check cannot be satisfied
+
+**v5.11.2:** Butterworth pole-stability check — warns when filter poles approach the unit circle (numerical precision risk)
 - Added `check_pole_stability()` in `butterworth.c` that computes pole radii per biquad section
 - Warning emitted when `max |pole| > 0.99`, hard error at `>= 1.0`
 - Catches extreme `fc` values (both near 0 and near 1) that were previously silent numerical hazards
@@ -1465,7 +1472,7 @@ smooth/
 ---
 
 **Document revision:** 2026-04-18
-**Program version:** smooth v5.11.2
+**Program version:** smooth v5.11.3
 **Dependencies:** LAPACK, BLAS
 **Testing framework:** Unity (included in tests/)
 **License:** MIT License
