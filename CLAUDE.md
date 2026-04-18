@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `smooth` is a scientific data smoothing program implementing four mathematical methods for noise reduction and derivative computation in experimental data. The codebase is ~3,600 lines of modular C code with LAPACK dependencies.
 
-**Current version:** 5.11.5 (2026-04-18)
+**Current version:** 5.11.6 (2026-04-18)
 
 ## Documentation Guidelines
 
@@ -339,7 +339,8 @@ void free_method_result(MethodResult *result) {
 
 ## Version History Context
 
-**v5.11.5 (current):** Rename CUTOFF_FREQ_STABILITY_WARN to _INEFFECTIVE_WARN, clarify warning text and document practical fc range
+**v5.11.6 (current):** Butterworth cosmetic cleanups — drop unused `x` param from estimate_cutoff_frequency, clarify "Effective sample rate" label, adaptive MB/GB memory format
+**v5.11.5:** Rename CUTOFF_FREQ_STABILITY_WARN to _INEFFECTIVE_WARN, clarify warning text and document practical fc range
 **v5.11.4:** Butterworth explicit minimum fc (FC_MIN_PRACTICAL = 1e-4) to reject numerically ill-conditioned inputs
 **v5.11.3:** Butterworth auto cutoff via Morozov's discrepancy principle (noise-aware fc selection)
 **v5.11.2:** Butterworth pole-stability check (warns when poles approach unit circle)

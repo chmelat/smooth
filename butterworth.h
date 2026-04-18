@@ -72,7 +72,7 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
                                         const GridAnalysis *grid_info);
 
 /* Automatic cutoff frequency estimation */
-double estimate_cutoff_frequency(const double *x, const double *y, int n);
+double estimate_cutoff_frequency(const double *y, int n);
 
 /* Free allocated memory */
 void free_butterworth_result(ButterworthResult *result);

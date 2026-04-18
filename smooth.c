@@ -576,7 +576,7 @@ int main(int argc, char **argv)
 
         /* Output header */
         printf("# Data smooth - Butterworth filter (order %d, filtfilt)\n", result->order);
-        printf("# Sample rate: fs = %.6lG\n", result->sample_rate);
+        printf("# Effective sample rate: fs = %.6lG (= 1/h_avg)\n", result->sample_rate);
         printf("# Nyquist frequency: f_Nyquist = %.6lG (= fs/2)\n", result->sample_rate / 2.0);
         printf("# Normalized cutoff frequency: fc = %.6lG (where 1.0 = f_Nyquist)\n", result->cutoff_freq);
         printf("# Actual cutoff frequency: f_cutoff = %.6lG (= fc × f_Nyquist)\n",

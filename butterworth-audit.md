@@ -5,6 +5,8 @@
 **Auditované soubory:** `butterworth.c` (V1.4/2025-12-07), `butterworth.h`, volající část `smooth.c`
 
 **Historie změn dokumentu:**
+- 2026-04-18 (v5.11.6): #9 odstraněn nepoužívaný parametr `x`, #10 vyjasněn output
+  (label „Effective sample rate" + komentář `= 1/h_avg`), #11 MB/GB formát adaptivní.
 - 2026-04-18 (v5.11.5): #7 pojmenování konstanty opraveno (`CUTOFF_FREQ_INEFFECTIVE_WARN`),
   zpřesněn text varování a doplněna dokumentace parametru v `butterworth.h`.
 - 2026-04-18 (v5.11.4): #6 přidán explicitní spodní limit `FC_MIN_PRACTICAL = 1e-4`.
@@ -115,6 +117,25 @@ má téměř jednotkový přenos). To je UX problém, nikoli numerický.
 korektní, jen málo užitečný. Rozhodnutí o použitelnosti je ponecháno na
 uživateli, jemuž warning vysvětlí důsledky.
 
+### [RESOLVED v5.11.6] 9. Parametr `x` odstraněn z `estimate_cutoff_frequency`
+
+Nová signatura: `double estimate_cutoff_frequency(const double *y, int n)`
+(`butterworth.h:75`, `butterworth.c:383`). Volání v `butterworth_filtfilt`
+aktualizováno. Žádný `(void)x;` už není potřeba.
+
+### [RESOLVED v5.11.6] 10. Popisek `sample_rate` ve výstupu vyjasněn
+
+V `smooth.c:579` změněno `"# Sample rate: fs = ..."` na
+`"# Effective sample rate: fs = ... (= 1/h_avg)"`. Uživatel vidí explicitně,
+že jde o efektivní hodnotu odvozenou z průměrného spacingu — pro mírně
+neuniformní grid (CV do 0.15) je to korektní interpretace.
+
+### [RESOLVED v5.11.6] 11. Adaptivní formát paměťového odhadu
+
+V `butterworth.c:468-476` přidána větev: pokud `mem_estimate < 1 GB`,
+formátuje se jako `"%.0f MB"`, jinak `"%.1f GB"`. Pro typický warning
+práh (`n > 50M` ≈ 0.8 GB) se nyní vypíše `~800 MB` místo matoucího `0.8 GB`.
+
 ---
 
 ## Nadále otevřené problémy
@@ -165,28 +186,6 @@ iterovat přes extrémní kandidáty.
 
 **Priorita:** nízká.
 
-### 9. Parametr `x` zůstává v signatuře `estimate_cutoff_frequency`
-
-`butterworth.c:379,384` — `(void)x;` explicitně signalizuje nepoužití.
-Z API pohledu by bylo čistší parametr odstranit, ale jde o veřejnou funkci
-v headeru (`butterworth.h:72`).
-
-**Priorita:** velmi nízká (kosmetika).
-
-### 10. `sample_rate` je pouze metadata
-
-`butterworth.c:502, 522` — `sample_rate = 1/h_avg` slouží jen k tisku hlavičky.
-Pro neuniformní grid (CV blízko 0.15) to může být matoucí.
-
-**Priorita:** velmi nízká.
-
-### 11. Memory estimate tiskne `GB` i pro menší datasety
-
-`butterworth.c:464-467` — podmínka `n > 50M` to omezuje, ale formát `%.1f GB`
-je matoucí (50M bodů ~0.8 GB).
-
-**Priorita:** velmi nízká (kosmetika).
-
 ### 12. Padding length `3*(order+1)-1 = 14`
 
 `butterworth.c:54` — blízko scipy defaultu (15 pro monolitický 4. řád),
@@ -206,10 +205,13 @@ Rozdíl v praxi zanedbatelný.
 | 5 | Rozpor `fc` rozsah v CLAUDE.md | nízká | **RESOLVED** |
 | 6 | Chybí explicitní spodní limit `fc` | nízká | **RESOLVED v5.11.4** |
 | 7 | `CUTOFF_FREQ_STABILITY_WARN` jen warning | nízká | **RESOLVED v5.11.5** (rename + docs) |
+| 9 | Nepoužívaný parametr `x` | velmi nízká | **RESOLVED v5.11.6** |
+| 10 | Matoucí label `sample_rate` | velmi nízká | **RESOLVED v5.11.6** |
+| 11 | GB formát pro menší datasety | velmi nízká | **RESOLVED v5.11.6** |
 | 1 | Chybí `y_deriv` | **vysoká** | otevřeno |
 | 3 | Cascade IC spoléhá na skrytou invariantu | nízká | otevřeno (dokumentace) |
 | 8 | Tichý fallback v `compute_biquad_ic` | nízká | otevřeno |
-| 9–12 | Kosmetika / drobná UX | velmi nízká | otevřeno |
+| 12 | Padding length 14 vs. 9 | velmi nízká | otevřeno |
 
 ---
 

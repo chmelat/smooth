@@ -380,12 +380,11 @@ static int run_filtfilt_trial(const double *y, double *out, int n, double fc)
  *    does not exceed DISCREPANCY_TOLERANCE * sigma_hat (signal preserved).
  * 3. On failure, return AUTO_CUTOFF_FALLBACK.
  */
-double estimate_cutoff_frequency(const double *x, const double *y, int n)
+double estimate_cutoff_frequency(const double *y, int n)
 {
     static const double fc_candidates[N_AUTO_CANDIDATES] = {
         0.02, 0.05, 0.1, 0.2, 0.35, 0.5
     };
-    (void)x;  /* fc is normalized to Nyquist — physical spacing not needed */
 
     double sigma_hat = estimate_noise_sigma(y, n);
     if (sigma_hat <= 0.0) {
@@ -466,14 +465,20 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
     size_t mem_estimate = estimate_memory_usage(n, pad_len);
 
     if (n > BUTTERWORTH_MAX_POINTS_WARNING) {
-        fprintf(stderr, "Warning: Large dataset (%d points) requires ~%.1f GB RAM\n",
-                n, (double)mem_estimate / (1024.0 * 1024.0 * 1024.0));
+        double mb = (double)mem_estimate / (1024.0 * 1024.0);
+        if (mb >= 1024.0) {
+            fprintf(stderr, "Warning: Large dataset (%d points) requires ~%.1f GB RAM\n",
+                    n, mb / 1024.0);
+        } else {
+            fprintf(stderr, "Warning: Large dataset (%d points) requires ~%.0f MB RAM\n",
+                    n, mb);
+        }
     }
 
     /* Auto cutoff selection */
     double fc = cutoff_freq;
     if (auto_cutoff > 0) {
-        fc = estimate_cutoff_frequency(x, y, n);
+        fc = estimate_cutoff_frequency(y, n);
     }
 
     /* Validate cutoff frequency */
