@@ -116,14 +116,14 @@ test: $(TEST_RUNNER)
 # Linkuje testovací program s testovanými moduly
 $(TEST_RUNNER): $(TEST_OBJ) $(TEST_MODULES)
 	@echo "Linking test runner..."
-	$(CC) $(TEST_OBJ) $(TEST_MODULES) $(LIB) -o $(TEST_RUNNER)
+	$(CC) $(LIBPATH) $(TEST_OBJ) $(TEST_MODULES) $(LIB) -o $(TEST_RUNNER)
 	@echo "Test build complete"
 
 # Compile test sources with automatic dependency generation
 # Kompiluje testovací soubory s Unity frameworkem
 $(TEST_DIR)/%.o: $(TEST_DIR)/%.c
 	@echo "Compiling test $<..."
-	$(CC) $(WFLAGS) -I. -I$(TEST_DIR) -DUNITY_INCLUDE_DOUBLE -MMD -MP -c $< -o $@
+	$(CC) $(LIBINCLUDE) $(WFLAGS) -I. -I$(TEST_DIR) -DUNITY_INCLUDE_DOUBLE -MMD -MP -c $< -o $@
 
 # Include test dependencies
 -include $(TEST_OBJ:.o=.d)
@@ -165,7 +165,6 @@ help:
 	@echo "Testing targets:"
 	@echo "  test          : Build and run unit tests"
 	@echo "  test-valgrind : Run tests with Valgrind memory checking"
-	@echo "  test-clean    : Remove test object files and test runner"
 	@echo ""
 	@echo "Environment variables:"
 	@echo "  LIBDIR        : Library directory (default: $(HOME)/lib)"
