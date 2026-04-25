@@ -88,10 +88,6 @@ Ad-hoc penalizace. Funkce se jmenuje `compute_gcv_score_robust` a uživatelský 
 
 Každá metoda má vlastní copy-paste block ~50 řádek pro header + output loop (timestamp × derivative × 2). Celkem ~200 řádek redundance. Extrakce do `print_result(x, ts_ctx, result->y_smooth, result->y_deriv, n, show_derivative, timestamp_mode)` by snížila chybovost (viz A2).
 
-### B5. Mrtvá `select_discretization_method` fallback větev — `tikhonov.c:62–83`
-
-Recomputuje CV, když `grid_info == NULL`. Volající (smooth.c) vždy předá validní `grid_info`. Testy to možná pokrývají — ale v main flow je to dead code zvyšující complexity.
-
 ### B6. `should_use_adaptive()` — nepoužité API — `grid_analysis.c:246–255`, `grid_analysis.h:59`
 
 Deklarováno v hlavičce, implementováno, nevolá se nikde (grep v `*.c` a `tests/`). Buď používat, nebo smazat.
@@ -131,9 +127,10 @@ Princip asi "co chceme zachovat v output file → stdout s `#`". Fungující, al
 ### B12. Mrtvý kód
 
 - `smooth.c:75–78`: `if (argc == 1) { /* Will read from stdin below */ }` prázdné tělo.
-- `polyfit.c:330–338`: `!left_boundary_done && offset > 0` větev — nikdy netriggerne (chrání vnitřní loop, který vždy proběhne aspoň jednou kvůli `n >= window_size`).
 - `savgol.c:334–340`: `if (left_pts + right_pts < poly_degree)` — chyceno dříve `poly_degree < window_size`.
-- `savgol.c:362–367`: `if (idx >= 0 && idx < n)` defensive check, vždy splněno.
+- `savgol.c:362–367`: `if (idx >= 0 && idx < n)` defensive check, vždy splněno (idx ∈ [0, window_size-1] ⊂ [0, n-1]).
+
+(`polyfit.c:330–338` z původního auditu byl false positive — slouží jako fallback při `dgelss info != 0`, kdy `continue` na řádku 276 přeskočí nastavení `left_boundary_done`.)
 
 ### B13. Nezkontrolovaná `atoi` na CLI argumenty — `smooth.c:83–87`
 
@@ -166,6 +163,6 @@ V timestamp módu se `-k` nepoužije. Kód neemituje warning, když uživatel ko
 |----------|---------|
 | **Fix brzy** | ~~A1~~, ~~A2~~, ~~A3~~ (opraveno v5.11.9), B2 (pojmenování GCV), B7 (tichý fallback) |
 | **Vyčistit při příležitosti** | B1 (centralizace threshů), B4 (extrakce output), B8 (doubling realloc), B13 (strtol), B14 (pracovní soubory) |
-| **Kosmetika** | ~~A4~~ (opraveno v5.11.9), B3 (zdokumentovat prahy), B5/B6/B12 (dead code), C1 (konzistence komentářů) |
+| **Kosmetika** | ~~A4~~ (opraveno v5.11.9), B3 (zdokumentovat prahy), B6/B12 (dead code), C1 (konzistence komentářů) |
 
 Žádný z nálezů není kritický pro správnost vědeckých výsledků — hlavní matematické cesty (Tikhonov pentadiagonální matice, Butterworth biquad cascade, SVD polyfit, Savgol pre-computed coefs) jsou solidní. Většina problémů jsou CLI/UX/robustnost a design drift, který se dá úspornou cestou postupně vyčistit.
