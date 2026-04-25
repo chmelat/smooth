@@ -44,13 +44,15 @@ int parse_timestamp(const char *str, double *epoch_seconds)
         int digits = 0;
         long frac_value = 0;
 
-        /* Parse fractional digits manually */
-        while (frac_start[digits] >= '0' && frac_start[digits] <= '9') {
+        /* Accumulate up to 9 digits (nanosecond resolution). Beyond that the
+         * value would overflow `long` on 32-bit platforms and the precision
+         * is meaningless for double-precision epoch arithmetic anyway. */
+        while (digits < 9 && frac_start[digits] >= '0' && frac_start[digits] <= '9') {
             frac_value = frac_value * 10 + (frac_start[digits] - '0');
             digits++;
         }
 
-        if (digits > 0 && digits <= 9) {
+        if (digits > 0) {
             subseconds = frac_value / pow(10.0, digits);
         }
     }

@@ -115,8 +115,17 @@ GridAnalysis* analyze_grid(const double *x, int n, int store_spacings)
         h_prev = h_curr; /* Save for next iteration */
     }
 
-    /* Finalize statistics */
-    analysis->h_std = sqrt(sum_sq_diff / (n-1));
+    /* Finalize statistics
+     *
+     * Bessel-corrected sample STD: divide sum_sq_diff by (N-1), where N is
+     * the number of samples — here N = n-1 spacings, so the denominator
+     * is n-2. For n=2 (single interval) variability is zero by definition.
+     */
+    if (n > 2) {
+        analysis->h_std = sqrt(sum_sq_diff / (n - 2));
+    } else {
+        analysis->h_std = 0.0;
+    }
     analysis->ratio_max_min = analysis->h_max / analysis->h_min;
     analysis->cv = analysis->h_std / analysis->h_avg;
     

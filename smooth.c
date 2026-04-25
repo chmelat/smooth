@@ -167,12 +167,16 @@ int main(int argc, char **argv)
         help();
         exit(EXIT_SUCCESS);
       case '?':
+        /* getopt returns '?' for both '-?' (in optstring) and unknown options
+         * or missing arguments. optopt is set to the offending char in the
+         * latter cases; for '-?' it's '?' or 0. */
+        if (optopt != 0 && optopt != '?') {
+          /* Unknown option or missing argument — getopt already wrote
+           * a diagnostic to stderr. */
+          exit(EXIT_FAILURE);
+        }
         help();
         exit(EXIT_SUCCESS);
-      default:
-        fprintf(stderr,"Unknown option!\n");
-        help();
-        exit(EXIT_FAILURE);
     }
   }
 
@@ -591,11 +595,18 @@ int main(int argc, char **argv)
                result->cutoff_freq * result->sample_rate / 2.0);
         printf("# Effective order after filtfilt: %d\n", 2 * result->order);
         if (timestamp_mode) {
-          printf(show_derivative ? "#    timestamp          y          y'\n"
-                                 : "#    timestamp          y\n");
+          if (show_derivative) {
+            printf("# Derivative units: dy/dt (t in seconds)\n");
+            printf("#    timestamp          y          y'\n");
+          } else {
+            printf("#    timestamp          y\n");
+          }
         } else {
-          printf(show_derivative ? "#    x          y          y'\n"
-                                 : "#    x          y\n");
+          if (show_derivative) {
+            printf("#    x          y          y'\n");
+          } else {
+            printf("#    x          y\n");
+          }
         }
 
         /* Output results */
