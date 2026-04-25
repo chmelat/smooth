@@ -3,7 +3,7 @@
 **Datum:** 2026-04-25
 **Rozsah:** všechny produkční moduly (~3400 řádek C kódu)
 **Řazení:** podle dopadu (A = bugy, B = designová rozhodnutí, C = drobnosti)
-**Status:** A1–A4 opraveny ve v5.11.9 (2026-04-25)
+**Status:** A1–A4 opraveny ve v5.11.9 (2026-04-25); B6, B12 opraveny ve v5.11.10 (2026-04-25)
 
 ---
 
@@ -88,7 +88,7 @@ Ad-hoc penalizace. Funkce se jmenuje `compute_gcv_score_robust` a uživatelský 
 
 Každá metoda má vlastní copy-paste block ~50 řádek pro header + output loop (timestamp × derivative × 2). Celkem ~200 řádek redundance. Extrakce do `print_result(x, ts_ctx, result->y_smooth, result->y_deriv, n, show_derivative, timestamp_mode)` by snížila chybovost (viz A2).
 
-### B6. `should_use_adaptive()` — nepoužité API — `grid_analysis.c:246–255`, `grid_analysis.h:59`
+### B6. ~~`should_use_adaptive()` — nepoužité API~~ — `grid_analysis.c:246–255`, `grid_analysis.h:59` — **FIXED v5.11.10**
 
 Deklarováno v hlavičce, implementováno, nevolá se nikde (grep v `*.c` a `tests/`). Buď používat, nebo smazat.
 
@@ -124,7 +124,7 @@ V `butterworth.c`:
 
 Princip asi "co chceme zachovat v output file → stdout s `#`". Fungující, ale neexplicitní — přidat komentář do headeru modulu.
 
-### B12. Mrtvý kód
+### B12. ~~Mrtvý kód~~ — **FIXED v5.11.10**
 
 - `smooth.c:75–78`: `if (argc == 1) { /* Will read from stdin below */ }` prázdné tělo.
 - `savgol.c:334–340`: `if (left_pts + right_pts < poly_degree)` — chyceno dříve `poly_degree < window_size`.
@@ -163,6 +163,6 @@ V timestamp módu se `-k` nepoužije. Kód neemituje warning, když uživatel ko
 |----------|---------|
 | **Fix brzy** | ~~A1~~, ~~A2~~, ~~A3~~ (opraveno v5.11.9), B2 (pojmenování GCV), B7 (tichý fallback) |
 | **Vyčistit při příležitosti** | B1 (centralizace threshů), B4 (extrakce output), B8 (doubling realloc), B13 (strtol), B14 (pracovní soubory) |
-| **Kosmetika** | ~~A4~~ (opraveno v5.11.9), B3 (zdokumentovat prahy), B6/B12 (dead code), C1 (konzistence komentářů) |
+| **Kosmetika** | ~~A4~~ (opraveno v5.11.9), ~~B6~~, ~~B12~~ (opraveno v5.11.10), B3 (zdokumentovat prahy), C1 (konzistence komentářů) |
 
 Žádný z nálezů není kritický pro správnost vědeckých výsledků — hlavní matematické cesty (Tikhonov pentadiagonální matice, Butterworth biquad cascade, SVD polyfit, Savgol pre-computed coefs) jsou solidní. Většina problémů jsou CLI/UX/robustnost a design drift, který se dá úspornou cestou postupně vyčistit.

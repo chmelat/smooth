@@ -251,18 +251,6 @@ void print_grid_analysis(GridAnalysis *analysis, int verbose, const char *prefix
     }
 }
 
-/* Check if adaptive methods should be used */
-int should_use_adaptive(GridAnalysis *analysis)
-{
-    if (analysis == NULL) {
-        return 0;
-    }
-    
-    /* Recommend adaptive methods for poor uniformity */
-    return (analysis->uniformity_score < 0.5 || 
-            analysis->n_clusters > 0);
-}
-
 /* Free allocated memory */
 void free_grid_analysis(GridAnalysis *analysis)
 {

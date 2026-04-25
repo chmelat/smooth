@@ -55,7 +55,4 @@ void print_grid_analysis(GridAnalysis *analysis, int verbose, const char *prefix
 /* Free allocated memory for GridAnalysis structure */
 void free_grid_analysis(GridAnalysis *analysis);
 
-/* Check if adaptive methods should be used */
-int should_use_adaptive(GridAnalysis *analysis);
-
 #endif /* GRID_ANALYSIS_H */

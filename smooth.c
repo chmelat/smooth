@@ -72,12 +72,7 @@ int main(int argc, char **argv)
 
   progname = basename(argv[0]);
 
-/* None arguments - default to stdin */
-  if (argc == 1) {
-    /* Will read from stdin below */
-  }
-
-/* Options command line */
+/* Options command line (no argument => read from stdin below) */
   while ( (ch = getopt(argc, argv, "n:p:m:l:f:k:dgTh?")) != -1 ) {
     switch (ch) {
       case 'n':

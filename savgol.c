@@ -329,43 +329,31 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
         int right_pts = window_size - 1 - left_pts;
         double *c_bound_func, *c_bound_deriv;
         int n_coeff;
-        
-        /* Ensure enough points for polynomial degree */
-        if (left_pts + right_pts < poly_degree) {
-            right_pts = poly_degree - left_pts;
-            if (i + right_pts >= n) {
-                result->y_smooth[i] = y[i];
-                result->y_deriv[i] = 0.0;
-                continue;
-            }
-        }
-        
+
         n_coeff = left_pts + right_pts + 1;
         c_bound_func = (double *)calloc(n_coeff, sizeof(double));
         c_bound_deriv = (double *)calloc(n_coeff, sizeof(double));
-        
+
         if (c_bound_func && c_bound_deriv) {
             int coef_ok = 1;
-            
+
             if (savgol_coefficients(left_pts, right_pts, poly_degree, 0, c_bound_func) != 0) {
                 coef_ok = 0;
             }
             if (coef_ok && savgol_coefficients(left_pts, right_pts, poly_degree, 1, c_bound_deriv) != 0) {
                 coef_ok = 0;
             }
-            
+
             if (coef_ok) {
                 double val = 0.0;
                 double deriv = 0.0;
-                
+
                 for (k = 0; k < n_coeff; k++) {
                     int idx = i - left_pts + k;
-                    if (idx >= 0 && idx < n) {
-                        val += c_bound_func[k] * y[idx];
-                        deriv += c_bound_deriv[k] * y[idx];
-                    }
+                    val += c_bound_func[k] * y[idx];
+                    deriv += c_bound_deriv[k] * y[idx];
                 }
-                
+
                 result->y_smooth[i] = val;
                 result->y_deriv[i] = deriv / h_avg;
             } else {
@@ -388,43 +376,31 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
         int left_pts = window_size - 1 - right_pts;
         double *c_bound_func, *c_bound_deriv;
         int n_coeff;
-        
-        /* Ensure enough points for polynomial degree */
-        if (left_pts + right_pts < poly_degree) {
-            left_pts = poly_degree - right_pts;
-            if (i - left_pts < 0) {
-                result->y_smooth[i] = y[i];
-                result->y_deriv[i] = 0.0;
-                continue;
-            }
-        }
-        
+
         n_coeff = left_pts + right_pts + 1;
         c_bound_func = (double *)calloc(n_coeff, sizeof(double));
         c_bound_deriv = (double *)calloc(n_coeff, sizeof(double));
-        
+
         if (c_bound_func && c_bound_deriv) {
             int coef_ok = 1;
-            
+
             if (savgol_coefficients(left_pts, right_pts, poly_degree, 0, c_bound_func) != 0) {
                 coef_ok = 0;
             }
             if (coef_ok && savgol_coefficients(left_pts, right_pts, poly_degree, 1, c_bound_deriv) != 0) {
                 coef_ok = 0;
             }
-            
+
             if (coef_ok) {
                 double val = 0.0;
                 double deriv = 0.0;
-                
+
                 for (k = 0; k < n_coeff; k++) {
                     int idx = i - left_pts + k;
-                    if (idx >= 0 && idx < n) {
-                        val += c_bound_func[k] * y[idx];
-                        deriv += c_bound_deriv[k] * y[idx];
-                    }
+                    val += c_bound_func[k] * y[idx];
+                    deriv += c_bound_deriv[k] * y[idx];
                 }
-                
+
                 result->y_smooth[i] = val;
                 result->y_deriv[i] = deriv / h_avg;
             } else {
