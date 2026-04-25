@@ -84,9 +84,9 @@ Ad-hoc penalizace. Funkce se jmenuje `compute_gcv_score_robust` a uživatelský 
 
 Žádný z prahů není v dokumentaci. Uživatel dostane nespojité chování při překročení `n=5000` nebo `n=20000` se stejnými daty.
 
-### B4. Kód výstupu duplikován 4× — `smooth.c:464–672`
+### B4. ~~Kód výstupu duplikován 4×~~ — `smooth.c:464–672` — **FIXED v5.11.11**
 
-Každá metoda má vlastní copy-paste block ~50 řádek pro header + output loop (timestamp × derivative × 2). Celkem ~200 řádek redundance. Extrakce do `print_result(x, ts_ctx, result->y_smooth, result->y_deriv, n, show_derivative, timestamp_mode)` by snížila chybovost (viz A2).
+Každá metoda měla vlastní copy-paste block ~50 řádek pro header + output loop (timestamp × derivative × 2). Vyřešeno extrakcí do `print_result(x, ts_ctx, y_smooth, y_deriv, n, show_derivative, timestamp_mode)` — odstraněno ~120 řádků duplicity, zůstaly jen method-specific header lines.
 
 ### B6. ~~`should_use_adaptive()` — nepoužité API~~ — `grid_analysis.c:246–255`, `grid_analysis.h:59` — **FIXED v5.11.10**
 
@@ -96,13 +96,9 @@ Deklarováno v hlavičce, implementováno, nevolá se nikde (grep v `*.c` a `tes
 
 Při selhání `dgelss` (info != 0) se použije `y[i]` (raw hodnota) a derivace 0. Žádný counter, žádný finální warning. Pokud by selhalo třeba 20 % oken, výstup je zubatý a uživatel to nezjistí.
 
-### B8. Lineární růst bufferu v I/O — `smooth.c:267, 353`
+### B8. ~~Lineární růst bufferu v I/O~~ — `smooth.c:267, 353` — **FIXED v5.11.11**
 
-```c
-abuf += BUF;  // BUF=512
-```
-
-Pro 100k řádků = 200 realloc-kopií, amortizovaná O(n²). Doubling (`abuf = abuf ? abuf*2 : BUF`) by to vyřešilo.
+Bylo `abuf += BUF` (BUF=512) → amortizovaně O(N²) pro velké soubory. Nahrazeno za `abuf = abuf ? abuf*2 : BUF` (geometrický růst, log₂(N) realloců, amortizovaně O(N)).
 
 ### B9. Pevné limity parsování — `smooth.c:206, 308, 320`
 
@@ -162,7 +158,7 @@ V timestamp módu se `-k` nepoužije. Kód neemituje warning, když uživatel ko
 | Priorita | Položky |
 |----------|---------|
 | **Fix brzy** | ~~A1~~, ~~A2~~, ~~A3~~ (opraveno v5.11.9), B2 (pojmenování GCV), B7 (tichý fallback) |
-| **Vyčistit při příležitosti** | B1 (centralizace threshů), B4 (extrakce output), B8 (doubling realloc), B13 (strtol), B14 (pracovní soubory) |
+| **Vyčistit při příležitosti** | B1 (centralizace threshů), ~~B4~~, ~~B8~~ (opraveno v5.11.11), B13 (strtol), B14 (pracovní soubory) |
 | **Kosmetika** | ~~A4~~ (opraveno v5.11.9), ~~B6~~, ~~B12~~ (opraveno v5.11.10), B3 (zdokumentovat prahy), C1 (konzistence komentářů) |
 
 Žádný z nálezů není kritický pro správnost vědeckých výsledků — hlavní matematické cesty (Tikhonov pentadiagonální matice, Butterworth biquad cascade, SVD polyfit, Savgol pre-computed coefs) jsou solidní. Většina problémů jsou CLI/UX/robustnost a design drift, který se dá úspornou cestou postupně vyčistit.

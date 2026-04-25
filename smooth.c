@@ -41,6 +41,11 @@
 /* Local declare functions */
 static void usage(void);
 static void help(void);
+static void print_result(const double *x,
+                         const TimestampContext *ts_ctx,
+                         const double *y_smooth,
+                         const double *y_deriv,
+                         int n, int show_derivative, int timestamp_mode);
 
 /* Global variables */
 char *progname;
@@ -52,7 +57,6 @@ int main(int argc, char **argv)
   double *x = NULL;
   double *y = NULL;
   int n=0;
-  int i;
   int ch;
   int sp = N;
   int dp = DP;
@@ -265,7 +269,7 @@ int main(int argc, char **argv)
 
         /* Reallocate arrays if needed */
         if (n == abuf) {
-          abuf += BUF;
+          abuf = abuf ? abuf * 2 : BUF;
 
           /* Realloc timestamp_strings */
           char **temp_ts = (char**)realloc(timestamp_strings, abuf * sizeof(char*));
@@ -350,7 +354,7 @@ int main(int argc, char **argv)
 
         /* Reallocate arrays if needed */
         if (n == abuf) {
-          abuf += BUF;
+          abuf = abuf ? abuf * 2 : BUF;
 
           /* Safe realloc for x */
           double *temp_x = (double *)realloc(x, abuf*sizeof(double));
@@ -485,37 +489,9 @@ int main(int argc, char **argv)
         printf("# Data/Total ratio = %.3f, Regularization/Total ratio = %.3f\n",
                result->data_term / result->total_functional,
                result->regularization_term / result->total_functional);
-        if (timestamp_mode) {
-          if (show_derivative) {
-            printf("# Derivative units: dy/dt (t in seconds)\n");
-            printf("#    timestamp          y          y'\n");
-          } else {
-            printf("#    timestamp          y\n");
-          }
-        } else {
-          if (show_derivative) {
-            printf("#    x          y          y'\n");
-          } else {
-            printf("#    x          y\n");
-          }
-        }
 
-        /* Output results */
-        for (i = 0; i < n; i++) {
-          if (timestamp_mode) {
-            if (show_derivative) {
-              printf("%s %10.6lG %10.6lG\n", ts_ctx->original_timestamps[i], result->y_smooth[i], result->y_deriv[i]);
-            } else {
-              printf("%s %10.6lG\n", ts_ctx->original_timestamps[i], result->y_smooth[i]);
-            }
-          } else {
-            if (show_derivative) {
-              printf("%12.8lG %10.6lG %10.6lG\n", x[i], result->y_smooth[i], result->y_deriv[i]);
-            } else {
-              printf("%12.8lG %10.6lG\n", x[i], result->y_smooth[i]);
-            }
-          }
-        }
+        print_result(x, ts_ctx, result->y_smooth, result->y_deriv, n,
+                     show_derivative, timestamp_mode);
 
         /* Clean up */
         free_tikhonov_result(result);
@@ -534,37 +510,10 @@ int main(int argc, char **argv)
         }
         
         printf("# Data smooth - Savitzky-Golay filter, poly deg %d from %d points of moving window\n", dp, sp);
-        if (timestamp_mode) {
-          if (show_derivative) {
-            printf("# Derivative units: dy/dt (t in seconds)\n");
-            printf("#    timestamp          y          y'\n");
-          } else {
-            printf("#    timestamp          y\n");
-          }
-        } else {
-          if (show_derivative) {
-            printf("#    x          y          y'\n");
-          } else {
-            printf("#    x          y\n");
-          }
-        }
 
-        for (i = 0; i < n; i++) {
-          if (timestamp_mode) {
-            if (show_derivative) {
-              printf("%s %10.6lG %10.6lG\n", ts_ctx->original_timestamps[i], result->y_smooth[i], result->y_deriv[i]);
-            } else {
-              printf("%s %10.6lG\n", ts_ctx->original_timestamps[i], result->y_smooth[i]);
-            }
-          } else {
-            if (show_derivative) {
-              printf("%12.8lG %10.6lG %10.6lG\n", x[i], result->y_smooth[i], result->y_deriv[i]);
-            } else {
-              printf("%12.8lG %10.6lG\n", x[i], result->y_smooth[i]);
-            }
-          }
-        }
-        
+        print_result(x, ts_ctx, result->y_smooth, result->y_deriv, n,
+                     show_derivative, timestamp_mode);
+
         free_savgol_result(result);
       }
       break;
@@ -589,39 +538,9 @@ int main(int argc, char **argv)
         printf("# Actual cutoff frequency: f_cutoff = %.6lG (= fc × f_Nyquist)\n",
                result->cutoff_freq * result->sample_rate / 2.0);
         printf("# Effective order after filtfilt: %d\n", 2 * result->order);
-        if (timestamp_mode) {
-          if (show_derivative) {
-            printf("# Derivative units: dy/dt (t in seconds)\n");
-            printf("#    timestamp          y          y'\n");
-          } else {
-            printf("#    timestamp          y\n");
-          }
-        } else {
-          if (show_derivative) {
-            printf("#    x          y          y'\n");
-          } else {
-            printf("#    x          y\n");
-          }
-        }
 
-        /* Output results */
-        for (i = 0; i < n; i++) {
-          if (show_derivative) {
-            if (timestamp_mode) {
-              printf("%s %10.6lG %10.6lG\n", ts_ctx->original_timestamps[i],
-                     result->y_smooth[i], result->y_deriv[i]);
-            } else {
-              printf("%12.8lG %10.6lG %10.6lG\n", x[i],
-                     result->y_smooth[i], result->y_deriv[i]);
-            }
-          } else {
-            if (timestamp_mode) {
-              printf("%s %10.6lG\n", ts_ctx->original_timestamps[i], result->y_smooth[i]);
-            } else {
-              printf("%12.8lG %10.6lG\n", x[i], result->y_smooth[i]);
-            }
-          }
-        }
+        print_result(x, ts_ctx, result->y_smooth, result->y_deriv, n,
+                     show_derivative, timestamp_mode);
 
         /* Clean up */
         free_butterworth_result(result);
@@ -641,36 +560,9 @@ int main(int argc, char **argv)
         }
 
         printf("# Data smooth - aprox. pol. %ddg from %d points of moving window (least square)\n", dp, sp);
-        if (timestamp_mode) {
-          if (show_derivative) {
-            printf("# Derivative units: dy/dt (t in seconds)\n");
-            printf("#    timestamp          y          y'\n");
-          } else {
-            printf("#    timestamp          y\n");
-          }
-        } else {
-          if (show_derivative) {
-            printf("#    x          y          y'\n");
-          } else {
-            printf("#    x          y\n");
-          }
-        }
 
-        for (i = 0; i < n; i++) {
-          if (timestamp_mode) {
-            if (show_derivative) {
-              printf("%s %10.6lG %10.6lG\n", ts_ctx->original_timestamps[i], result->y_smooth[i], result->y_deriv[i]);
-            } else {
-              printf("%s %10.6lG\n", ts_ctx->original_timestamps[i], result->y_smooth[i]);
-            }
-          } else {
-            if (show_derivative) {
-              printf("%12.8lG %10.6lG %10.6lG\n", x[i], result->y_smooth[i], result->y_deriv[i]);
-            } else {
-              printf("%12.8lG %10.6lG\n", x[i], result->y_smooth[i]);
-            }
-          }
-        }
+        print_result(x, ts_ctx, result->y_smooth, result->y_deriv, n,
+                     show_derivative, timestamp_mode);
 
         free_polyfit_result(result);
       }
@@ -686,6 +578,47 @@ int main(int argc, char **argv)
   }
 
   return EXIT_SUCCESS;
+}
+
+/* Print column header and data rows for any smoothing method.
+ * In timestamp_mode the x array is ignored and ts_ctx->original_timestamps is used.
+ * y_deriv is ignored when show_derivative is 0 (may be NULL). */
+static void print_result(const double *x,
+                         const TimestampContext *ts_ctx,
+                         const double *y_smooth,
+                         const double *y_deriv,
+                         int n, int show_derivative, int timestamp_mode)
+{
+  if (timestamp_mode) {
+    if (show_derivative) {
+      printf("# Derivative units: dy/dt (t in seconds)\n");
+      printf("#    timestamp          y          y'\n");
+    } else {
+      printf("#    timestamp          y\n");
+    }
+  } else {
+    if (show_derivative) {
+      printf("#    x          y          y'\n");
+    } else {
+      printf("#    x          y\n");
+    }
+  }
+
+  for (int i = 0; i < n; i++) {
+    if (timestamp_mode) {
+      if (show_derivative) {
+        printf("%s %10.6lG %10.6lG\n", ts_ctx->original_timestamps[i], y_smooth[i], y_deriv[i]);
+      } else {
+        printf("%s %10.6lG\n", ts_ctx->original_timestamps[i], y_smooth[i]);
+      }
+    } else {
+      if (show_derivative) {
+        printf("%12.8lG %10.6lG %10.6lG\n", x[i], y_smooth[i], y_deriv[i]);
+      } else {
+        printf("%12.8lG %10.6lG\n", x[i], y_smooth[i]);
+      }
+    }
+  }
 }
 
 /* Usage */
