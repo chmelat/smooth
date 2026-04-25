@@ -1,6 +1,6 @@
 # smooth - Experimental Data Smoothing
 
-**Version 5.11.3** | April 18, 2026
+**Version 5.11.8** | April 25, 2026
 
 A command-line tool for smoothing noisy experimental data and computing derivatives. Implements four methods: polynomial fitting, Savitzky-Golay filtering, Tikhonov regularization, and Butterworth low-pass filtering. Reads two-column ASCII data, outputs smoothed results. Works as a Unix filter.
 
@@ -88,7 +88,8 @@ gcc -o smooth smooth.c polyfit.c savgol.c tikhonov.c butterworth.c \
 | `-l λ` | Regularization parameter (tikhonov), use `-l auto` for GCV |
 | `-f fc` | Normalized cutoff frequency (butterworth, 0 < fc < 1.0), use `-f auto` for default |
 | `-T` | Timestamp mode: first column is RFC3339 timestamp, second is y-value |
-| `-d` | Include first derivative in output (not available for butterworth) |
+| `-k M` or `-k N:M` | Column selection: `M` sets y-data column (x from column 1); `N:M` sets x from column N and y from column M. Default: `1:2`. Columns are 1-indexed; N and M must differ. |
+| `-d` | Include first derivative in output |
 | `-g` | Show detailed grid uniformity analysis |
 
 **Notes:**
@@ -98,7 +99,9 @@ gcc -o smooth smooth.c polyfit.c savgol.c tikhonov.c butterworth.c \
 
 ### Input Format
 
-Two-column ASCII: `x y` (or `timestamp y` with `-T`). Comments (lines starting with `#`) are stripped automatically. Data must have strictly monotonic increasing x-values.
+ASCII data with one record per line. By default, column 1 is x and column 2 is y; extra columns are ignored. Use `-k M` to pick a different y column, or `-k N:M` to pick both x and y columns (e.g. `-k 1:4` uses column 1 as x and column 4 as y). Comments (lines starting with `#`) are stripped automatically. Data must have strictly monotonic increasing x-values. If a line has fewer columns than requested, the program exits with an error identifying the offending line.
+
+In timestamp mode (`-T`), the format is fixed: `timestamp y` (two fields); `-k` does not apply.
 
 ### Unix Filter Usage
 
@@ -1420,7 +1423,7 @@ smooth/
 +--- tests/             # Unit testing framework (Unity)
     |--- unity.c/h                # Unity testing framework
     |--- unity_internals.h        # Unity internals
-    |--- test_main.c              # Test runner (103 tests)
+    |--- test_main.c              # Test runner (106 tests)
     |--- test_grid_analysis.c     # Grid analysis tests (7 tests)
     |--- test_polyfit.c           # Polyfit module tests (21 tests)
     |--- test_savgol.c            # Savgol module tests (16 tests)
@@ -1433,7 +1436,35 @@ smooth/
 
 ## Version History
 
-**v5.11.3 (current):** Butterworth automatic cutoff frequency selection via Morozov's discrepancy principle
+**v5.11.8 (current):** Extended `-k` flag with `N:M` syntax for selecting both x and y columns
+
+**Recent changes (v5.11.8):**
+- `-k M` keeps existing behavior (y from column M, x from column 1)
+- `-k N:M` picks x from column N and y from column M (e.g. `-k 1:4`)
+- Validation: column numbers must be `>= 1` and N must differ from M
+- Hard error with line number if an input line has fewer columns than requested
+
+**v5.11.7:** Butterworth derivative support
+- `-d` flag now works with Butterworth (previously rejected)
+- First derivative computed via 5-point O(h⁴) stencils on the filtfilt output (central in the interior, forward/backward at boundaries)
+- Wider stencils are safe here because filtfilt output is already extremely smooth (effective 8th-order, zero-phase)
+- 106 unit tests total (3 new: constant, linear, sine derivative cases)
+
+**v5.11.6:** Butterworth cosmetic cleanups
+- Dropped unused `x` parameter from `estimate_cutoff_frequency()` (works on normalized frequencies only)
+- Sample-rate line now labeled `Effective sample rate: fs = ... (= 1/h_avg)` to clarify it is derived from average spacing
+- Adaptive MB/GB formatting in the large-dataset memory warning
+
+**v5.11.5:** Clarified Butterworth high-fc warning
+- Renamed `CUTOFF_FREQ_STABILITY_WARN` to `CUTOFF_FREQ_INEFFECTIVE_WARN` — the concern at high fc is weak attenuation, not pole stability (stability is covered by the v5.11.2 check)
+- Warning text and `-f` parameter docs updated accordingly
+
+**v5.11.4:** Butterworth minimum practical cutoff
+- Introduced `FC_MIN_PRACTICAL = 1e-4` to reject numerically ill-conditioned inputs before filter design
+- Below this threshold, biquad poles crowd the unit circle and precision degrades
+- Auto-selector is unaffected (smallest candidate is 0.02)
+
+**v5.11.3:** Butterworth automatic cutoff frequency selection via Morozov's discrepancy principle
 
 **Recent changes (v5.11.3):**
 - Implemented real `-f auto` (previously a stub returning a constant)
@@ -1471,8 +1502,8 @@ smooth/
 
 ---
 
-**Document revision:** 2026-04-18
-**Program version:** smooth v5.11.3
+**Document revision:** 2026-04-25
+**Program version:** smooth v5.11.8
 **Dependencies:** LAPACK, BLAS
 **Testing framework:** Unity (included in tests/)
 **License:** MIT License

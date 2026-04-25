@@ -64,6 +64,7 @@ int main(int argc, char **argv)
   int auto_cutoff = 0;
   int show_derivative = 0;
   int show_grid_analysis = 0;
+  int x_column = 1;  /* Default: first column for x-data (1-indexed) */
   int y_column = 2;  /* Default: second column (1=first, 2=second, etc.) */
   int timestamp_mode = 0;  /* Flag for timestamp input mode */
   char **timestamp_strings = NULL;  /* Array of timestamp strings */
@@ -134,13 +135,25 @@ int main(int argc, char **argv)
           }
         }
         break;
-      case 'k':
-        y_column = atoi(optarg);
-        if (y_column < 1) {
+      case 'k': {
+        const char *sep = strchr(optarg, ':');
+        if (sep == NULL) {
+          y_column = atoi(optarg);
+        } else {
+          x_column = atoi(optarg);
+          y_column = atoi(sep + 1);
+        }
+        if (x_column < 1 || y_column < 1) {
           fprintf(stderr, "Column number must be >= 1!\n");
           exit(EXIT_FAILURE);
         }
+        if (x_column == y_column) {
+          fprintf(stderr, "x and y columns must differ (got %d:%d)!\n",
+                  x_column, y_column);
+          exit(EXIT_FAILURE);
+        }
         break;
+      }
       case 'd':
         show_derivative = 1;
         break;
@@ -326,9 +339,10 @@ int main(int argc, char **argv)
           continue;
         }
 
-        if (col_count < y_column) {
-          fprintf(stderr, "Error: Line %d has only %d column(s), but column %d was requested for y-data\n",
-                  line_number, col_count, y_column);
+        int max_col = (x_column > y_column) ? x_column : y_column;
+        if (col_count < max_col) {
+          fprintf(stderr, "Error: Line %d has only %d column(s), but columns %d (x) and %d (y) were requested\n",
+                  line_number, col_count, x_column, y_column);
           free(x);
           free(y);
           if (fp != stdin) fclose(fp);
@@ -362,9 +376,9 @@ int main(int argc, char **argv)
           y = temp_y;
         }
 
-        /* Store x from first column and y from specified column */
-        x[n] = values[0];           /* Always first column for x */
-        y[n] = values[y_column - 1]; /* User specifies 1-indexed, array is 0-indexed */
+        /* Store x and y from selected columns (1-indexed -> 0-indexed) */
+        x[n] = values[x_column - 1];
+        y[n] = values[y_column - 1];
         n++;
       }  /* end else (normal mode) */
     }  /* end while (fgets) */
@@ -691,8 +705,8 @@ static void help(void)
     "\tRange: 0 < fc < 1, where fc = f_cutoff / f_Nyquist",
     "\t(fc = 1 corresponds to Nyquist frequency = f_sample/2)",
     "\tUse '-f auto' for automatic cutoff selection",
-    "-k\tColumn number for y-data (default 2), x-data always from column 1",
-    "\tColumns are numbered starting from 1",
+    "-k\tColumn selection: 'M' picks y-data column (x=1), 'N:M' picks x and y columns",
+    "\tDefault: 1:2 (x from column 1, y from column 2). Columns are 1-indexed.",
     "-T\tTimestamp mode: first column is RFC3339-style timestamp, second is y-value",
     "\tSupports formats: YYYY-MM-DD HH:MM:SS[.fff] or YYYY-MM-DDTHH:MM:SS[.fff]",
     "\tTimestamps are converted to seconds for smoothing, original format preserved in output",
@@ -712,7 +726,8 @@ static void help(void)
     "  smooth -m 3 -f 0.1 data.txt           # Butterworth with fc=0.1",
     "  smooth -m 3 -f auto data.txt          # Butterworth with auto cutoff",
     "  smooth -m 3 -f 0.3 -d data.txt        # Butterworth with derivatives",
-    "  smooth -k 3 -m 2 -l auto data.txt     # Use 3rd column for y-data",
+    "  smooth -k 3 -m 2 -l auto data.txt     # y from column 3 (x from column 1)",
+    "  smooth -k 1:4 -m 2 -l auto data.txt   # x from column 1, y from column 4",
     "  smooth -T -m 2 -l auto data.txt       # Timestamp mode with Tikhonov",
     "  smooth -T -m 1 -n 5 -p 2 -d data.txt  # Timestamps with derivatives (dy/dt in sec)",
     "  smooth -g data.txt                    # Detailed grid analysis",
