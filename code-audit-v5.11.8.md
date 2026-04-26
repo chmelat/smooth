@@ -107,9 +107,11 @@ Bylo `abuf += BUF` (BUF=512) → amortizovaně O(N²) pro velké soubory. Nahraz
 
 Pro uživatele s `-k 1:120` dostane jen chybu "line has only 100 columns", ne pravdu.
 
-### B10. `decomment` volán jen pro soubory, ne pro stdin — `smooth.c:200–202`
+### B10. ~~`decomment` volán jen pro soubory, ne pro stdin~~ — **FIXED v5.11.12**
 
 Symetrie chybí. V praxi `strtod` přeskočí `#` řádky přes `col_count < 1`, takže to "funguje" — ale implicitně, ne explicitně. Jednodušší je volat `decomment` jednotně (včetně stdin), nebo to explicitně zdokumentovat.
+
+Fix: vytažena nová funkce `decomment_stream(FILE*, const char*)` v `decomment.c`, která pracuje na otevřeném streamu a nezavírá ho. `decomment(name)` se stalo tenkým wrapperem (open + stream + close). V `smooth.c` stdin větev nyní volá `decomment_stream(stdin, "stdin")`, takže `#` komentáře (full-line i inline) se strippují konzistentně. Čtyři podmínky `if (fp != stdin) fclose(fp)` zjednodušeny na `fclose(fp)` (fp je teď vždy tmpfile).
 
 ### B11. Warning cíle (stdout vs stderr) rozdělené nekonzistentně
 

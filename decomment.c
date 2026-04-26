@@ -10,67 +10,51 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include "decomment.h"
+
 /**
- * Processes a file by removing all text from '#' character to the end of line
- * and removing empty lines.
+ * Processes an already-open stream by removing all text from '#' character
+ * to the end of line and removing empty lines.
  *
- * @param name Path to the input file
- * @return FILE pointer to a temporary file containing processed content or NULL on error
+ * Does not close the input stream — caller retains ownership. This lets the
+ * same stripping logic run on stdin (which must not be closed) and on regular
+ * files opened by decomment() below.
  */
-FILE *decomment(const char *name)
+FILE *decomment_stream(FILE *fr, const char *source_name)
 {
-  FILE *fr = NULL;      /* Input file descriptor */
-  FILE *fw_tmp = NULL;  /* Output (temporary) file descriptor */
-  int c;                /* Current character */
-  int p = 0;            /* Position in current line */
-  bool success = false; /* Flag to track successful completion */
+  FILE *fw_tmp = NULL;
+  int c;
+  int p = 0;
+  bool success = false;
 
-  /* Validate input */
-  if (name == NULL) {
-    fprintf(stderr, "Error: NULL filename provided\n");
-    return NULL;
-  }
-
-  /* Open input file */
-  fr = fopen(name, "r");
   if (fr == NULL) {
-    fprintf(stderr, "Failed to open file '%s' (%d: %s)\n",
-            name, errno, strerror(errno));
+    fprintf(stderr, "Error: NULL input stream provided\n");
     return NULL;
   }
 
-  /* Create output (tmpfile) */
   fw_tmp = tmpfile();
   if (fw_tmp == NULL) {
     fprintf(stderr, "Failed to open tmpfile (%d: %s)\n",
             errno, strerror(errno));
-    fclose(fr);
     return NULL;
   }
 
-  /* Process file contents */
   while ((c = getc(fr)) != EOF) {
-    /* Handle comment - skip all characters until newline or EOF */
     if (c == '#') {
       while ((c = getc(fr)) != '\n' && c != EOF)
-        ; /* Skip until newline or EOF */
-      
-      /* If we hit EOF during comment, exit loop */
+        ;
       if (c == EOF)
         break;
     }
 
-    /* Skip empty lines (newline at position 0) */
     if (c == '\n' && p == 0)
       continue;
 
-    /* Update position counter */
     if (c == '\n')
-      p = 0;  /* Reset position at newline */
+      p = 0;
     else
-      p++;    /* Increment position for other characters */
+      p++;
 
-    /* Write character to output file */
     if (putc(c, fw_tmp) == EOF) {
       fprintf(stderr, "Error writing to temporary file (%d: %s)\n",
               errno, strerror(errno));
@@ -78,36 +62,55 @@ FILE *decomment(const char *name)
     }
   }
 
-  /* Check if we stopped due to an error rather than EOF */
   if (ferror(fr)) {
-    fprintf(stderr, "Error reading from file '%s' (%d: %s)\n",
-            name, errno, strerror(errno));
-    goto cleanup;
-  }
-
-  /* Close input file */
-  if (fclose(fr) != 0) {
-    fprintf(stderr, "Error closing input file (%d: %s)\n",
+    fprintf(stderr, "Error reading from %s (%d: %s)\n",
+            source_name ? source_name : "input stream",
             errno, strerror(errno));
-    fr = NULL;  /* Avoid double-close in cleanup */
     goto cleanup;
   }
-  fr = NULL;  /* Set to NULL to avoid double-close in cleanup */
 
-  /* Reset file pointer to beginning of temporary file */
   rewind(fw_tmp);
   success = true;
 
 cleanup:
-  /* Clean up in case of error */
-  if (!success) {
-    if (fr != NULL)
-      fclose(fr);
-    if (fw_tmp != NULL) {
-      fclose(fw_tmp);
-      fw_tmp = NULL;
+  if (!success && fw_tmp != NULL) {
+    fclose(fw_tmp);
+    fw_tmp = NULL;
+  }
+  return fw_tmp;
+}
+
+/**
+ * Processes a file by removing all text from '#' character to the end of line
+ * and removing empty lines. Thin wrapper around decomment_stream().
+ */
+FILE *decomment(const char *name)
+{
+  FILE *fr;
+  FILE *out;
+
+  if (name == NULL) {
+    fprintf(stderr, "Error: NULL filename provided\n");
+    return NULL;
+  }
+
+  fr = fopen(name, "r");
+  if (fr == NULL) {
+    fprintf(stderr, "Failed to open file '%s' (%d: %s)\n",
+            name, errno, strerror(errno));
+    return NULL;
+  }
+
+  out = decomment_stream(fr, name);
+
+  if (fclose(fr) != 0) {
+    fprintf(stderr, "Error closing input file (%d: %s)\n",
+            errno, strerror(errno));
+    if (out != NULL) {
+      fclose(out);
+      out = NULL;
     }
   }
 
-  return fw_tmp;
+  return out;
 }

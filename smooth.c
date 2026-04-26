@@ -193,16 +193,17 @@ int main(int argc, char **argv)
     fprintf(stderr, "Warning: High polynomial degree (%d) may cause numerical instability\n", dp);
   }
 
-/* Argument - filename or stdin */
+/* Argument - filename or stdin. Both paths go through decomment so '#'
+ * comments and blank lines are stripped uniformly before parsing. */
   if (argv[optind] == NULL || strcmp(argv[optind], "-") == 0) {
-    /* Read from stdin */
-    fp = stdin;
     filename = "stdin";
+    fp = decomment_stream(stdin, "stdin");
   }
   else {
     filename = argv[optind];
     fp = decomment(filename);
   }
+  if (fp == NULL) exit(EXIT_FAILURE);
 
 /* Read data table from file */
   {
@@ -348,7 +349,7 @@ int main(int argc, char **argv)
                   line_number, col_count, x_column, y_column);
           free(x);
           free(y);
-          if (fp != stdin) fclose(fp);
+          fclose(fp);
           exit(EXIT_FAILURE);
         }
 
@@ -362,7 +363,7 @@ int main(int argc, char **argv)
             free(x);
             free(y);
             fprintf(stderr,"No memory for data table!\n");
-            if (fp != stdin) fclose(fp);
+            fclose(fp);
             exit(EXIT_FAILURE);
           }
           x = temp_x;
@@ -373,7 +374,7 @@ int main(int argc, char **argv)
             free(x);
             free(y);
             fprintf(stderr,"No memory for data table!\n");
-            if (fp != stdin) fclose(fp);
+            fclose(fp);
             exit(EXIT_FAILURE);
           }
           y = temp_y;
@@ -386,9 +387,7 @@ int main(int argc, char **argv)
       }  /* end else (normal mode) */
     }  /* end while (fgets) */
 
-    if (fp != stdin) {
-      fclose(fp);
-    }
+    fclose(fp);
 
     /* Convert timestamps to relative time if in timestamp mode */
     if (timestamp_mode) {
