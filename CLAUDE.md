@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `smooth` is a scientific data smoothing program implementing four mathematical methods for noise reduction and derivative computation in experimental data. The codebase is ~3,600 lines of modular C code with LAPACK dependencies.
 
-**Current version:** 5.11.12 (2026-04-26)
+**Current version:** 5.11.13 (2026-04-26)
 
 ## Documentation Guidelines
 
@@ -339,7 +339,8 @@ void free_method_result(MethodResult *result) {
 
 ## Version History Context
 
-**v5.11.12 (current):** Fix audit B10 — uniform `decomment` for stdin and files via new `decomment_stream(FILE*, name)`; strips `#` comments (incl. inline) consistently from both inputs
+**v5.11.13 (current):** Audit B15 — `-k N:M` now works in `-T` mode: N selects timestamp logical column (default 1), M selects y column (default 2). Tokenizer-based parser replaces sscanf with split-on-dot workaround.
+**v5.11.12:** Fix audit B10 — uniform `decomment` for stdin and files via new `decomment_stream(FILE*, name)`; strips `#` comments (incl. inline) consistently from both inputs
 **v5.11.7:** Butterworth derivative support (`-d` flag) via 5-point O(h⁴) stencils on filtered output, 106 tests
 **v5.11.6:** Butterworth cosmetic cleanups — drop unused `x` param from estimate_cutoff_frequency, clarify "Effective sample rate" label, adaptive MB/GB memory format
 **v5.11.5:** Rename CUTOFF_FREQ_STABILITY_WARN to _INEFFECTIVE_WARN, clarify warning text and document practical fc range

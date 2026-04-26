@@ -232,40 +232,71 @@ int main(int argc, char **argv)
 
       /* Parse based on mode */
       if (timestamp_mode) {
-        /* Timestamp mode: format is "YYYY-MM-DD HH:MM:SS.fff value" (date and time separated by space) */
-        char date_str[20], time_str[20];
+        /* Timestamp mode with logical-column model: timestamp lives at logical
+         * column x_column (default 1), y at logical column y_column (default 2).
+         * Timestamp itself spans 1 (T-separator) or 2 (space-separator) whitespace
+         * tokens; the logical-column abstraction hides that from the user. */
         char timestamp_str[100];
         double y_value;
 
-        /* Skip leading whitespace */
-        char *ptr = line;
-        while (*ptr == ' ' || *ptr == '\t') ptr++;
+        /* Tokenize line on whitespace (destructive on local 4096B buffer) */
+        char *tokens[100];
+        int ntok = 0;
+        char *p = line;
+        while (*p && ntok < 100) {
+          while (*p == ' ' || *p == '\t' || *p == '\n') *p++ = '\0';
+          if (*p == '\0') break;
+          tokens[ntok++] = p;
+          while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
+        }
+        if (ntok == 0) continue;  /* blank or whitespace-only line */
 
-        /* Skip empty lines */
-        if (*ptr == '\n' || *ptr == '\0') continue;
+        /* Validate timestamp position (x_column is 1-indexed logical column) */
+        int ts_tok_start = x_column - 1;
+        if (ts_tok_start >= ntok) {
+          fprintf(stderr, "Error: Line %d has %d token(s), but timestamp column %d was requested\n",
+                  line_number, ntok, x_column);
+          for (int i = 0; i < n; i++) free(timestamp_strings[i]);
+          free(timestamp_strings);
+          free(y);
+          fclose(fp);
+          exit(EXIT_FAILURE);
+        }
 
-        /* Parse date, time, and y-value
-         * Format with space separator: "YYYY-MM-DD HH:MM:SS.fff value"
-         * Format with T separator: "YYYY-MM-DDTHH:MM:SS.fff value"
-         * sscanf will parse the timestamp correctly if it uses T, or as two tokens if it uses space */
-        int parsed = sscanf(ptr, "%19s %19s %lf", date_str, time_str, &y_value);
-
-        if (parsed == 2) {
-          /* Only got date and value - maybe format is "YYYY-MM-DDTHH:MM:SS.fff value" (T separator) */
-          y_value = atof(time_str);  /* time_str actually contains the y-value */
-          snprintf(timestamp_str, sizeof(timestamp_str), "%s", date_str);
-        } else if (parsed == 3) {
-          /* Check if time_str starts with '.' - this means T format split the subseconds */
-          if (time_str[0] == '.') {
-            /* Format was "YYYY-MM-DDTHH:MM:SS.fff" - combine date_str (which has everything up to '.') and time_str (which has '.fff') */
-            snprintf(timestamp_str, sizeof(timestamp_str), "%s%s", date_str, time_str);
-          } else {
-            /* Got date, time, and value - format is "YYYY-MM-DD HH:MM:SS.fff value" (space separator) */
-            snprintf(timestamp_str, sizeof(timestamp_str), "%s %s", date_str, time_str);
-          }
+        /* Detect timestamp format and assemble timestamp_str */
+        int ts_token_count;
+        if (strchr(tokens[ts_tok_start], 'T') != NULL) {
+          ts_token_count = 1;
+          snprintf(timestamp_str, sizeof(timestamp_str), "%s", tokens[ts_tok_start]);
+        } else if (ts_tok_start + 1 < ntok) {
+          ts_token_count = 2;
+          snprintf(timestamp_str, sizeof(timestamp_str), "%s %s",
+                   tokens[ts_tok_start], tokens[ts_tok_start + 1]);
         } else {
-          /* Could not parse - skip this line silently */
-          continue;
+          continue;  /* malformed: space-format expects two tokens, only one present */
+        }
+
+        /* Map logical y_column to whitespace-token index. Logical columns before
+         * the timestamp are unaffected by its width; columns after shift by
+         * ts_token_count - 1. y_column != x_column is enforced at -k parse time. */
+        int y_token_idx = (y_column < x_column)
+                          ? y_column - 1
+                          : y_column - 1 + (ts_token_count - 1);
+        if (y_token_idx >= ntok) {
+          fprintf(stderr, "Error: Line %d has insufficient columns for y column %d\n",
+                  line_number, y_column);
+          for (int i = 0; i < n; i++) free(timestamp_strings[i]);
+          free(timestamp_strings);
+          free(y);
+          fclose(fp);
+          exit(EXIT_FAILURE);
+        }
+
+        char *endptr;
+        errno = 0;
+        y_value = strtod(tokens[y_token_idx], &endptr);
+        if (tokens[y_token_idx] == endptr || errno != 0) {
+          continue;  /* not a number, skip line silently */
         }
 
         /* Reallocate arrays if needed */

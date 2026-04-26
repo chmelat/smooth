@@ -138,9 +138,11 @@ Princip asi "co chceme zachovat v output file → stdout s `#`". Fungující, al
 
 `but2.c.new, but3.c, but32.c, but4.c, grid_analysis.c.bak, polyfit.c.bak, tikhonov.c.bak` — starší varianty s překrývajícími se symboly (např. 3× `estimate_cutoff_frequency`). `grep` a IDE indexing je vidí a vrací falešné hity. Zkopírovat do jiného adresáře (mimo project root) nebo přidat do `.gitignore`.
 
-### B15. `-T` a `-k` se tiše ignorují navzájem
+### B15. ~~`-T` a `-k` se tiše ignorují navzájem~~ — **FIXED v5.11.13**
 
 V timestamp módu se `-k` nepoužije. Kód neemituje warning, když uživatel kombinaci zadá. Minimálně hlásit `# Warning: -k ignored in timestamp mode`.
+
+Fix: timestamp parser v `smooth.c` přepsán z `sscanf` na tokenizér s logical-column modelem. `-k N:M` v `-T` módu znamená: `N` = pozice timestampu (default 1), `M` = pozice y (default 2). Logický sloupec abstrahuje, že timestamp zabírá 1 nebo 2 whitespace tokeny (T-format vs space-format). Sloupce před timestampem (label/ID) se přeskakují, sloupce za ním se indexují s offsetem podle šířky timestampu. Default `-T` bez `-k` zachovává dnešní chování (1:2). Side-effect: zmizel hackish workaround pro split-on-dot u T-formátu (sscanf rozsekal `.fff` na samostatný token).
 
 ---
 

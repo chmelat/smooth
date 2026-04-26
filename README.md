@@ -87,8 +87,8 @@ gcc -o smooth smooth.c polyfit.c savgol.c tikhonov.c butterworth.c \
 | `-p P` | Polynomial degree (polyfit, savgol, max 12) |
 | `-l λ` | Regularization parameter (tikhonov), use `-l auto` for GCV |
 | `-f fc` | Normalized cutoff frequency (butterworth, 0 < fc < 1.0), use `-f auto` for default |
-| `-T` | Timestamp mode: first column is RFC3339 timestamp, second is y-value |
-| `-k M` or `-k N:M` | Column selection: `M` sets y-data column (x from column 1); `N:M` sets x from column N and y from column M. Default: `1:2`. Columns are 1-indexed; N and M must differ. |
+| `-T` | Timestamp mode: a column holds an RFC3339 timestamp (default position 1, y at position 2; both adjustable via `-k`) |
+| `-k M` or `-k N:M` | Column selection: `M` sets the y-data column (x defaults to column 1); `N:M` sets x at column N and y at column M. Default: `1:2`. Columns are 1-indexed; N and M must differ. In `-T` mode, N is the **timestamp** column (still column 1 by default), and the timestamp counts as a single logical column even when its space-separated form spans two whitespace tokens. |
 | `-d` | Include first derivative in output |
 | `-g` | Show detailed grid uniformity analysis |
 
@@ -101,7 +101,7 @@ gcc -o smooth smooth.c polyfit.c savgol.c tikhonov.c butterworth.c \
 
 ASCII data with one record per line. By default, column 1 is x and column 2 is y; extra columns are ignored. Use `-k M` to pick a different y column, or `-k N:M` to pick both x and y columns (e.g. `-k 1:4` uses column 1 as x and column 4 as y). Comments (lines starting with `#`) are stripped automatically. Data must have strictly monotonic increasing x-values. If a line has fewer columns than requested, the program exits with an error identifying the offending line.
 
-In timestamp mode (`-T`), the format is fixed: `timestamp y` (two fields); `-k` does not apply.
+In timestamp mode (`-T`), the same `-k N:M` selection applies, but column 1 (the default `N`) is the timestamp instead of a numeric x-value. The timestamp is treated as a single logical column even though the space-separated form (`YYYY-MM-DD HH:MM:SS.fff`) spans two whitespace tokens; the T-separated form (`YYYY-MM-DDTHH:MM:SS.fff`) is one token. Example: with input rows `ID 2025-09-25 14:06:06.390 25.5 100.2 980.1`, `-T -k 2:5` selects the timestamp at logical column 2 and y at logical column 5 (= `100.2`).
 
 ### Unix Filter Usage
 
@@ -373,6 +373,12 @@ cat data.txt | ./smooth -m 0 -n 7 -p 2
 2025-09-25T14:06:06.390  0.02128
 2025-09-25T14:06:06.391  0.02110
 2025-09-25T14:06:06.763  0.02230
+
+# Multi-column with -k: extra fields before/after timestamp
+# (timestamp at logical column 2, y at logical column 5)
+sensorA  2025-09-25 14:06:06.390  25.5  100.2  980.1
+sensorA  2025-09-25 14:06:06.391  25.6  100.3  980.0
+# invocation: ./smooth -T -k 2:5 -m 2 -l auto data.txt
 ```
 
 ### Working with Non-uniform Grids
@@ -1436,9 +1442,32 @@ smooth/
 
 ## Version History
 
-**v5.11.8 (current):** Extended `-k` flag with `N:M` syntax for selecting both x and y columns
+**v5.11.13 (current):** `-k N:M` works in `-T` (timestamp) mode (audit B15)
+- Timestamp parser rewritten from `sscanf` to a whitespace tokenizer with a logical-column model
+- N selects the timestamp's logical column (default 1), M selects the y column (default 2)
+- Logical column abstracts that the timestamp spans 1 (T-separator) or 2 (space-separator) whitespace tokens
+- Removes a hackish split-on-dot workaround in the previous `sscanf` parsing
+- Default `-T` without `-k` behaves identically to before
 
-**Recent changes (v5.11.8):**
+**v5.11.12:** Uniform `decomment` for stdin and files (audit B10)
+- New `decomment_stream(FILE *, name)` strips `#` comments from any open stream; `decomment(name)` becomes a thin wrapper
+- stdin now goes through the same comment-stripping path as files (full-line and inline `#` comments)
+- The four `if (fp != stdin) fclose(fp)` guards collapse to plain `fclose(fp)` (`fp` is always a tmpfile now)
+
+**v5.11.11:** Audit B4 and B8 fixes
+- Extracted `print_result()` to consolidate output formatting (audit B4)
+- Replaced linear buffer growth (`abuf += BUF`) with geometric doubling (`abuf *= 2`) — amortized O(N) instead of O(N²) (audit B8)
+
+**v5.11.10:** Removed dead code (audit B6, B12)
+- Empty `if (argc == 1)` block, unreachable `left_pts + right_pts < poly_degree` check in savgol, and a defensive index-bounds check that was always true
+
+**v5.11.9:** Audit A1–A4 fixes
+- Correct exit code on parse errors (A1)
+- Header info corrections (A2)
+- Overflow guard in column-count comparisons (A3)
+- Removed bias in standard-deviation reporting (A4)
+
+**v5.11.8:** Extended `-k` flag with `N:M` syntax for selecting both x and y columns
 - `-k M` keeps existing behavior (y from column M, x from column 1)
 - `-k N:M` picks x from column N and y from column M (e.g. `-k 1:4`)
 - Validation: column numbers must be `>= 1` and N must differ from M
