@@ -113,7 +113,7 @@ Symetrie chybí. V praxi `strtod` přeskočí `#` řádky přes `col_count < 1`,
 
 Fix: vytažena nová funkce `decomment_stream(FILE*, const char*)` v `decomment.c`, která pracuje na otevřeném streamu a nezavírá ho. `decomment(name)` se stalo tenkým wrapperem (open + stream + close). V `smooth.c` stdin větev nyní volá `decomment_stream(stdin, "stdin")`, takže `#` komentáře (full-line i inline) se strippují konzistentně. Čtyři podmínky `if (fp != stdin) fclose(fp)` zjednodušeny na `fclose(fp)` (fp je teď vždy tmpfile).
 
-### B11. Warning cíle (stdout vs stderr) rozdělené nekonzistentně
+### B11. ~~Warning cíle (stdout vs stderr) rozdělené nekonzistentně~~ — **FIXED**
 
 V `butterworth.c`:
 
@@ -121,6 +121,8 @@ V `butterworth.c`:
 - stderr: velký dataset (507), fc blízko Nyquistu (538)
 
 Princip asi "co chceme zachovat v output file → stdout s `#`". Fungující, ale neexplicitní — přidat komentář do headeru modulu.
+
+Fix: konvence zdokumentována v hlavičce `butterworth.c` (stdout `#` = info ovlivňující interpretaci výsledku, stderr `Warning:` = runtime/operační, stderr `ERROR:` = hard failure). Reklasifikovány dva warningy, které věcně patří k výsledku: pól-stabilita (řádek 160) a fc blízko Nyquistu (řádek 538) — oba teď jdou na stdout jako `# WARNING`. Velký dataset (RAM) zůstává na stderr (operační info, ne data). Zpětná kompatibilita prolomena záměrně.
 
 ### B12. ~~Mrtvý kód~~ — **FIXED v5.11.10**
 

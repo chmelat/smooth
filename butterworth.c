@@ -3,6 +3,14 @@
  *                  Combines numerical stability of biquads with robust IC computation
  * V1.3/2025-12-06/ Memory optimization, symbolic constants, improved validation
  * V1.2/2025-11-21/ Refactored error handling (goto pattern) for memory safety
+ *
+ * Diagnostic output convention:
+ *   stdout "# ..."        — info that should be preserved with the saved data
+ *                           (affects interpretation of the result: selected fc,
+ *                           grid CV, numerical-quality warnings).
+ *   stderr "Warning: ..." — runtime/operational warnings irrelevant to the
+ *                           filtered output (memory usage, etc.).
+ *   stderr "ERROR: ..."   — hard failures; function returns NULL/non-zero.
  */
 
 #include <stdio.h>
@@ -157,10 +165,10 @@ static int check_pole_stability(const BiquadSection *sections)
     }
 
     if (max_radius > POLE_RADIUS_WARN) {
-        fprintf(stderr, "Warning: Filter poles very close to unit circle "
-                "(max radius %.6f in biquad %d). Numerical precision may suffer. "
-                "Consider a less extreme cutoff frequency.\n",
-                max_radius, worst_section);
+        printf("# WARNING: Filter poles very close to unit circle "
+               "(max radius %.6f in biquad %d). Numerical precision may suffer. "
+               "Consider a less extreme cutoff frequency.\n",
+               max_radius, worst_section);
     }
 
     return 0;
@@ -535,9 +543,9 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
     }
 
     if (fc > CUTOFF_FREQ_INEFFECTIVE_WARN) {
-        fprintf(stderr, "Warning: fc = %.4f is close to Nyquist limit. "
-                "Filter passes nearly the entire spectrum unattenuated; "
-                "consider a smaller fc for meaningful smoothing.\n", fc);
+        printf("# WARNING: fc = %.4f is close to Nyquist limit. "
+               "Filter passes nearly the entire spectrum unattenuated; "
+               "consider a smaller fc for meaningful smoothing.\n", fc);
     }
 
     /* Check grid uniformity */
