@@ -1,401 +1,200 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Design and maintenance notes for working on `smooth`. User-facing documentation
+(installation, CLI options, method tutorials, examples) lives in `README.md` —
+do not duplicate it here.
 
-## Project Overview
-
-`smooth` is a scientific data smoothing program implementing four mathematical methods for noise reduction and derivative computation in experimental data. The codebase is ~3,600 lines of modular C code with LAPACK dependencies.
-
-**Current version:** 5.11.14 (2026-04-27)
+**Current version:** see `revision.h`. The full version history is the comment
+block at the top of `revision.h`.
 
 ## Documentation Guidelines
 
-### README.md Equation Format
+### README.md equation format
 
-**IMPORTANT:** The README.md uses **GitHub LaTeX math syntax** for all mathematical equations:
+The README uses **GitHub LaTeX math syntax** for all mathematical content:
 
-- **Inline math:** `$...$` — e.g., `$\lambda$`, `$\|y - u\|^2$`
-- **Display math:** `$$...$$` — for standalone equations on their own line
-- **Matrices:** Use `\begin{pmatrix}...\end{pmatrix}` inside `$$...$$`
+- Inline: `$...$` (e.g. `$\lambda$`, `$\|y - u\|^2$`)
+- Display: `$$...$$` for standalone equations
+- Matrices: `\begin{pmatrix}...\end{pmatrix}` inside `$$...$$`
 
-**When editing README.md:** Always use LaTeX math syntax for equations, formulas, and mathematical symbols. Do NOT use plain-text approximations in code blocks for mathematical content. Code blocks should be reserved for actual code, CLI examples, and program output.
+Do not use plain-text approximations of math in code blocks. Code blocks are
+reserved for code, CLI examples, and program output.
 
-**Examples of correct usage:**
-```markdown
-Inline: The parameter $\lambda$ controls smoothing strength.
-Display: $$J[\mathbf{u}] = \|\mathbf{y} - \mathbf{u}\|^2 + \lambda \|D^2 \mathbf{u}\|^2$$
-Matrix: $$A = \begin{pmatrix} 1 & -2 \\ -2 & 5 \end{pmatrix}$$
-```
+### README.md character restrictions
 
-### README.md Character Restrictions
+PDF generation uses DejaVu fonts which lack box-drawing and decorative glyphs.
+Restrictions:
 
-**Prohibited characters (use ASCII alternatives):**
-- **Box-drawing:** Use `|-`, `-`, `|`, `+-`, `=` instead of ├ ─ │ └ ━
-- **Checkmarks/warnings:** Use `[OK]`, `[X]`, `[WARNING]` instead of ✓ ✗ ⚠️
+- **Box-drawing:** use `|-`, `-`, `|`, `+-`, `=` instead of `├ ─ │ └ ━`
+- **Checkmarks/warnings:** use `[OK]`, `[X]`, `[WARNING]` instead of `✓ ✗ ⚠️`
+- **Arrows:** `→` is allowed in plain text; inside math use `\to` / `\rightarrow`
 
-**Allowed non-LaTeX Unicode:**
-- **Arrows:** → for plain text (use `\to` or `\rightarrow` inside math)
-- **Standard ASCII:** Letters, numbers, punctuation
+## Architecture
 
-**Reason:** Box-drawing and decorative Unicode characters are not supported by DejaVu fonts used for PDF generation. Mathematical notation is handled entirely by LaTeX rendering.
-
-## Build System
-
-```bash
-# Build production version
-make
-
-# Build with debug symbols
-make debug
-
-# Run unit tests
-make test
-
-# Run tests with Valgrind (memory leak detection)
-make test-valgrind
-
-# Clean build artifacts
-make clean
-
-# Install to user's ~/bin
-make install-user
-
-# Install system-wide (requires root)
-make install
-
-# Show all available targets
-make help
-```
-
-**Important Build Notes:**
-- Uses `clang` by default (can override with `CC=gcc`)
-- Requires LAPACK and BLAS libraries (`-llapack -lblas`)
-- Default library path: `~/lib` (override with `LIBDIR=/path/to/libs`)
-- Production builds use `-O2`, debug builds use `-g -O0`
-
-## Running the Program
-
-```bash
-# Basic usage
-./smooth -m <method> [options] [file|-]
-
-# From file
-./smooth -m 2 -l auto data.txt
-
-# From stdin (Unix filter)
-cat data.txt | ./smooth -m 1 -n 7 -p 2
-
-# Grid analysis only
-./smooth -g data.txt
-```
-
-**Key Options:**
-- `-m {0|1|2|3}` - Method: polyfit|savgol|tikhonov|butterworth
-- `-n N` - Window size (polyfit, savgol)
-- `-p P` - Polynomial degree (polyfit, savgol, max 12)
-- `-l λ` - Regularization parameter (tikhonov), use `-l auto` for GCV
-- `-f fc` - Cutoff frequency (butterworth, 0 < fc < 1.0), use `-f auto` for default
-- `-d` - Include first derivatives in output
-- `-g` - Show detailed grid uniformity analysis
-
-## Code Architecture
-
-### Modular Structure
-
-The codebase follows a clean modular design with each smoothing method in its own compilation unit:
+### Modular structure
 
 ```
-smooth.c              # Main program, CLI parsing, I/O
+smooth.c              # Main program, CLI parsing, I/O, output formatting
 ├─ polyfit.c/h        # Polynomial fitting (local least squares)
 ├─ savgol.c/h         # Savitzky-Golay filter (pre-computed convolution)
 ├─ tikhonov.c/h       # Tikhonov regularization (global variational)
 ├─ butterworth.c/h    # Butterworth filter (frequency-domain)
 ├─ grid_analysis.c/h  # Grid uniformity analysis (shared utility)
-└─ decomment.c/h      # Input comment removal
+├─ timestamp.c/h      # Timestamp parsing for `-T` mode (UTC via timegm())
+└─ decomment.c/h      # Input comment removal (full-line and inline `#`)
 ```
 
-**Design Principles:**
-1. **One analysis, shared results:** Grid analysis happens once at startup, results passed to all methods
-2. **Result structures:** Each method returns a struct with smoothed values, derivatives, and diagnostics
-3. **Memory ownership:** Caller must free results using `free_*_result()` functions
-4. **Grid-aware methods:** Methods receive `GridAnalysis*` to make informed decisions
+### Design principles
 
-### Core Data Structures
+1. **One grid analysis, shared results.** `analyze_grid()` runs once at startup
+   in `smooth.c`; the resulting `GridAnalysis*` is passed to every method.
+   Methods do not re-analyze the grid.
+2. **Result structures.** Each method returns a `*Result` struct (`PolyfitResult`,
+   `SavgolResult`, `TikhonovResult`, `ButterworthResult`) with `y_smooth`,
+   `y_deriv`, `n`, plus method-specific diagnostics.
+3. **Caller owns memory.** Methods allocate; the caller frees via the matching
+   `free_*_result()`. The same pattern applies to `GridAnalysis`.
+4. **Grid-aware methods.** Methods inspect `GridAnalysis*` and either adapt
+   (Tikhonov) or reject (Savgol) based on uniformity — the policy is in the
+   method, not in `smooth.c`.
+5. **No cross-method dependencies.** Method modules never include each other;
+   shared logic belongs in `grid_analysis.c` or `smooth.c`.
+
+### LAPACK choices
+
+| Method      | Routine  | Why |
+|-------------|----------|-----|
+| polyfit     | `dgelss` | SVD; tolerates rank-deficient Vandermonde near boundaries |
+| savgol      | `dposv`  | Coefficient system is symmetric positive definite |
+| tikhonov    | `dpbsv`  | $(D^2)^T W D^2 + I$ is pentadiagonal SPD (kd=2); $O(n)$ solve |
+| butterworth | (none)   | Biquad cascade with analytical IC via Cramer's rule |
+
+### Grid uniformity philosophy
+
+`grid_analysis.c` computes the coefficient of variation $CV = \sigma(h)/h_{avg}$.
+Each method uses CV to make a policy decision:
+
+| CV          | Behaviour |
+|-------------|-----------|
+| $\le 0.01$  | `is_uniform = 1` |
+| $> 0.05$    | Savgol **rejects** with detailed error (uniformity is a mathematical requirement, not implementation choice) |
+| $< 0.15$    | Tikhonov uses average-coefficient discretization (uniform stencil $[1,-4,6,-4,1]/h^4$) |
+| $\ge 0.15$  | Tikhonov switches to local-spacing discretization (weighted Gram matrix $\sum w_k \mathbf{d}_k^T \mathbf{d}_k$) |
+| $> 0.15$    | Butterworth **rejects** (frequency analysis assumes uniform sampling) |
+
+Polyfit tolerates any grid (local fit per window). When changing CV thresholds
+or adding a new method, update **all** policy points consistently.
+
+### Per-method design notes
+
+These are the load-bearing design choices, not user-facing math (see README for
+that):
+
+- **Polyfit:** SVD per window with `rcond = 1e-10` to truncate small singular
+  values. Asymmetric windows + polynomial extrapolation at boundaries.
+  $O(n \cdot p^3)$.
+- **Savgol:** Universal convolution coefficients pre-computed once via moment
+  conditions. Translation invariance is the whole point — same coefficients
+  applied at every interior point. Uniform-grid requirement enforced by CV
+  check, not silently degraded.
+- **Tikhonov:** True 2nd-order penalty $(D^2)^T W D^2$ (pentadiagonal Gram
+  matrix), corrected in v5.11. Hybrid discretization (auto-switch at CV=0.15).
+  GCV trace uses 2D null space (constants and linear functions are unpenalized).
+- **Butterworth:** 4th-order low-pass split into a biquad cascade for numerical
+  stability. Filtfilt (forward-backward) gives zero phase. Per-biquad analytical
+  IC via Cramer's rule avoids LAPACK and `complex.h`. Auto-cutoff via Morozov's
+  discrepancy principle (v5.11.3).
+
+## Testing
+
+Uses the **Unity** framework (vendored in `tests/`).
+
+- 106 tests total: grid_analysis (7), polyfit (21), savgol (16), tikhonov (26),
+  butterworth (20), timestamp (16). Source of truth is `tests/test_main.c`.
+- 4 pre-existing valgrind leaks in butterworth tests (`analyze_grid` result not
+  freed in null-input / invalid-input paths). Do not introduce new leaks.
+
+### Adding a test
+
+1. Add the test function in the relevant `tests/test_<module>.c`. Use
+   `TEST_ASSERT_DOUBLE_WITHIN()` for floating-point comparisons.
+2. Declare the function and `RUN_TEST(...)` it in `tests/test_main.c`.
+3. If the test exercises a new module, append the source to `TEST_SRC` and the
+   object to `TEST_MODULES` in the `Makefile`.
+4. Run `make test` and `make test-valgrind` before committing.
+
+Test best practices:
+
+- One logical assertion per test.
+- Cover edge cases: `n=1`, `n=2`, NULL inputs, empty arrays.
+- Always free in the test body — the leak budget is fixed (see above).
+
+## Common development tasks
+
+### Adding a new smoothing method
+
+1. Create `newmethod.c` / `newmethod.h` following the existing pattern.
+2. Define `NewmethodResult` with at minimum `y_smooth`, `y_deriv`, `n`.
+3. Implement `newmethod_smooth(...)` accepting `const GridAnalysis*` —
+   policy decisions about grid uniformity belong here.
+4. Implement `free_newmethod_result()`.
+5. In `smooth.c`: add `METHOD_NEWMETHOD` constant, dispatch case, output path.
+6. Update `Makefile` (`SRC`, `HEAD`).
+7. Bump `revision.h` (version + date + history line).
+8. Add `tests/test_newmethod.c` and wire it into `tests/test_main.c` and the
+   `Makefile`.
+
+### Modifying grid analysis
+
+`GridAnalysis` is shared state — every change ripples to all methods.
+
+1. Update the struct in `grid_analysis.h`.
+2. Populate the new field in `analyze_grid()`.
+3. Update every method that should react to it.
+4. Update `tests/test_grid_analysis.c`.
+
+### Memory management
 
 ```c
-// Grid analysis (shared across all methods)
-typedef struct {
-    double h_min, h_max, h_avg, h_std;
-    double ratio_max_min, cv;
-    int is_uniform, n_clusters;
-    double uniformity_score;
-    double *spacings;  // Optional, must be freed
-    // ... warning fields
-} GridAnalysis;
-
-// Method result structures (similar pattern)
-typedef struct {
-    double *y_smooth;     // Smoothed values
-    double *y_deriv;      // First derivatives
-    int n;                // Number of points
-    // ... method-specific fields
-} MethodResult;
-```
-
-### LAPACK Usage
-
-All methods use LAPACK for linear algebra:
-
-- **polyfit:** `dgelss` - SVD least squares solver (Vandermonde system)
-- **savgol:** `dposv` - Symmetric positive definite solver (coefficient computation)
-- **tikhonov:** `dpbsv` - Banded symmetric positive definite solver (pentadiagonal, kd=2)
-- **butterworth:** No LAPACK dependency (analytical biquad IC via Cramer's rule)
-
-**Key:** Methods rely on the symmetric positive definite structure of their formulations for numerical stability.
-
-### Grid Uniformity Philosophy
-
-Grid analysis is central to method selection:
-
-**Coefficient of Variation (CV):** $CV = \sigma(h) / h_{\text{avg}}$
-
-| CV threshold | Effect |
-|-------------|--------|
-| $CV \le 0.01$ | Uniform grid (`is_uniform` = 1) |
-| $CV < 0.05$ | Nearly uniform (Savgol warns but works) |
-| $CV < 0.15$ | Moderately non-uniform (Tikhonov: average coefficient method) |
-| $CV \ge 0.15$ | Highly non-uniform (Tikhonov: local spacing method) |
-| $CV \ge 0.05$ | Savgol REJECTS with detailed error message |
-
-**When modifying grid-dependent code:**
-- Savitzky-Golay assumes uniform grids (mathematical requirement, not implementation choice)
-- Tikhonov automatically switches discretization based on grid uniformity
-- Butterworth assumes nearly-uniform sampling (frequency analysis requirement)
-- Polyfit is most tolerant of grid non-uniformity
-
-## Testing Framework
-
-Uses **Unity testing framework** (included in `tests/` directory).
-
-**Current test coverage (106 tests total):**
-- `test_grid_analysis.c` - Grid analysis module (7 tests)
-- `test_polyfit.c` - Polynomial fitting module (21 tests)
-- `test_savgol.c` - Savitzky-Golay module (16 tests)
-- `test_tikhonov.c` - Tikhonov module (26 tests)
-- `test_butterworth.c` - Butterworth module (20 tests, 4 have pre-existing valgrind leaks)
-- `test_timestamp.c` - Timestamp module (16 tests)
-- `test_main.c` - Test runner
-
-**To add new tests:**
-
-1. Create `tests/test_module.c`:
-```c
-#include "unity.h"
-#include "../module.h"
-
-void setUp(void) { /* runs before each test */ }
-void tearDown(void) { /* runs after each test */ }
-
-void test_module_feature(void) {
-    // ARRANGE
-    double x[] = {0.0, 1.0, 2.0};
-
-    // ACT
-    Result *result = module_function(x, 3);
-
-    // ASSERT
-    TEST_ASSERT_NOT_NULL(result);
-    TEST_ASSERT_DOUBLE_WITHIN(0.001, expected, result->value);
-
-    // CLEANUP
-    free_module_result(result);
-}
-```
-
-2. Declare test in `tests/test_main.c`:
-```c
-void test_module_feature(void);  // Add declaration
-RUN_TEST(test_module_feature);   // Add to main()
-```
-
-3. Update `Makefile`:
-```makefile
-TEST_SRC = ... tests/test_module.c
-TEST_MODULES = ... module.o
-```
-
-**Testing Best Practices:**
-- Always use `TEST_ASSERT_DOUBLE_WITHIN()` for floating-point comparisons
-- Test edge cases: n=1, n=2, NULL pointers, empty arrays
-- Always free allocated memory (check with `make test-valgrind`)
-- One assertion per logical concept
-- Use descriptive test names
-
-## Mathematical Methods Summary
-
-### Method Selection Guide
-
-**Grid is uniform (CV < 0.05):**
-- **Savgol:** Best for polynomial signals, need derivatives, computational efficiency critical
-- **Butterworth:** Best for frequency-domain interpretation, zero phase distortion needed
-- **Tikhonov + auto:** Universal choice, automatic parameter selection via GCV
-
-**Grid is non-uniform (CV ≥ 0.05):**
-- **Tikhonov + auto:** Primary recommendation (handles any grid correctly)
-- **Polyfit:** Local adaptability, good for variable curvature
-
-**Not sure which method:**
-- Use `./smooth -g data.txt` first to analyze grid
-- Default to **Tikhonov with `-l auto`** (safest, most automatic)
-
-### Implementation Details
-
-**Polynomial Fitting (polyfit.c):**
-- Local polynomial least squares in sliding window
-- SVD decomposition via `dgelss` at each point: $V \cdot \mathbf{a} = \mathbf{y}$
-- Automatic truncation of small singular values ($\text{rcond} = 10^{-10}$)
-- Asymmetric windows at boundaries with polynomial extrapolation
-- O(n·p³) complexity
-
-**Savitzky-Golay (savgol.c):**
-- Pre-computes universal convolution coefficients
-- Method of undetermined coefficients (moment conditions)
-- **Requires uniform grid** - enforced by CV check
-- O(p³) + O(n·w) complexity
-- Key difference from polyfit: same coefficients applied everywhere (translation invariance)
-
-**Tikhonov (tikhonov.c):**
-- Global variational minimization: $J[\mathbf{u}] = \|\mathbf{y}-\mathbf{u}\|^2 + \lambda\|D^2\mathbf{u}\|^2$
-- True 2nd-order penalty via $(D^2)^T W D^2$ Gram matrix (pentadiagonal, kd=2)
-- **Hybrid discretization (v5.4+, corrected v5.11):**
-  - CV < 0.15: Average coefficient method (uniform stencil $[1,-4,6,-4,1]/h^4$)
-  - CV ≥ 0.15: Local spacing method (weighted Gram matrix $\sum w_k \mathbf{d}_k^T \mathbf{d}_k$)
-- Natural boundary conditions implicit (no D² rows for boundary points)
-- Pentadiagonal banded solver `dpbsv` for O(n) efficiency
-- GCV for automatic λ selection (eigenvalue trace with 2D null space)
-- O(n) complexity
-
-**Butterworth (butterworth.c):**
-- 4th-order digital low-pass filter
-- Bilinear transform: s-domain poles → z-domain
-- Biquad cascade (two 2nd-order sections)
-- **Filtfilt:** Forward-backward filtering for zero phase
-- **Analytical IC:** Per-biquad initial conditions via Cramer's rule (no LAPACK needed)
-- Odd reflection padding for edge handling
-- O(n) complexity
-
-## Common Development Tasks
-
-### Adding a New Smoothing Method
-
-1. Create `newmethod.c` and `newmethod.h` following existing pattern
-2. Define result structure with `y_smooth`, `y_deriv`, `n` fields
-3. Implement `newmethod_smooth()` accepting `GridAnalysis*`
-4. Implement `free_newmethod_result()`
-5. Add to `smooth.c`:
-   - Define `METHOD_NEWMETHOD` constant
-   - Add case to method selection switch
-   - Add call to smoothing function
-   - Add output formatting
-6. Update `Makefile`: add to `SRC` and `HEAD` variables
-7. Update `revision.h` version number
-8. Create unit tests in `tests/test_newmethod.c`
-
-### Modifying Grid Analysis
-
-Grid analysis is centralized and shared. Changes affect all methods:
-
-1. **Location:** `grid_analysis.c`, called once from `smooth.c` after data load
-2. **Results passed to:** All method functions via `GridAnalysis*` parameter
-3. **Update checklist when modifying:**
-   - Update `GridAnalysis` struct in `grid_analysis.h`
-   - Update `analyze_grid()` computation
-   - Update all methods that use the new field
-   - Update tests in `test_grid_analysis.c`
-
-### Memory Management Rules
-
-**Allocation patterns:**
-```c
-// Methods allocate and return structures
-MethodResult* method_smooth(...) {
-    MethodResult *result = malloc(sizeof(MethodResult));
-    result->y_smooth = malloc(n * sizeof(double));
-    result->y_deriv = malloc(n * sizeof(double));
-    return result;
+NewmethodResult* newmethod_smooth(...) {
+    NewmethodResult *r = malloc(sizeof(*r));
+    r->y_smooth = malloc(n * sizeof(double));
+    r->y_deriv  = malloc(n * sizeof(double));
+    return r;
 }
 
-// Caller must free
-void free_method_result(MethodResult *result) {
-    if (result) {
-        free(result->y_smooth);
-        free(result->y_deriv);
-        free(result);
+void free_newmethod_result(NewmethodResult *r) {
+    if (r) {
+        free(r->y_smooth);
+        free(r->y_deriv);
+        free(r);
     }
 }
 ```
 
-**Always verify with:** `make test-valgrind` before committing
+Verify with `make test-valgrind` before committing.
 
-## Version History Context
+### Diagnostic output convention (butterworth, applies to new modules)
 
-**v5.11.14 (current):** Audit B11 — Butterworth diagnostic output convention documented in module header; pole-stability and fc-near-Nyquist warnings reclassified from `stderr` to `stdout #` (preserved with saved data); large-dataset RAM warning kept on `stderr` (operational, not data).
-**v5.11.13:** Audit B15 — `-k N:M` now works in `-T` mode: N selects timestamp logical column (default 1), M selects y column (default 2). Tokenizer-based parser replaces sscanf with split-on-dot workaround.
-**v5.11.12:** Fix audit B10 — uniform `decomment` for stdin and files via new `decomment_stream(FILE*, name)`; strips `#` comments (incl. inline) consistently from both inputs
-**v5.11.7:** Butterworth derivative support (`-d` flag) via 5-point O(h⁴) stencils on filtered output, 106 tests
-**v5.11.6:** Butterworth cosmetic cleanups — drop unused `x` param from estimate_cutoff_frequency, clarify "Effective sample rate" label, adaptive MB/GB memory format
-**v5.11.5:** Rename CUTOFF_FREQ_STABILITY_WARN to _INEFFECTIVE_WARN, clarify warning text and document practical fc range
-**v5.11.4:** Butterworth explicit minimum fc (FC_MIN_PRACTICAL = 1e-4) to reject numerically ill-conditioned inputs
-**v5.11.3:** Butterworth auto cutoff via Morozov's discrepancy principle (noise-aware fc selection)
-**v5.11.2:** Butterworth pole-stability check (warns when poles approach unit circle)
-**v5.11.1:** Fix DST corruption in timestamps (`timegm()` instead of `mktime()`), 103 tests
-**v5.11.0:** True 2nd-order Tikhonov penalty $(D^2)^T W D^2$, pentadiagonal matrix
-**v5.10.1:** Butterworth biquad cascade rewrite, analytical IC
-**v5.7.1:** Added polyfit unit tests, small bug fixes
-**v5.6:** First unity tests added
-**v5.5:** Butterworth filter added, Unix filter support, centralized grid analysis
-**v5.4:** Tikhonov hybrid discretization (auto-switch at CV=0.15), GCV improvements
-**v5.3:** Savitzky-Golay grid uniformity enforcement
-**v5.2:** Grid analysis module with `-g` flag
-**v5.1:** Optional derivative output with `-d` flag
-**v5.0:** Complete modularization
+- `stdout` as `# ...` — info that should be preserved with the saved data
+  (selected parameters, grid CV, numerical-quality warnings).
+- `stderr` as `Warning: ...` — runtime/operational concerns (memory usage)
+  that do not belong in the data file.
+- `stderr` as `ERROR: ...` — hard failures; function returns NULL/non-zero.
 
-## File I/O Expectations
+## Build notes for development
 
-**Input format:**
-- Two-column ASCII: `x y`
-- Comments (lines starting with `#`) are stripped by `decomment.c`
-- Supports stdin (`-` or pipe) for Unix filter usage
-- Data must have strictly monotonic increasing x-values
+- Default compiler: `clang` (override with `CC=gcc`).
+- LAPACK/BLAS required: `-llapack -lblas`.
+- Default library path: `~/lib` (override with `LIBDIR=/path/to/libs`).
+- Production: `-O2`. Debug: `make debug` → `-g -O0`.
+- Standard: C99 or later.
 
-**Output format:**
-- Header comments with method info and diagnostics
-- Without `-d`: `x y_smooth`
-- With `-d`: `x y_smooth y_deriv`
-- Scientific notation: `%.5E` format
+## Hard rules (do not break)
 
-## Dependencies
-
-**Required:**
-- LAPACK (linear algebra)
-- BLAS (basic linear algebra)
-- Standard math library (-lm)
-- C99 or later (uses `complex.h` in butterworth.c)
-
-**Development:**
-- Unity testing framework (included in tests/)
-- Valgrind (optional, for memory checking)
-
-## Notes for Future Development
-
-**Suggested improvements:**
-- Automatic cutoff frequency selection for Butterworth (currently returns fixed 0.1)
-- Integration tests (full pipeline)
-- Performance benchmarks framework
-- Coverage reporting (gcov/lcov)
-
-**Do not:**
-- Break the modular architecture (keep methods independent)
-- Introduce cross-dependencies between method modules
-- Change grid analysis behavior without updating all methods
-- Commit without running `make test` and checking for memory leaks
+- Do not introduce cross-dependencies between method modules.
+- Do not change grid analysis behaviour without updating every method that
+  consumes the affected field.
+- Do not commit without `make test` passing and no new valgrind leaks.
+- Do not silently degrade a method when its mathematical preconditions are
+  violated — reject loudly (Savgol, Butterworth on non-uniform grids).
