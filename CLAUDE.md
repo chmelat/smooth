@@ -7,6 +7,9 @@ do not duplicate it here.
 **Current version:** see `revision.h`. The full version history is the comment
 block at the top of `revision.h`.
 
+**Audit reports, analysis writeups, comparison studies:** `doc/`. Reference
+these from commit messages rather than duplicating their content here.
+
 ## Documentation Guidelines
 
 ### README.md equation format
