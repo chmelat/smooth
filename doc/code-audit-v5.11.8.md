@@ -64,7 +64,7 @@ Počet intervalů je `N = n-1`, střed `h_avg` se počítá ze stejných dat →
 
 Neexistuje jediný zdroj pravdy. Doporučení: centralizovat do `grid_analysis.h`.
 
-### B2. "GCV" v Tikhonov není standardní GCV — `tikhonov.c:437–441`
+### B2. ~~"GCV" v Tikhonov není standardní GCV~~ — `tikhonov.c:437–441` — **FIXED v5.11.15**
 
 ```c
 double trace_ratio = trace_H / n;
@@ -163,7 +163,7 @@ Fix: timestamp parser v `smooth.c` přepsán z `sscanf` na tokenizér s logical-
 
 | Priorita | Položky |
 |----------|---------|
-| **Fix brzy** | ~~A1~~, ~~A2~~, ~~A3~~ (opraveno v5.11.9), B2 (pojmenování GCV), B7 (tichý fallback) |
+| **Fix brzy** | ~~A1~~, ~~A2~~, ~~A3~~ (opraveno v5.11.9), ~~B2~~ (opraveno v5.11.15), B7 (tichý fallback) |
 | **Vyčistit při příležitosti** | B1 (centralizace threshů), ~~B4~~, ~~B8~~ (opraveno v5.11.11), B13 (strtol), B14 (pracovní soubory) |
 | **Kosmetika** | ~~A4~~ (opraveno v5.11.9), ~~B6~~, ~~B12~~ (opraveno v5.11.10), B3 (zdokumentovat prahy), C1 (konzistence komentářů) |
 

@@ -3,7 +3,11 @@
  *
  * Version History
  * ---------------
- * v5.11.14 (current): Audit B11 — Butterworth diagnostic output convention
+ * v5.11.15 (current): Audit B2 — clarify that Tikhonov `-l auto` minimizes
+ *           penalized GCV (standard GCV plus exp penalty when tr(H)/n > 0.7),
+ *           not textbook GCV. Diagnostic output now labels the score `pGCV`
+ *           and points to README "Enhanced GCV". No algorithm change.
+ * v5.11.14: Audit B11 — Butterworth diagnostic output convention
  *           documented in module header; pole-stability and fc-near-Nyquist
  *           warnings reclassified from stderr to stdout '#' (preserved with
  *           saved data); large-dataset RAM warning kept on stderr (operational,
@@ -42,5 +46,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.14"
-#define REVDATE "2026-04-27"
+#define VERSION "5.11.15"
+#define REVDATE "2026-04-28"

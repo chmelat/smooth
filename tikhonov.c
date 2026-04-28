@@ -441,7 +441,7 @@ static double compute_gcv_score_robust(double *x, double *y, int n, double lambd
     }
     
     if (verbose) {
-        printf("# λ=%9.3e: J=%9.3e, RSS=%9.3e, tr(H)=%6.1f (%.2f), GCV=%9.3e\n",
+        printf("# λ=%9.3e: J=%9.3e, RSS=%9.3e, tr(H)=%6.1f (%.2f), pGCV=%9.3e\n",
                lambda, result->total_functional, rss, trace_H, trace_ratio, gcv_score);
     }
     
@@ -538,7 +538,7 @@ double find_optimal_lambda_gcv(double *x, double *y, int n, GridAnalysis *grid_i
         return best_lambda;
     }
 
-    printf("# GCV optimization for n=%d points\n", n);
+    printf("# Penalized-GCV optimization for n=%d points (see README: Enhanced GCV)\n", n);
     if (grid_info) {
         printf("# Grid CV = %.3f, using %s method\n", 
                grid_info->cv,
@@ -565,7 +565,7 @@ double find_optimal_lambda_gcv(double *x, double *y, int n, GridAnalysis *grid_i
         printf("# L-curve suggests λ = %.6e\n", lambda_lcurve);
         
         if (fabs(log10(lambda_lcurve) - log10(best_lambda)) > 0.5) {
-            printf("# GCV and L-curve disagree - using more conservative choice\n");
+            printf("# Penalized-GCV and L-curve disagree - using more conservative choice\n");
             best_lambda = (lambda_lcurve > best_lambda) ? lambda_lcurve : best_lambda;
         }
         
@@ -605,7 +605,7 @@ double find_optimal_lambda_gcv(double *x, double *y, int n, GridAnalysis *grid_i
         }
     }
     
-    printf("# Optimal λ: %.6e (GCV=%.3e)\n", best_lambda, best_gcv);
+    printf("# Optimal λ: %.6e (pGCV=%.3e)\n", best_lambda, best_gcv);
     return best_lambda;
 }
 
