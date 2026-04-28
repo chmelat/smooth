@@ -3,7 +3,12 @@
  *
  * Version History
  * ---------------
- * v5.11.17 (current): Audit C6 — `make test-valgrind` now fails (exit 1) on
+ * v5.11.18 (current): Audit B7 — polyfit no longer silently substitutes raw
+ *           y[i] (and dy=0) when dgelss returns info != 0 for a window.
+ *           A counter tracks per-window SVD failures; if any occurred,
+ *           a stderr Warning summarises count, total, and percentage at
+ *           the end of smoothing. No algorithm change.
+ * v5.11.17: Audit C6 — `make test-valgrind` now fails (exit 1) on
  *           definite/indirect leaks and memory errors. Fixed 4 pre-existing
  *           leaks in butterworth tests (missing `free(grid)` in
  *           higher_cutoff_less_smoothing, invalid_cutoff_frequency,
@@ -54,5 +59,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.17"
+#define VERSION "5.11.18"
 #define REVDATE "2026-04-28"

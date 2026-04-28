@@ -254,6 +254,7 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
     }
     
     /* Process each point in the interior */
+    int fallback_count = 0;
     for (i = offset; i < n - offset; i++) {
         
         /* Build Vandermonde matrix */
@@ -271,6 +272,7 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
         
         if (info != 0) {
             /* SVD failed - fallback to original value */
+            fallback_count++;
             result->y_smooth[i] = y[i];
             result->y_deriv[i] = 0.0;
             continue;
@@ -326,6 +328,16 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
         }
     }
     
+    /* Report SVD fallback frequency (raw y[i], dy=0 substituted at failed windows) */
+    if (fallback_count > 0) {
+        int total_interior = n - 2 * offset;
+        double pct = 100.0 * fallback_count / total_interior;
+        fprintf(stderr,
+                "Warning: %d of %d interior windows (%.1f%%) failed SVD; "
+                "raw y[i] used and derivative set to 0 at those points.\n",
+                fallback_count, total_interior, pct);
+    }
+
     /* Handle case where boundaries were not processed */
     if (!left_boundary_done && offset > 0) {
         fprintf(stderr, "Warning: Left boundary filled with fallback\n");

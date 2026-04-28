@@ -92,9 +92,11 @@ Každá metoda měla vlastní copy-paste block ~50 řádek pro header + output l
 
 Deklarováno v hlavičce, implementováno, nevolá se nikde (grep v `*.c` a `tests/`). Buď používat, nebo smazat.
 
-### B7. Tichý per-point fallback v polyfit — `polyfit.c:272–277`
+### B7. ~~Tichý per-point fallback v polyfit~~ — `polyfit.c:272–277` — **FIXED v5.11.18**
 
 Při selhání `dgelss` (info != 0) se použije `y[i]` (raw hodnota) a derivace 0. Žádný counter, žádný finální warning. Pokud by selhalo třeba 20 % oken, výstup je zubatý a uživatel to nezjistí.
+
+Fix: lokální `fallback_count` v `polyfit_smooth`, na konci hlavní smyčky stderr `Warning:` se souhrnem (počet/celkem/procenta), pokud `fallback_count > 0`. Stejná stderr konvence jako stávající polyfit warningy (cond/rank/boundary).
 
 ### B8. ~~Lineární růst bufferu v I/O~~ — `smooth.c:267, 353` — **FIXED v5.11.11**
 
@@ -163,7 +165,7 @@ Fix: timestamp parser v `smooth.c` přepsán z `sscanf` na tokenizér s logical-
 
 | Priorita | Položky |
 |----------|---------|
-| **Fix brzy** | ~~A1~~, ~~A2~~, ~~A3~~ (opraveno v5.11.9), ~~B2~~ (opraveno v5.11.15), B7 (tichý fallback) |
+| **Fix brzy** | ~~A1~~, ~~A2~~, ~~A3~~ (opraveno v5.11.9), ~~B2~~ (opraveno v5.11.15), ~~B7~~ (opraveno v5.11.18) |
 | **Vyčistit při příležitosti** | B1 (centralizace threshů), ~~B4~~, ~~B8~~ (opraveno v5.11.11), B13 (strtol), B14 (pracovní soubory) |
 | **Kosmetika** | ~~A4~~ (opraveno v5.11.9), ~~B6~~, ~~B12~~ (opraveno v5.11.10), B3 (zdokumentovat prahy), C1 (konzistence komentářů) |
 
