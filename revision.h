@@ -3,7 +3,10 @@
  *
  * Version History
  * ---------------
- * v5.11.15 (current): Audit B2 — clarify that Tikhonov `-l auto` minimizes
+ * v5.11.16 (current): Audit C4 — bump y/y' output precision from 6 to 8
+ *           significant figures (`%12.8lG`), matching the existing x format.
+ *           Diagnostic header values (lambda, J, fc, ...) keep `%.6lG`.
+ * v5.11.15: Audit B2 — clarify that Tikhonov `-l auto` minimizes
  *           penalized GCV (standard GCV plus exp penalty when tr(H)/n > 0.7),
  *           not textbook GCV. Diagnostic output now labels the score `pGCV`
  *           and points to README "Enhanced GCV". No algorithm change.
@@ -46,5 +49,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.15"
+#define VERSION "5.11.16"
 #define REVDATE "2026-04-28"

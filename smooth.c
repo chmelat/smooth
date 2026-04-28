@@ -637,15 +637,15 @@ static void print_result(const double *x,
   for (int i = 0; i < n; i++) {
     if (timestamp_mode) {
       if (show_derivative) {
-        printf("%s %10.6lG %10.6lG\n", ts_ctx->original_timestamps[i], y_smooth[i], y_deriv[i]);
+        printf("%s %12.8lG %12.8lG\n", ts_ctx->original_timestamps[i], y_smooth[i], y_deriv[i]);
       } else {
-        printf("%s %10.6lG\n", ts_ctx->original_timestamps[i], y_smooth[i]);
+        printf("%s %12.8lG\n", ts_ctx->original_timestamps[i], y_smooth[i]);
       }
     } else {
       if (show_derivative) {
-        printf("%12.8lG %10.6lG %10.6lG\n", x[i], y_smooth[i], y_deriv[i]);
+        printf("%12.8lG %12.8lG %12.8lG\n", x[i], y_smooth[i], y_deriv[i]);
       } else {
-        printf("%12.8lG %10.6lG\n", x[i], y_smooth[i]);
+        printf("%12.8lG %12.8lG\n", x[i], y_smooth[i]);
       }
     }
   }
