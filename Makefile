@@ -132,7 +132,9 @@ $(TEST_DIR)/%.o: $(TEST_DIR)/%.c
 # Spustí testy s kontrolou memory leaks
 test-valgrind: $(TEST_RUNNER)
 	@echo "Running tests with Valgrind..."
-	valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes ./$(TEST_RUNNER)
+	valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes \
+	         --error-exitcode=1 --errors-for-leak-kinds=definite,indirect \
+	         ./$(TEST_RUNNER)
 
 # ============================================================================
 

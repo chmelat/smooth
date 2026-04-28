@@ -3,7 +3,12 @@
  *
  * Version History
  * ---------------
- * v5.11.16 (current): Audit C4 — bump y/y' output precision from 6 to 8
+ * v5.11.17 (current): Audit C6 — `make test-valgrind` now fails (exit 1) on
+ *           definite/indirect leaks and memory errors. Fixed 4 pre-existing
+ *           leaks in butterworth tests (missing `free(grid)` in
+ *           higher_cutoff_less_smoothing, invalid_cutoff_frequency,
+ *           too_few_points, null_inputs). Baseline now zero leaks.
+ * v5.11.16: Audit C4 — bump y/y' output precision from 6 to 8
  *           significant figures (`%12.8lG`), matching the existing x format.
  *           Diagnostic header values (lambda, J, fc, ...) keep `%.6lG`.
  * v5.11.15: Audit B2 — clarify that Tikhonov `-l auto` minimizes
@@ -49,5 +54,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.16"
+#define VERSION "5.11.17"
 #define REVDATE "2026-04-28"

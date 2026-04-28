@@ -150,6 +150,7 @@ void test_butterworth_higher_cutoff_less_smoothing(void) {
 
     free_butterworth_result(r_low);
     free_butterworth_result(r_high);
+    free(grid);
 }
 
 void test_butterworth_invalid_cutoff_frequency(void) {
@@ -180,6 +181,8 @@ void test_butterworth_invalid_cutoff_frequency(void) {
     // fc below FC_MIN_PRACTICAL (1e-4) should fail as numerically ill-conditioned
     ButterworthResult *r5 = butterworth_filtfilt(x, y, n, 1e-5, 0, grid);
     TEST_ASSERT_NULL(r5);
+
+    free(grid);
 }
 
 /* ============================================================================
@@ -439,6 +442,8 @@ void test_butterworth_too_few_points(void) {
 
     // Should fail with n < 20
     TEST_ASSERT_NULL(result);
+
+    free(grid);
 }
 
 void test_butterworth_null_inputs(void) {
@@ -460,6 +465,8 @@ void test_butterworth_null_inputs(void) {
 
     // NULL grid
     TEST_ASSERT_NULL(butterworth_filtfilt(x, y, n, 0.2, 0, NULL));
+
+    free(grid);
 }
 
 void test_butterworth_large_dataset(void) {

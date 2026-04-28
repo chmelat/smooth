@@ -114,8 +114,8 @@ Uses the **Unity** framework (vendored in `tests/`).
 
 - 106 tests total: grid_analysis (7), polyfit (21), savgol (16), tikhonov (26),
   butterworth (20), timestamp (16). Source of truth is `tests/test_main.c`.
-- 4 pre-existing valgrind leaks in butterworth tests (`analyze_grid` result not
-  freed in null-input / invalid-input paths). Do not introduce new leaks.
+- Zero leaks. `make test-valgrind` exits 1 on any definite/indirect leak or
+  memory error — keep it that way.
 
 ### Adding a test
 

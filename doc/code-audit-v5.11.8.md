@@ -155,7 +155,7 @@ Fix: timestamp parser v `smooth.c` přepsán z `sscanf` na tokenizér s logical-
 - **C3** `timestamp.c:116, 185`: `x_temp` se alokuje na `n`, kopíruje do nově alokovaného `*x_out` velikosti `valid_count`. Mohlo by se to alokovat rovnou `valid_count`, nebo rovnou vrátit `x_temp`.
 - **C4** ~~`smooth.c:514`: výstupní formát `%10.6lG` dává jen 6 sig. cifer pro y. Přesná data by potřebovala víc (`%.10lG`?).~~ **FIXED v5.11.16** — bumped to `%12.8lG` for y and y' (matches x).
 - **C5** `smooth.c:76`: dead comment-only block.
-- **C6** Makefile `test-valgrind`: užitečné by bylo `--error-exitcode=1` pro CI failure signal.
+- **C6** ~~Makefile `test-valgrind`: užitečné by bylo `--error-exitcode=1` pro CI failure signal.~~ **FIXED v5.11.17** — strict valgrind (`--error-exitcode=1 --errors-for-leak-kinds=definite,indirect`); 4 pre-existing leaks v butterworth testech opraveny.
 
 ---
 
