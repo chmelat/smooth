@@ -102,12 +102,14 @@ Fix: lokální `fallback_count` v `polyfit_smooth`, na konci hlavní smyčky std
 
 Bylo `abuf += BUF` (BUF=512) → amortizovaně O(N²) pro velké soubory. Nahrazeno za `abuf = abuf ? abuf*2 : BUF` (geometrický růst, log₂(N) realloců, amortizovaně O(N)).
 
-### B9. Pevné limity parsování — `smooth.c:206, 308, 320`
+### B9. ~~Pevné limity parsování~~ — `smooth.c:206, 308, 320` — **FIXED v5.11.20**
 
-- `line[4096]` — delší řádek se rozdělí napůl (fragment pak vypadá jako nový řádek, rozbije počet řádků v chybové hlášce)
-- `values[100]` / `col_count < 100` — 101. sloupec se tiše ztratí (bez warningu)
+- ~~`line[4096]` — delší řádek se rozdělí napůl (fragment pak vypadá jako nový řádek, rozbije počet řádků v chybové hlášce)~~
+- ~~`values[100]` / `col_count < 100` — 101. sloupec se tiše ztratí (bez warningu)~~
 
-Pro uživatele s `-k 1:120` dostane jen chybu "line has only 100 columns", ne pravdu.
+~~Pro uživatele s `-k 1:120` dostane jen chybu "line has only 100 columns", ne pravdu.~~
+
+Fix: limity pojmenovány (`MAX_LINE=4096`, `MAX_COLS=100`) a explicitně kontrolovány. Po `fgets` peek na další znak detekuje truncated line (`fgetc`/`ungetc`); po parser loopu / tokenizéru se ověří, jestli za cap-em zbývá další číslo/token. V obou případech hard exit s hláškou „Increase MAX_LINE/MAX_COLS in smooth.c" místo tiché korupce dat. Platí pro normální i `-T` mód.
 
 ### B10. ~~`decomment` volán jen pro soubory, ne pro stdin~~ — **FIXED v5.11.12**
 

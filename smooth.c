@@ -24,6 +24,8 @@
 #include "timestamp.h"
 
 #define BUF 512
+#define MAX_LINE 4096
+#define MAX_COLS 100
 #define N 5
 #ifndef DPMAX
 #define DPMAX 12
@@ -207,7 +209,7 @@ int main(int argc, char **argv)
 
 /* Read data table from file */
   {
-    char line[4096];
+    char line[MAX_LINE];
     int line_number = 0;
 
     /* Allocate arrays based on mode */
@@ -230,6 +232,31 @@ int main(int argc, char **argv)
     while (fgets(line, sizeof(line), fp) != NULL) {
       line_number++;
 
+      /* Detect line overflow: buffer filled without trailing newline AND
+       * stream still has data — line was truncated mid-content (audit B9). */
+      {
+        size_t llen = strlen(line);
+        if (llen == sizeof(line) - 1 && line[llen-1] != '\n') {
+          int c = fgetc(fp);
+          if (c != EOF) {
+            ungetc(c, fp);
+            fprintf(stderr,
+                    "Error: Line %d exceeds %zu-byte read buffer (MAX_LINE). "
+                    "Increase MAX_LINE in smooth.c or shorten the input line.\n",
+                    line_number, sizeof(line));
+            if (timestamp_mode) {
+              for (int i = 0; i < n; i++) free(timestamp_strings[i]);
+              free(timestamp_strings);
+            } else {
+              free(x);
+            }
+            free(y);
+            fclose(fp);
+            exit(EXIT_FAILURE);
+          }
+        }
+      }
+
       /* Parse based on mode */
       if (timestamp_mode) {
         /* Timestamp mode with logical-column model: timestamp lives at logical
@@ -239,17 +266,34 @@ int main(int argc, char **argv)
         char timestamp_str[100];
         double y_value;
 
-        /* Tokenize line on whitespace (destructive on local 4096B buffer) */
-        char *tokens[100];
+        /* Tokenize line on whitespace (destructive on local MAX_LINE buffer) */
+        char *tokens[MAX_COLS];
         int ntok = 0;
         char *p = line;
-        while (*p && ntok < 100) {
+        while (*p && ntok < MAX_COLS) {
           while (*p == ' ' || *p == '\t' || *p == '\n') *p++ = '\0';
           if (*p == '\0') break;
           tokens[ntok++] = p;
           while (*p && *p != ' ' && *p != '\t' && *p != '\n') p++;
         }
         if (ntok == 0) continue;  /* blank or whitespace-only line */
+
+        /* Detect token overflow: hit cap with more non-whitespace data on line (audit B9) */
+        if (ntok == MAX_COLS) {
+          char *check = p;
+          while (*check == ' ' || *check == '\t' || *check == '\n') check++;
+          if (*check != '\0') {
+            fprintf(stderr,
+                    "Error: Line %d has more than %d tokens (MAX_COLS). "
+                    "Increase MAX_COLS in smooth.c.\n",
+                    line_number, MAX_COLS);
+            for (int i = 0; i < n; i++) free(timestamp_strings[i]);
+            free(timestamp_strings);
+            free(y);
+            fclose(fp);
+            exit(EXIT_FAILURE);
+          }
+        }
 
         /* Validate timestamp position (x_column is 1-indexed logical column) */
         int ts_tok_start = x_column - 1;
@@ -340,7 +384,7 @@ int main(int argc, char **argv)
 
       } else {
         /* Normal mode: parse numeric columns */
-        double values[100];  /* Support up to 100 columns */
+        double values[MAX_COLS];
         int col_count = 0;
         char *ptr = line;
         char *endptr;
@@ -352,7 +396,7 @@ int main(int argc, char **argv)
         if (*ptr == '\n' || *ptr == '\0') continue;
 
         /* Parse all numeric values on the line */
-        while (*ptr != '\n' && *ptr != '\0' && col_count < 100) {
+        while (*ptr != '\n' && *ptr != '\0' && col_count < MAX_COLS) {
           errno = 0;
           values[col_count] = strtod(ptr, &endptr);
 
@@ -366,6 +410,23 @@ int main(int argc, char **argv)
 
           /* Skip whitespace between columns */
           while (*ptr == ' ' || *ptr == '\t') ptr++;
+        }
+
+        /* Detect column overflow: hit cap with more numeric data still on line (audit B9) */
+        if (col_count == MAX_COLS && *ptr != '\n' && *ptr != '\0') {
+          char *check;
+          errno = 0;
+          strtod(ptr, &check);
+          if (check != ptr && errno == 0) {
+            fprintf(stderr,
+                    "Error: Line %d has more than %d columns (MAX_COLS). "
+                    "Increase MAX_COLS in smooth.c.\n",
+                    line_number, MAX_COLS);
+            free(x);
+            free(y);
+            fclose(fp);
+            exit(EXIT_FAILURE);
+          }
         }
 
         /* Check if we have enough columns */

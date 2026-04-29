@@ -3,7 +3,13 @@
  *
  * Version History
  * ---------------
- * v5.11.19 (current): Audit C2 — polyfit condition/rank diagnostics now
+ * v5.11.20 (current): Audit B9 — fixed parser limits (MAX_LINE=4096,
+ *           MAX_COLS=100) now enforced explicitly. Lines exceeding the line
+ *           buffer or rows with more than MAX_COLS columns/tokens cause a
+ *           hard error with a clear message instead of silently splitting
+ *           lines (corrupting line numbering) or truncating columns
+ *           (yielding misleading "only N columns" errors).
+ * v5.11.19: Audit C2 — polyfit condition/rank diagnostics now
  *           aggregate across all interior windows instead of reporting only
  *           the first window. Tracks the worst observed condition number and
  *           the count of rank-deficient windows; emits one Note per category
@@ -64,5 +70,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.19"
+#define VERSION "5.11.20"
 #define REVDATE "2026-04-29"
