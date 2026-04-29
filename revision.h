@@ -3,7 +3,12 @@
  *
  * Version History
  * ---------------
- * v5.11.18 (current): Audit B7 — polyfit no longer silently substitutes raw
+ * v5.11.19 (current): Audit C2 — polyfit condition/rank diagnostics now
+ *           aggregate across all interior windows instead of reporting only
+ *           the first window. Tracks the worst observed condition number and
+ *           the count of rank-deficient windows; emits one Note per category
+ *           at the end of smoothing. No algorithm change.
+ * v5.11.18: Audit B7 — polyfit no longer silently substitutes raw
  *           y[i] (and dy=0) when dgelss returns info != 0 for a window.
  *           A counter tracks per-window SVD failures; if any occurred,
  *           a stderr Warning summarises count, total, and percentage at
@@ -59,5 +64,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.18"
-#define REVDATE "2026-04-28"
+#define VERSION "5.11.19"
+#define REVDATE "2026-04-29"

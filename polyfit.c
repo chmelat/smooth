@@ -166,8 +166,6 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
     
     int left_boundary_done = 0;
     int right_boundary_done = 0;
-    int condition_warning_printed = 0;
-    int rank_warning_printed = 0;
     
     /* Input validation */
     if (x == NULL || y == NULL || n < 1) {
@@ -255,6 +253,8 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
     
     /* Process each point in the interior */
     int fallback_count = 0;
+    double worst_cond = 0.0;
+    int rank_deficient_count = 0;
     for (i = offset; i < n - offset; i++) {
         
         /* Build Vandermonde matrix */
@@ -278,23 +278,13 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
             continue;
         }
         
-        /* Check condition number and rank on first window */
-        if (i == offset) {
-            /* Condition number = s_max / s_min (for non-zero singular values) */
+        /* Track conditioning across all windows (audit C2) */
+        {
             double s_max = sing_vals[0];
             double s_min = sing_vals[effective_rank - 1];
             double cond = (s_min > 0) ? (s_max / s_min) : 1e16;
-            
-            if (cond > CONDITION_WARNING_THRESHOLD && !condition_warning_printed) {
-                fprintf(stderr, "Note: Vandermonde matrix condition number = %.2e\n", cond);
-                condition_warning_printed = 1;
-            }
-            
-            if (effective_rank < matrix_cols && !rank_warning_printed) {
-                fprintf(stderr, "Note: Matrix is rank-deficient (rank=%d of %d). "
-                        "SVD regularization active.\n", effective_rank, matrix_cols);
-                rank_warning_printed = 1;
-            }
+            if (cond > worst_cond) worst_cond = cond;
+            if (effective_rank < matrix_cols) rank_deficient_count++;
         }
         
         /* Store smoothed value and derivative at center point
@@ -336,6 +326,19 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
                 "Warning: %d of %d interior windows (%.1f%%) failed SVD; "
                 "raw y[i] used and derivative set to 0 at those points.\n",
                 fallback_count, total_interior, pct);
+    }
+
+    /* Report worst conditioning and rank-deficiency frequency across all windows */
+    if (worst_cond > CONDITION_WARNING_THRESHOLD) {
+        fprintf(stderr, "Note: Worst Vandermonde condition number = %.2e\n", worst_cond);
+    }
+    if (rank_deficient_count > 0) {
+        int total_interior = n - 2 * offset;
+        double pct = 100.0 * rank_deficient_count / total_interior;
+        fprintf(stderr,
+                "Note: %d of %d interior windows (%.1f%%) rank-deficient. "
+                "SVD regularization active.\n",
+                rank_deficient_count, total_interior, pct);
     }
 
     /* Handle case where boundaries were not processed */
