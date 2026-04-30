@@ -86,7 +86,7 @@ gcc -o smooth smooth.c polyfit.c savgol.c tikhonov.c butterworth.c \
 | `-n N` | Smoothing window size (polyfit, savgol) |
 | `-p P` | Polynomial degree (polyfit, savgol, max 12) |
 | `-l λ` | Regularization parameter (tikhonov), use `-l auto` for GCV |
-| `-f fc` | Normalized cutoff frequency (butterworth, 0 < fc < 1.0), use `-f auto` for default |
+| `-f fc` | Normalized cutoff frequency (butterworth, 0 < fc < 1.0), use `-f auto` for Morozov's discrepancy principle |
 | `-T` | Timestamp mode: a column holds an RFC3339 timestamp (default position 1, y at position 2; both adjustable via `-k`) |
 | `-k M` or `-k N:M` | Column selection: `M` sets the y-data column (x defaults to column 1); `N:M` sets x at column N and y at column M. Default: `1:2`. Columns are 1-indexed; N and M must differ. In `-T` mode, N is the **timestamp** column (still column 1 by default), and the timestamp counts as a single logical column even when its space-separated form spans two whitespace tokens. |
 | `-d` | Include first derivative in output |
@@ -279,7 +279,7 @@ Good balance: both terms contribute 30-70% of total. Data term > 95% means under
 
 **Quick start:** Start with fc = 0.15. Too noisy after smoothing? Decrease fc. Lost important details? Increase fc.
 
-**Automatic selection:** Use `-f auto` (currently returns default fc = 0.2). Fully automatic selection not yet implemented — manual tuning recommended.
+**Automatic selection:** Use `-f auto` to select fc via **Morozov's discrepancy principle**. The program estimates noise $\hat{\sigma}$ from the MAD of second differences, then scans candidate cutoffs $\{0.02, 0.05, 0.1, 0.2, 0.35, 0.5\}$ in increasing order and picks the smallest fc whose residual std does not exceed a tolerance multiple of $\hat{\sigma}$ (i.e. the most aggressive smoothing that still leaves only noise-sized residuals). If no candidate satisfies the criterion (very high SNR or pathological data), falls back to fc = 0.2 with a `# Auto cutoff: ... fallback ...` notice. For unusual data, manual tuning is still recommended.
 
 **Physical interpretation:**
 
@@ -338,7 +338,7 @@ cat data.txt | ./smooth -m 0 -n 7 -p 2
 # Butterworth with manual cutoff frequency
 ./smooth -m 3 -f 0.15 data.txt
 
-# Butterworth with automatic cutoff (currently returns 0.2)
+# Butterworth with automatic cutoff (Morozov's discrepancy principle)
 ./smooth -m 3 -f auto data.txt
 
 # Grid analysis only (exits after analysis)
@@ -1040,6 +1040,18 @@ $$\theta_k = \frac{\pi k}{n}, \qquad \mu_k = \left(\frac{4 \sin^2(\theta_k / 2)}
 The null space of $D^2$ is 2-dimensional (constants and linear functions), so trace starts at 2.0 (these two modes are unpenalized: $1/(1+0) = 1$ each).
 
 **Note:** This approximation is exact for uniform grids but approximate for non-uniform grids. For highly non-uniform grids (CV > 0.2), the program issues a warning.
+
+**Size-dependent algorithm tiers:**
+
+The trace computation and lambda search switch between two regimes based on dataset size:
+
+| Size | Trace estimator | Lambda search |
+|------|-----------------|---------------|
+| $n \le 5000$ | Eigenvalue sum above (exact for uniform grids) | 13-point log scan over $[10^{-8}, 10^0]$ + 8-point refinement around the minimum |
+| $5000 < n \le 20000$ | Fast approximation $\text{tr}(H) \approx n / (1 + \sqrt{\lambda/h^4})$ | 13-point log scan only (no refinement) |
+| $n > 20000$ | Fast approximation (same as above) | 12-point conservative scan + L-curve backup (see below) |
+
+The fast approximation for large $n$ avoids the $O(n)$ eigenvalue sum at every $\lambda$ candidate, trading accuracy for speed. The refinement step at $n \le 5000$ adds 8 extra $\lambda$ evaluations clustered around the coarse-scan minimum (factors $0.3 \ldots 1.7$). Datasets that straddle a threshold may therefore receive slightly different optimal $\lambda$ from otherwise-identical inputs.
 
 **Enhanced GCV:**
 

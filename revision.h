@@ -3,7 +3,20 @@
  *
  * Version History
  * ---------------
- * v5.11.21 (current): Strict whitespace tokenization in normal-mode parser.
+ * v5.11.23 (current): Audit v5.11.22 A1 + C10. (A1) print_grid_analysis
+ *           no longer hides reliability_warning behind verbose>=1; the
+ *           warning text is now emitted at every verbosity level so that
+ *           callers gating on `if (reliability_warning)` actually see the
+ *           message (previously smooth.c printed "# Grid analysis warnings:"
+ *           with no warning body for non-uniform grids). (C10) README/code
+ *           drift around `-f auto`: README updated to document Morozov's
+ *           discrepancy principle (implemented since v5.11.3) instead of
+ *           the obsolete "currently returns 0.2" placeholder text.
+ * v5.11.22: Audit B3 — document Tikhonov size-dependent algorithm
+ *           tiers (n<=5000, 5000<n<=20000, n>20000) in README. Covers trace
+ *           estimator switch (eigenvalue sum vs n/(1+sqrt(scale)) approximation)
+ *           and refinement step. No algorithm change.
+ * v5.11.21: Strict whitespace tokenization in normal-mode parser.
  *           Each whitespace-separated token is one logical column (so an
  *           ISO 8601 timestamp `2026-04-29T11:40:00` counts as one column,
  *           not three). Tokens that strtod cannot fully consume, or that
@@ -78,5 +91,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.21"
+#define VERSION "5.11.23"
 #define REVDATE "2026-04-30"

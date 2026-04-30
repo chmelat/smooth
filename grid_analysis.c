@@ -228,16 +228,18 @@ void print_grid_analysis(GridAnalysis *analysis, int verbose, const char *prefix
     printf("%s  Grid type: %s\n", prefix, analysis->is_uniform ? "UNIFORM" : "NON-UNIFORM");
     printf("%s  Uniformity score: %.2f\n", prefix, analysis->uniformity_score);
     
+    /* Reliability warning text is shown at every verbosity level — callers that
+     * gate on reliability_warning rely on the message being visible (e.g.
+     * smooth.c calls with verbose=0 inside an `if (reliability_warning)`). */
+    if (analysis->reliability_warning) {
+        printf("%sWARNING: %s\n", prefix, analysis->warning_msg);
+    }
+
     if (verbose >= 1) {
         /* Detailed report */
         printf("%s  Standard deviation: %.6e\n", prefix, analysis->h_std);
         printf("%s  Detected clusters: %d\n", prefix, analysis->n_clusters);
         printf("%s  Recommendation: %s\n", prefix, get_grid_recommendation(analysis));
-        
-        /* Warnings */
-        if (analysis->reliability_warning) {
-            printf("%sWARNING: %s\n", prefix, analysis->warning_msg);
-        }
     }
     
     if (verbose >= 2 && analysis->spacings != NULL) {

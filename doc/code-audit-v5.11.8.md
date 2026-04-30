@@ -64,6 +64,8 @@ Počet intervalů je `N = n-1`, střed `h_avg` se počítá ze stejných dat →
 
 Neexistuje jediný zdroj pravdy. Doporučení: centralizovat do `grid_analysis.h`.
 
+**Status (2026-04-30): odloženo.** Hodnoty se v kódu fakticky shodují (0.01 ve třech místech, 0.2 ve dvou) — drift se zatím nestal. Sémantika prahů je navíc smíšená: některé jsou skutečně sdílené (definice "prakticky uniformní mřížky"), jiné jsou metoda-specifická matematická vlastnost (savgol reject 0.05, butterworth reject 0.15) a centralizovat je dohromady by porušilo modularitu (`CLAUDE.md`: "policy decisions belong in the method"). Cílový fix: vytáhnout do `grid_analysis.h` jen sdílené konstanty (`GRID_CV_UNIFORM = 0.01`, `GRID_CV_NOTICEABLE = 0.2`), method-specific prahy nechat in-module s konzistentním pojmenováním `<METHOD>_CV_<ROLE>`. Bundlovat se zásahem do CV logiky, až přijde reálný důvod (nová metoda, změna `analyze_grid()`); sólo PR má overhead větší než přínos.
+
 ### B2. ~~"GCV" v Tikhonov není standardní GCV~~ — `tikhonov.c:437–441` — **FIXED v5.11.15**
 
 ```c
@@ -76,13 +78,13 @@ if (trace_ratio > 0.7) {
 
 Ad-hoc penalizace. Funkce se jmenuje `compute_gcv_score_robust` a uživatelský text hlásí "GCV optimization", ale implementuje modifikovaný GCV. Buď přejmenovat ("penalized-GCV"), nebo zdokumentovat výslovně v README.
 
-### B3. Skryté velikostní prahy v Tikhonov — `tikhonov.c:405, 551, 591`
+### B3. ~~Skryté velikostní prahy v Tikhonov~~ — `tikhonov.c:405, 551, 591` — **FIXED v5.11.22**
 
 - `n ≤ 5000` → analytický trace(H); jinak aproximace
 - `n > 20000` → přidá se L-curve; jinak jen GCV
 - `n ≤ 5000` → přidá se refinement krok
 
-Žádný z prahů není v dokumentaci. Uživatel dostane nespojité chování při překročení `n=5000` nebo `n=20000` se stejnými daty.
+Vyřešeno doplněním tabulky "Size-dependent algorithm tiers" do README sekce *Trace estimation using eigenvalues* (`README.md:1044–1054`). Pokrývá všechna tři pásma s popisem trace estimatoru a lambda search strategy. Chování kódu beze změny — pouze dokumentace.
 
 ### B4. ~~Kód výstupu duplikován 4×~~ — `smooth.c:464–672` — **FIXED v5.11.11**
 
@@ -169,6 +171,6 @@ Fix: timestamp parser v `smooth.c` přepsán z `sscanf` na tokenizér s logical-
 |----------|---------|
 | **Fix brzy** | ~~A1~~, ~~A2~~, ~~A3~~ (opraveno v5.11.9), ~~B2~~ (opraveno v5.11.15), ~~B7~~ (opraveno v5.11.18) |
 | **Vyčistit při příležitosti** | B1 (centralizace threshů), ~~B4~~, ~~B8~~ (opraveno v5.11.11), B13 (strtol), B14 (pracovní soubory) |
-| **Kosmetika** | ~~A4~~ (opraveno v5.11.9), ~~B6~~, ~~B12~~ (opraveno v5.11.10), B3 (zdokumentovat prahy), C1 (konzistence komentářů) |
+| **Kosmetika** | ~~A4~~ (opraveno v5.11.9), ~~B6~~, ~~B12~~ (opraveno v5.11.10), ~~B3~~ (opraveno v5.11.22), C1 (konzistence komentářů) |
 
 Žádný z nálezů není kritický pro správnost vědeckých výsledků — hlavní matematické cesty (Tikhonov pentadiagonální matice, Butterworth biquad cascade, SVD polyfit, Savgol pre-computed coefs) jsou solidní. Většina problémů jsou CLI/UX/robustnost a design drift, který se dá úspornou cestou postupně vyčistit.
