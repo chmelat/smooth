@@ -3,7 +3,15 @@
  *
  * Version History
  * ---------------
- * v5.11.20 (current): Audit B9 — fixed parser limits (MAX_LINE=4096,
+ * v5.11.21 (current): Strict whitespace tokenization in normal-mode parser.
+ *           Each whitespace-separated token is one logical column (so an
+ *           ISO 8601 timestamp `2026-04-29T11:40:00` counts as one column,
+ *           not three). Tokens that strtod cannot fully consume, or that
+ *           parse to NaN/Inf, are treated as placeholders; rows where the
+ *           selected x or y column lands on a placeholder are skipped, with
+ *           a `# Skipped N row(s) ...` summary on stdout. Same NaN/Inf
+ *           rejection applied to the y-token in timestamp mode.
+ * v5.11.20: Audit B9 — fixed parser limits (MAX_LINE=4096,
  *           MAX_COLS=100) now enforced explicitly. Lines exceeding the line
  *           buffer or rows with more than MAX_COLS columns/tokens cause a
  *           hard error with a clear message instead of silently splitting
@@ -70,5 +78,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.20"
-#define REVDATE "2026-04-29"
+#define VERSION "5.11.21"
+#define REVDATE "2026-04-30"

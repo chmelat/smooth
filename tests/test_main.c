@@ -151,6 +151,14 @@ void test_butterworth_large_dataset(void);
 void test_butterworth_free_null_safe(void);
 void test_butterworth_no_memory_leaks(void);
 
+// Testy pro parser (smooth.c via popen)
+void test_parser_iso_t_timestamp_one_column(void);
+void test_parser_iso_space_timestamp_two_columns(void);
+void test_parser_partial_numeric_token_is_placeholder(void);
+void test_parser_nan_in_y_skips_row(void);
+void test_parser_inf_in_x_skips_row(void);
+void test_parser_label_outside_xy_is_harmless(void);
+
 // Testy pro timestamp.c
 void test_parse_timestamp_space_separator(void);
 void test_parse_timestamp_T_separator(void);
@@ -403,6 +411,18 @@ int main(void) {
     printf("\n--- Edge cases and robustness tests ---\n");
     RUN_TEST(test_convert_timestamps_null_inputs);
     RUN_TEST(test_free_timestamp_context_null);
+
+    printf("\n");
+    printf("========================================\n");
+    printf("Running tests for input parser (end-to-end via ./smooth)\n");
+    printf("========================================\n\n");
+
+    RUN_TEST(test_parser_iso_t_timestamp_one_column);
+    RUN_TEST(test_parser_iso_space_timestamp_two_columns);
+    RUN_TEST(test_parser_partial_numeric_token_is_placeholder);
+    RUN_TEST(test_parser_nan_in_y_skips_row);
+    RUN_TEST(test_parser_inf_in_x_skips_row);
+    RUN_TEST(test_parser_label_outside_xy_is_harmless);
 
     /* UNITY_END() ukončí Unity framework a vrátí výsledek
      * Návratová hodnota:

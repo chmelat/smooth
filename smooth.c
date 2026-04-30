@@ -211,6 +211,7 @@ int main(int argc, char **argv)
   {
     char line[MAX_LINE];
     int line_number = 0;
+    int skipped_nonnumeric = 0;  /* rows skipped because x or y column was non-numeric or NaN/Inf */
 
     /* Allocate arrays based on mode */
     if (timestamp_mode) {
@@ -339,8 +340,10 @@ int main(int argc, char **argv)
         char *endptr;
         errno = 0;
         y_value = strtod(tokens[y_token_idx], &endptr);
-        if (tokens[y_token_idx] == endptr || errno != 0) {
-          continue;  /* not a number, skip line silently */
+        char *y_tok_end = tokens[y_token_idx] + strlen(tokens[y_token_idx]);
+        if (endptr != y_tok_end || errno != 0 || isnan(y_value) || isinf(y_value)) {
+          skipped_nonnumeric++;
+          continue;  /* token is not a fully numeric finite value */
         }
 
         /* Reallocate arrays if needed */
@@ -383,55 +386,59 @@ int main(int argc, char **argv)
         n++;
 
       } else {
-        /* Normal mode: parse numeric columns */
+        /* Normal mode: parse whitespace-separated tokens.
+         * Each token = one logical column. A token that strtod cannot fully
+         * consume (e.g. ISO timestamp 2026-04-29T11:40:00, label "abc",
+         * partially numeric "1.5e2x") is a placeholder: the column position
+         * is preserved, but no numeric value is available. Rows where the
+         * selected x_column or y_column lands on a placeholder (or NaN/Inf)
+         * are skipped with a per-file summary on stdout. */
         double values[MAX_COLS];
+        int placeholder[MAX_COLS] = {0};
         int col_count = 0;
         char *ptr = line;
-        char *endptr;
 
         /* Skip leading whitespace */
         while (*ptr == ' ' || *ptr == '\t') ptr++;
 
-        /* Skip empty lines */
-        if (*ptr == '\n' || *ptr == '\0') continue;
+        /* Skip empty lines (also bare CR/LF) */
+        if (*ptr == '\n' || *ptr == '\r' || *ptr == '\0') continue;
 
-        /* Parse all numeric values on the line */
-        while (*ptr != '\n' && *ptr != '\0' && col_count < MAX_COLS) {
+        /* Tokenize on whitespace; each token is one logical column. */
+        while (*ptr && *ptr != '\n' && *ptr != '\r' && col_count < MAX_COLS) {
+          char *tok = ptr;
+          while (*ptr && *ptr != ' ' && *ptr != '\t' && *ptr != '\n' && *ptr != '\r')
+            ptr++;
+          char *tok_end = ptr;
+
+          char *endptr;
           errno = 0;
-          values[col_count] = strtod(ptr, &endptr);
-
-          /* Check if parsing was successful */
-          if (ptr == endptr || errno != 0) {
-            break;  /* Not a number, stop parsing this line */
+          double v = strtod(tok, &endptr);
+          if (endptr == tok_end && errno == 0 && !isnan(v) && !isinf(v)) {
+            values[col_count] = v;
+          } else {
+            values[col_count] = 0.0;
+            placeholder[col_count] = 1;
           }
-
           col_count++;
-          ptr = endptr;
 
-          /* Skip whitespace between columns */
           while (*ptr == ' ' || *ptr == '\t') ptr++;
         }
 
-        /* Detect column overflow: hit cap with more numeric data still on line (audit B9) */
-        if (col_count == MAX_COLS && *ptr != '\n' && *ptr != '\0') {
-          char *check;
-          errno = 0;
-          strtod(ptr, &check);
-          if (check != ptr && errno == 0) {
-            fprintf(stderr,
-                    "Error: Line %d has more than %d columns (MAX_COLS). "
-                    "Increase MAX_COLS in smooth.c.\n",
-                    line_number, MAX_COLS);
-            free(x);
-            free(y);
-            fclose(fp);
-            exit(EXIT_FAILURE);
-          }
+        /* Detect column overflow: hit cap with more tokens still on line (audit B9) */
+        if (col_count == MAX_COLS && *ptr != '\n' && *ptr != '\r' && *ptr != '\0') {
+          fprintf(stderr,
+                  "Error: Line %d has more than %d columns (MAX_COLS). "
+                  "Increase MAX_COLS in smooth.c.\n",
+                  line_number, MAX_COLS);
+          free(x);
+          free(y);
+          fclose(fp);
+          exit(EXIT_FAILURE);
         }
 
         /* Check if we have enough columns */
         if (col_count < 1) {
-          /* No valid numbers found, skip this line */
           continue;
         }
 
@@ -443,6 +450,12 @@ int main(int argc, char **argv)
           free(y);
           fclose(fp);
           exit(EXIT_FAILURE);
+        }
+
+        /* Reject row if x or y token is a placeholder (non-numeric or NaN/Inf) */
+        if (placeholder[x_column - 1] || placeholder[y_column - 1]) {
+          skipped_nonnumeric++;
+          continue;
         }
 
         /* Reallocate arrays if needed */
@@ -480,6 +493,17 @@ int main(int argc, char **argv)
     }  /* end while (fgets) */
 
     fclose(fp);
+
+    /* Summarize rows skipped due to non-numeric or NaN/Inf in selected columns */
+    if (skipped_nonnumeric > 0) {
+      if (timestamp_mode) {
+        printf("# Skipped %d data row(s) with non-numeric or NaN/Inf value in column %d (y)\n",
+               skipped_nonnumeric, y_column);
+      } else {
+        printf("# Skipped %d data row(s) with non-numeric or NaN/Inf value in column %d (x) or %d (y)\n",
+               skipped_nonnumeric, x_column, y_column);
+      }
+    }
 
     /* Convert timestamps to relative time if in timestamp mode */
     if (timestamp_mode) {
