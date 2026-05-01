@@ -74,7 +74,7 @@ int savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, double
     
     /* Input validation - initialize output array first for safety */
     if (c == NULL) {
-        fprintf(stderr, "Error: NULL output array in savgol_coefficients\n");
+        fprintf(stderr, "ERROR: NULL output array in savgol_coefficients\n");
         return -1;
     }
     
@@ -83,7 +83,7 @@ int savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, double
 
     /* Validate basic parameter constraints */
     if (poly_degree < 0 || deriv_order < 0) {
-        fprintf(stderr, "Error: Invalid parameters for savgol_coefficients\n");
+        fprintf(stderr, "ERROR: Invalid parameters for savgol_coefficients\n");
         return -1;
     }
 
@@ -96,13 +96,13 @@ int savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, double
     
     /* Dodatečná kontrola proti přetečení statického pole */
     if (poly_degree > DPMAX) {
-        fprintf(stderr, "Error: Polynomial degree %d exceeds compiled limit DPMAX (%d)\n", 
+        fprintf(stderr, "ERROR: Polynomial degree %d exceeds compiled limit DPMAX (%d)\n", 
                 poly_degree, DPMAX);
         return -1;
     }
     
     if (nl + nr < poly_degree) {
-        fprintf(stderr, "Error: Not enough points for polynomial degree\n");
+        fprintf(stderr, "ERROR: Not enough points for polynomial degree\n");
         return -1;
     }
     
@@ -133,7 +133,7 @@ int savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, double
     dposv_(&uplo, &matrix_size, &nrhs, A, &matrix_size, B, &matrix_size, &info);
     
     if (info != 0) {
-        fprintf(stderr, "Error: LAPACK dposv failed with info = %d in savgol_coefficients\n", info);
+        fprintf(stderr, "ERROR: LAPACK dposv failed with info = %d in savgol_coefficients\n", info);
         /* Output array already zeroed at start */
         return -1;
     }
@@ -167,17 +167,17 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
     
     /* Input validation */
     if (x == NULL || y == NULL || n < 1) {
-        fprintf(stderr, "Error: Invalid input parameters to savgol_smooth\n");
+        fprintf(stderr, "ERROR: Invalid input parameters to savgol_smooth\n");
         return NULL;
     }
     
     if (window_size < 3 || !(window_size % 2)) {
-        fprintf(stderr, "Error: Window size must be odd and >= 3\n");
+        fprintf(stderr, "ERROR: Window size must be odd and >= 3\n");
         return NULL;
     }
     
     if (poly_degree < 0 || poly_degree > DPMAX) {
-        fprintf(stderr, "Error: Polynomial degree must be between 0 and %d\n", DPMAX);
+        fprintf(stderr, "ERROR: Polynomial degree must be between 0 and %d\n", DPMAX);
         return NULL;
     }
    
@@ -186,26 +186,26 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
     }
 
     if (poly_degree >= window_size) {
-        fprintf(stderr, "Error: Polynomial degree must be less than window size\n");
+        fprintf(stderr, "ERROR: Polynomial degree must be less than window size\n");
         return NULL;
     }
     
     if (n < window_size) {
-        fprintf(stderr, "Error: Not enough data points (n=%d < window_size=%d)\n", n, window_size);
+        fprintf(stderr, "ERROR: Not enough data points (n=%d < window_size=%d)\n", n, window_size);
         return NULL;
     }
     
     /* Check that x is monotonic */
     for (i = 1; i < n; i++) {
         if (x[i] <= x[i-1]) {
-            fprintf(stderr, "Error: x array must be strictly increasing\n");
+            fprintf(stderr, "ERROR: x array must be strictly increasing\n");
             return NULL;
         }
     }
 
     /* Check grid_info is available */
     if (grid_info == NULL) {
-        fprintf(stderr, "Error: Grid info not available\n");
+        fprintf(stderr, "ERROR: Grid info not available\n");
         return NULL;
     }
     
@@ -249,7 +249,7 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
     /* Allocate result structure */
     result = (SavgolResult *)malloc(sizeof(SavgolResult));
     if (result == NULL) {
-        fprintf(stderr, "Error: Memory allocation failed for SavgolResult\n");
+        fprintf(stderr, "ERROR: Memory allocation failed for SavgolResult\n");
         return NULL;
     }
     
@@ -260,7 +260,7 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
     result->y_deriv = (double *)calloc(n, sizeof(double));
     
     if (result->y_smooth == NULL || result->y_deriv == NULL) {
-        fprintf(stderr, "Error: Memory allocation failed for result arrays\n");
+        fprintf(stderr, "ERROR: Memory allocation failed for result arrays\n");
         free_savgol_result(result);
         return NULL;
     }
@@ -273,7 +273,7 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
     c_deriv = (double *)calloc(window_size, sizeof(double));
     
     if (c_func == NULL || c_deriv == NULL) {
-        fprintf(stderr, "Error: Memory allocation failed for coefficient arrays\n");
+        fprintf(stderr, "ERROR: Memory allocation failed for coefficient arrays\n");
         free(c_func);
         free(c_deriv);
         free_savgol_result(result);
@@ -282,7 +282,7 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
     
     /* Compute coefficients ONCE for symmetric window (central points) */
     if (savgol_coefficients(offset, offset, poly_degree, 0, c_func) != 0) {
-        fprintf(stderr, "Error: Failed to compute function coefficients\n");
+        fprintf(stderr, "ERROR: Failed to compute function coefficients\n");
         free(c_func);
         free(c_deriv);
         free_savgol_result(result);
@@ -290,7 +290,7 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
     }
     
     if (savgol_coefficients(offset, offset, poly_degree, 1, c_deriv) != 0) {
-        fprintf(stderr, "Error: Failed to compute derivative coefficients\n");
+        fprintf(stderr, "ERROR: Failed to compute derivative coefficients\n");
         free(c_func);
         free(c_deriv);
         free_savgol_result(result);

@@ -42,7 +42,7 @@ GridAnalysis* analyze_grid(const double *x, int n, int store_spacings)
     /* Allocate analysis structure */
     analysis = (GridAnalysis *)calloc(1, sizeof(GridAnalysis));
     if (analysis == NULL) {
-        fprintf(stderr, "Error: Memory allocation failed in analyze_grid\n");
+        fprintf(stderr, "ERROR: Memory allocation failed in analyze_grid\n");
         return NULL;
     }
     
@@ -61,7 +61,7 @@ GridAnalysis* analyze_grid(const double *x, int n, int store_spacings)
     if (store_spacings) {
         analysis->spacings = (double *)malloc((n-1) * sizeof(double));
         if (analysis->spacings == NULL) {
-            fprintf(stderr, "Error: Memory allocation failed for spacings array\n");
+            fprintf(stderr, "ERROR: Memory allocation failed for spacings array\n");
             free(analysis);
             return NULL;
         }
@@ -85,7 +85,7 @@ GridAnalysis* analyze_grid(const double *x, int n, int store_spacings)
 
         /* Check for non-monotonic data */
         if (h_curr <= 0) {
-            fprintf(stderr, "Error: Non-monotonic x data at index %d (dx=%g)\n", i, h_curr);
+            fprintf(stderr, "ERROR: Non-monotonic x data at index %d (dx=%g)\n", i, h_curr);
             free_grid_analysis(analysis);
             return NULL;
         }

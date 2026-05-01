@@ -268,14 +268,14 @@ TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda,
 
     /* Input Validation */
     if (x == NULL || y == NULL || n < 1 || lambda < 0) {
-        fprintf(stderr, "Error: Invalid input parameters\n");
+        fprintf(stderr, "ERROR: Invalid input parameters\n");
         return NULL;
     }
 
     /* Sanity check on x monotonicity */
     for (int i = 1; i < n; i++) {
         if (x[i] <= x[i-1]) {
-            fprintf(stderr, "Error: x array must be strictly increasing\n");
+            fprintf(stderr, "ERROR: x array must be strictly increasing\n");
             return NULL;
         }
     }
@@ -285,7 +285,7 @@ TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda,
     /* 1. Result Structure */
     result = (TikhonovResult *)malloc(sizeof(TikhonovResult));
     if (!result) {
-        fprintf(stderr, "Error: Memory allocation failed (struct)\n");
+        fprintf(stderr, "ERROR: Memory allocation failed (struct)\n");
         goto error;
     }
     result->y_smooth = NULL;
@@ -298,7 +298,7 @@ TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda,
     result->y_deriv = (double *)malloc(n * sizeof(double));
 
     if (!result->y_smooth || !result->y_deriv) {
-        fprintf(stderr, "Error: Memory allocation failed (arrays)\n");
+        fprintf(stderr, "ERROR: Memory allocation failed (arrays)\n");
         goto error;
     }
 
@@ -314,7 +314,7 @@ TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda,
     b = (double *)malloc(n * sizeof(double));
 
     if (!AB || !b) {
-        fprintf(stderr, "Error: Memory allocation failed (solver buffers)\n");
+        fprintf(stderr, "ERROR: Memory allocation failed (solver buffers)\n");
         goto error;
     }
 
@@ -335,7 +335,7 @@ TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda,
     dpbsv_(&uplo, &n, &kd, &nrhs, AB, &ldab, b, &n, &info);
     
     if (info != 0) {
-        fprintf(stderr, "Error: LAPACK dpbsv failed (info=%d)\n", info);
+        fprintf(stderr, "ERROR: LAPACK dpbsv failed (info=%d)\n", info);
         if (info > 0) {
             fprintf(stderr, "Matrix not positive definite. Try larger lambda.\n");
         }

@@ -242,7 +242,7 @@ int main(int argc, char **argv)
           if (c != EOF) {
             ungetc(c, fp);
             fprintf(stderr,
-                    "Error: Line %d exceeds %zu-byte read buffer (MAX_LINE). "
+                    "ERROR: Line %d exceeds %zu-byte read buffer (MAX_LINE). "
                     "Increase MAX_LINE in smooth.c or shorten the input line.\n",
                     line_number, sizeof(line));
             if (timestamp_mode) {
@@ -285,7 +285,7 @@ int main(int argc, char **argv)
           while (*check == ' ' || *check == '\t' || *check == '\n') check++;
           if (*check != '\0') {
             fprintf(stderr,
-                    "Error: Line %d has more than %d tokens (MAX_COLS). "
+                    "ERROR: Line %d has more than %d tokens (MAX_COLS). "
                     "Increase MAX_COLS in smooth.c.\n",
                     line_number, MAX_COLS);
             for (int i = 0; i < n; i++) free(timestamp_strings[i]);
@@ -299,7 +299,7 @@ int main(int argc, char **argv)
         /* Validate timestamp position (x_column is 1-indexed logical column) */
         int ts_tok_start = x_column - 1;
         if (ts_tok_start >= ntok) {
-          fprintf(stderr, "Error: Line %d has %d token(s), but timestamp column %d was requested\n",
+          fprintf(stderr, "ERROR: Line %d has %d token(s), but timestamp column %d was requested\n",
                   line_number, ntok, x_column);
           for (int i = 0; i < n; i++) free(timestamp_strings[i]);
           free(timestamp_strings);
@@ -328,7 +328,7 @@ int main(int argc, char **argv)
                           ? y_column - 1
                           : y_column - 1 + (ts_token_count - 1);
         if (y_token_idx >= ntok) {
-          fprintf(stderr, "Error: Line %d has insufficient columns for y column %d\n",
+          fprintf(stderr, "ERROR: Line %d has insufficient columns for y column %d\n",
                   line_number, y_column);
           for (int i = 0; i < n; i++) free(timestamp_strings[i]);
           free(timestamp_strings);
@@ -428,7 +428,7 @@ int main(int argc, char **argv)
         /* Detect column overflow: hit cap with more tokens still on line (audit B9) */
         if (col_count == MAX_COLS && *ptr != '\n' && *ptr != '\r' && *ptr != '\0') {
           fprintf(stderr,
-                  "Error: Line %d has more than %d columns (MAX_COLS). "
+                  "ERROR: Line %d has more than %d columns (MAX_COLS). "
                   "Increase MAX_COLS in smooth.c.\n",
                   line_number, MAX_COLS);
           free(x);
@@ -444,7 +444,7 @@ int main(int argc, char **argv)
 
         int max_col = (x_column > y_column) ? x_column : y_column;
         if (col_count < max_col) {
-          fprintf(stderr, "Error: Line %d has only %d column(s), but columns %d (x) and %d (y) were requested\n",
+          fprintf(stderr, "ERROR: Line %d has only %d column(s), but columns %d (x) and %d (y) were requested\n",
                   line_number, col_count, x_column, y_column);
           free(x);
           free(y);
@@ -508,7 +508,7 @@ int main(int argc, char **argv)
     /* Convert timestamps to relative time if in timestamp mode */
     if (timestamp_mode) {
       if (n == 0) {
-        fprintf(stderr, "Error: No valid data points found\n");
+        fprintf(stderr, "ERROR: No valid data points found\n");
         for (int i = 0; i < n; i++) free(timestamp_strings[i]);
         free(timestamp_strings);
         free(y);
@@ -519,7 +519,7 @@ int main(int argc, char **argv)
       ts_ctx = convert_timestamps_to_relative(timestamp_strings, n, &x, &first_error_line);
 
       if (ts_ctx == NULL) {
-        fprintf(stderr, "Error: No valid timestamps found in input\n");
+        fprintf(stderr, "ERROR: No valid timestamps found in input\n");
         if (first_error_line > 0) {
           fprintf(stderr, "First invalid timestamp at line %d\n", first_error_line);
         }
@@ -556,7 +556,7 @@ int main(int argc, char **argv)
   /* Perform grid uniformity analysis (always done before smoothing) */
   GridAnalysis *grid_info = analyze_grid(x, n, 0);  /* store_spacings=0 - no histogram needed */
   if (grid_info == NULL) {
-    fprintf(stderr, "Error: Grid analysis failed\n");
+    fprintf(stderr, "ERROR: Grid analysis failed\n");
     free(x);
     free(y);
     exit(EXIT_FAILURE);

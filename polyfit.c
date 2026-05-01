@@ -169,34 +169,34 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
     
     /* Input validation */
     if (x == NULL || y == NULL || n < 1) {
-        fprintf(stderr, "Error: Invalid input parameters to polyfit_smooth\n");
+        fprintf(stderr, "ERROR: Invalid input parameters to polyfit_smooth\n");
         return NULL;
     }
     
     if (window_size < 3 || !(window_size % 2)) {
-        fprintf(stderr, "Error: Window size must be odd and >= 3\n");
+        fprintf(stderr, "ERROR: Window size must be odd and >= 3\n");
         return NULL;
     }
     
     if (poly_degree < 0 || poly_degree > DPMAX) {
-        fprintf(stderr, "Error: Polynomial degree must be between 0 and %d\n", DPMAX);
+        fprintf(stderr, "ERROR: Polynomial degree must be between 0 and %d\n", DPMAX);
         return NULL;
     }
 
     if (poly_degree >= window_size) {
-        fprintf(stderr, "Error: Polynomial degree must be less than window size\n");
+        fprintf(stderr, "ERROR: Polynomial degree must be less than window size\n");
         return NULL;
     }
 
     if (n < window_size) {
-        fprintf(stderr, "Error: Not enough data points (n=%d < window_size=%d)\n", n, window_size);
+        fprintf(stderr, "ERROR: Not enough data points (n=%d < window_size=%d)\n", n, window_size);
         return NULL;
     }
     
     /* Check that x is monotonic */
     for (i = 1; i < n; i++) {
         if (x[i] <= x[i-1]) {
-            fprintf(stderr, "Error: x array must be strictly increasing\n");
+            fprintf(stderr, "ERROR: x array must be strictly increasing\n");
             return NULL;
         }
     }
@@ -207,7 +207,7 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
     /* Allocate result structure */
     result = (PolyfitResult *)malloc(sizeof(PolyfitResult));
     if (result == NULL) {
-        fprintf(stderr, "Error: Memory allocation failed for PolyfitResult\n");
+        fprintf(stderr, "ERROR: Memory allocation failed for PolyfitResult\n");
         return NULL;
     }
     
@@ -218,7 +218,7 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
     result->y_deriv = (double *)calloc(n, sizeof(double));
     
     if (result->y_smooth == NULL || result->y_deriv == NULL) {
-        fprintf(stderr, "Error: Memory allocation failed for result arrays\n");
+        fprintf(stderr, "ERROR: Memory allocation failed for result arrays\n");
         free_polyfit_result(result);
         return NULL;
     }
@@ -233,7 +233,7 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
     sing_vals = (double *)malloc(matrix_cols * sizeof(double));
     
     if (V == NULL || rhs == NULL || sing_vals == NULL) {
-        fprintf(stderr, "Error: Matrix allocation failed\n");
+        fprintf(stderr, "ERROR: Matrix allocation failed\n");
         goto cleanup_error;
     }
     
@@ -247,7 +247,7 @@ PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int 
     work = (double *)malloc(lwork * sizeof(double));
     
     if (work == NULL) {
-        fprintf(stderr, "Error: Workspace allocation failed\n");
+        fprintf(stderr, "ERROR: Workspace allocation failed\n");
         goto cleanup_error;
     }
     

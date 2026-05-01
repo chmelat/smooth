@@ -43,7 +43,7 @@ time_t epoch = timegm(&tm_time);  /* 2025-02-31 → 2025-03-03 (silently!) */
 
 ## B. Designová / konzistenční rozhodnutí
 
-### B1. Nekonzistentní kapitalizace error labelů — napříč všemi moduly
+### B1. ~~Nekonzistentní kapitalizace error labelů~~ — napříč všemi moduly — **FIXED v5.11.24**
 
 Tři současné formáty:
 

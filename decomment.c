@@ -28,7 +28,7 @@ FILE *decomment_stream(FILE *fr, const char *source_name)
   bool success = false;
 
   if (fr == NULL) {
-    fprintf(stderr, "Error: NULL input stream provided\n");
+    fprintf(stderr, "ERROR: NULL input stream provided\n");
     return NULL;
   }
 
@@ -90,7 +90,7 @@ FILE *decomment(const char *name)
   FILE *out;
 
   if (name == NULL) {
-    fprintf(stderr, "Error: NULL filename provided\n");
+    fprintf(stderr, "ERROR: NULL filename provided\n");
     return NULL;
   }
 

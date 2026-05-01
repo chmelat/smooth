@@ -3,7 +3,13 @@
  *
  * Version History
  * ---------------
- * v5.11.23 (current): Audit v5.11.22 A1 + C10. (A1) print_grid_analysis
+ * v5.11.24 (current): Audit v5.11.22 B1 — uniform `ERROR:` prefix for hard
+ *           failures (function returns NULL or process exit) across all
+ *           non-butterworth modules (decomment, grid_analysis, polyfit,
+ *           savgol, tikhonov, smooth). Title-Case `Error:` retired; the
+ *           convention documented in CLAUDE.md and butterworth.c is now
+ *           applied project-wide. `Warning:` (continuing) untouched.
+ * v5.11.23: Audit v5.11.22 A1 + C10. (A1) print_grid_analysis
  *           no longer hides reliability_warning behind verbose>=1; the
  *           warning text is now emitted at every verbosity level so that
  *           callers gating on `if (reliability_warning)` actually see the
@@ -91,5 +97,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.23"
-#define REVDATE "2026-04-30"
+#define VERSION "5.11.24"
+#define REVDATE "2026-05-01"
