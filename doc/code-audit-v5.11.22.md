@@ -79,7 +79,7 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
 
 **Recommendation:** odstranit fallback v `select_discretization_method` (nahradit `assert(grid_info != NULL)` nebo NULL-check vrácením `DISCRETIZATION_AVERAGE`), všude dále používat `grid_info->h_avg`. Ušetří ~15 řádků a ujistí se, že CV-thresh policy je centralizovaný.
 
-### B4. main() je 641 řádků, dělá osm věcí — `smooth.c:55–696`
+### B4. ~~main() je 641 řádků, dělá osm věcí~~ — `smooth.c:55–696` — **FIXED v5.11.27 + v5.11.28**
 
 CLI parsování + I/O alokace + parser normal-mode + parser timestamp-mode + grid analýza + dispatch metod + cleanup. Vázáno hluboko na lokální stav (10× se opakuje cleanup vzor `for (int i = 0; i < n; i++) free(timestamp_strings[i]); free(timestamp_strings); free(y); ...`). B4 z předchozího auditu vyřešil duplicitu výstupu (`print_result`), ale parser stále zůstal monolitický.
 
@@ -93,6 +93,8 @@ exit(EXIT_FAILURE);
 ```
 
 **Recommendation:** vytáhnout `parse_input(FILE*, ParseMode, int x_col, int y_col, ParseResult*)` do nového modulu `parser.c` (`parser.h`). Centralizovat cleanup přes goto-pattern jak to dělá tikhonov. Zhruba 250-řádkový diff, ale main se zkrátí na ~200 řádků a parser bude testovatelný (test_parser.c už existuje a runs `./smooth` přes popen — místo toho by mohl volat `parse_input()` přímo).
+
+**Fix:** dvoufázově. v5.11.27 nahradil 11 duplikovaných error-cleanup bloků v `main()` jediným `cleanup:` labelem na konci (goto-pattern), čímž popadl pre-existing exit-leaky na `n < sp` a "<method> failed!" cestách. v5.11.28 vytáhl ~290 řádků parsing logiky do nového modulu `parser.c`/`parser.h` (`parse_input()` + `free_parse_result()` + `ParseResult` struct s ownership-transfer kontraktem). `main()` 641 → 315 řádků, `smooth.c` 797 → 466. `MAX_LINE`/`MAX_COLS`/`BUF` konstanty + `math.h`/`errno.h` includes přesunuty s parserem. `tests/test_parser.c` zatím stále drive-uje binárku přes `popen()`; přepsání na přímé volání `parse_input()` je samostatný follow-up (audit motivace pro testovatelnost je tím připravená, ale ne vybraná).
 
 ### B5. `estimate_cutoff_frequency` zveřejněna v hlavičce, používaná jen interně — `butterworth.h:76`, `butterworth.c:428`
 
@@ -242,7 +244,7 @@ Po B9 řešení z v5.11.8 jsou hodnoty pojmenované, dobré. Ale jsou `#define`-
 | Priorita | Položky |
 |----------|---------|
 | **Fix brzy** | ~~A1~~ (opraveno v5.11.23), A2 (parse_timestamp normalization), ~~C10~~ (opraveno v5.11.23) |
-| **Vyčistit při příležitosti** | B1 (error label kapitalizace), B2 (const-correctness), B3 (h_avg duplikace), B4 (parser.c extrakce), B5/B6 (zveřejněné jen interní funkce), B13 (atoi → strtod, joinout s v5.11.8 B13), B14 (rozšířit butterworth konvenci jinde) |
+| **Vyčistit při příležitosti** | ~~B1~~ (opraveno v5.11.24), ~~B2~~ (opraveno v5.11.25), ~~B3~~ (opraveno v5.11.26), ~~B4~~ (opraveno v5.11.27 + v5.11.28), B5/B6 (zveřejněné jen interní funkce), B13 (atoi → strtod, joinout s v5.11.8 B13), B14 (rozšířit butterworth konvenci jinde) |
 | **Kosmetika** | B7, B8, B9, B10, B11, B12, B15, C1–C9 |
 
-**Závěrečné hodnocení.** Kód je stabilní vědecký nástroj s velmi pečlivou matematickou správností (Tikhonov pentadiagonal, biquad cascade, SVD polyfit, SG pre-computed coeffs). Předchozí audit byl drtivou většinou vyřešen — projekt má disciplínu na regulérní cleanup. Hlavní zbývající slabiny jsou **kondicionální nesymetrie API** (B1, B2, B14) a **monolitický main()** (B4) — oboje "tech debt", ne defekty. Dva skutečné bugy (A1 ticha o reliability_warning, A2 timestamp normalizace) jsou edge-case, ale stojí za fix vzhledem k tomu, jak tichý jejich dopad je. README/code drift kolem auto-cutoff (C10) je triviální dokumentační oprava, kterou stojí za to zařadit. Nic z auditu neohrožuje korektnost vědeckých výsledků na dnešních uniformních/blízko-uniformních mřížkách.
+**Závěrečné hodnocení.** Kód je stabilní vědecký nástroj s velmi pečlivou matematickou správností (Tikhonov pentadiagonal, biquad cascade, SVD polyfit, SG pre-computed coeffs). Předchozí audit byl drtivou většinou vyřešen — projekt má disciplínu na regulérní cleanup. Hlavní designová témata tohoto auditu (B1 error-label konzistence, B2 const-correctness, B3 h_avg duplikace, B4 monolitický main()) byla zavřena ve v5.11.24–v5.11.28. Otevřený zbytek je drobnost: A2 (timestamp normalizace) zůstává jediný skutečný bug, B5/B6/B13/B14 jsou stylistická tech-debt-vyčistění, kosmetika v C-řadě. Nic z auditu neohrožuje korektnost vědeckých výsledků na dnešních uniformních/blízko-uniformních mřížkách.
