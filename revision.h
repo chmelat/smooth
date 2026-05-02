@@ -3,7 +3,27 @@
  *
  * Version History
  * ---------------
- * v5.11.24 (current): Audit v5.11.22 B1 — uniform `ERROR:` prefix for hard
+ * v5.11.26 (current): Audit v5.11.22 B3 — Tikhonov h_avg de-duplication.
+ *           `select_discretization_method` no longer carries a NULL-grid_info
+ *           fallback (the production callsite always passes the result of
+ *           `analyze_grid`); the helper now only reads `grid_info->cv` and
+ *           drops its `x`, `n` parameters. The three open-coded
+ *           `(x[n-1]-x[0])/(n-1)` recomputations in `build_band_matrix`,
+ *           `compute_functional`, and `compute_gcv_score_robust` are replaced
+ *           with `grid_info->h_avg`. `tikhonov_smooth` and
+ *           `find_optimal_lambda_gcv` now reject NULL `grid_info` with
+ *           `ERROR: Grid info not available` (matches savgol_smooth contract).
+ *           Test 11 rewritten: now asserts NULL grid_info returns NULL.
+ * v5.11.25: Audit v5.11.22 B2 — const-correctness on public API.
+ *           `tikhonov_smooth`, `find_optimal_lambda_gcv`, `savgol_smooth`,
+ *           and `polyfit_smooth` now declare `x`, `y`, and (where applicable)
+ *           `grid_info` as `const`, matching butterworth_filtfilt. const
+ *           propagated through static helpers (build_band_matrix,
+ *           compute_functional, compute_derivatives, compute_gcv_score_robust,
+ *           find_lambda_lcurve, select_discretization_method, polyfit
+ *           boundary-fallback helpers). Source pointer of the `dcopy_` extern
+ *           is now `const double *`. No behavioural change.
+ * v5.11.24: Audit v5.11.22 B1 — uniform `ERROR:` prefix for hard
  *           failures (function returns NULL or process exit) across all
  *           non-butterworth modules (decomment, grid_analysis, polyfit,
  *           savgol, tikhonov, smooth). Title-Case `Error:` retired; the
@@ -97,5 +117,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.24"
-#define REVDATE "2026-05-01"
+#define VERSION "5.11.26"
+#define REVDATE "2026-05-02"

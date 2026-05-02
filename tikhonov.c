@@ -23,7 +23,7 @@ extern void dpbsv_(char *uplo, int *n, int *kd, int *nrhs,
                    double *ab, int *ldab, double *b, int *ldb, int *info);
 
 /* BLAS function declarations */
-extern void dcopy_(int *n, double *x, int *incx, double *y, int *incy);
+extern void dcopy_(int *n, const double *x, int *incx, double *y, int *incy);
 
 /* CV threshold for selecting discretization method */
 #define CV_THRESHOLD 0.15
@@ -41,53 +41,19 @@ typedef enum {
 } DiscretizationMethod;
 
 /* Select discretization method based on grid properties
- * 
- * Parameters:
- *   grid_info - Grid analysis results (can be NULL)
- *   x         - Array of x-coordinates (used as fallback if grid_info is NULL)
- *   n         - Number of points
- * 
+ *
  * Returns:
  *   DISCRETIZATION_AVERAGE for near-uniform grids (CV < 0.15)
  *   DISCRETIZATION_LOCAL for non-uniform grids
  */
-static DiscretizationMethod select_discretization_method(GridAnalysis *grid_info, 
-                                                          const double *x, int n)
+static DiscretizationMethod select_discretization_method(const GridAnalysis *grid_info)
 {
-    double cv;
-    
-    if (grid_info != NULL) {
-        cv = grid_info->cv;
-    } else {
-        /* Fallback: compute CV from x array */
-        if (n < 2) {
-            return DISCRETIZATION_AVERAGE;
-        }
-        
-        double h_sum = 0.0;
-        double h_sq_sum = 0.0;
-        
-        for (int i = 1; i < n; i++) {
-            double h = x[i] - x[i-1];
-            h_sum += h;
-            h_sq_sum += h * h;
-        }
-        
-        double h_avg = h_sum / (n - 1);
-        double h_var = h_sq_sum / (n - 1) - h_avg * h_avg;
-        
-        if (h_var < 0.0) h_var = 0.0;  /* Numerical safety */
-        double h_std = sqrt(h_var);
-        
-        cv = (h_avg > 1e-15) ? (h_std / h_avg) : 0.0;
-    }
-    
-    return (cv < CV_THRESHOLD) ? DISCRETIZATION_AVERAGE : DISCRETIZATION_LOCAL;
+    return (grid_info->cv < CV_THRESHOLD) ? DISCRETIZATION_AVERAGE : DISCRETIZATION_LOCAL;
 }
 
 /* Build band matrix with hybrid discretization */
-static void build_band_matrix(double *x, int n, double lambda, double *AB, int ldab, int kd,
-                              GridAnalysis *grid_info)
+static void build_band_matrix(const double *x, int n, double lambda, double *AB, int ldab, int kd,
+                              const GridAnalysis *grid_info)
 {
     int j;
 
@@ -104,7 +70,7 @@ static void build_band_matrix(double *x, int n, double lambda, double *AB, int l
     if (lambda <= 0.0 || n < 3) return;
 
     /* FIX 1.1: Use unified method selection */
-    DiscretizationMethod method = select_discretization_method(grid_info, x, n);
+    DiscretizationMethod method = select_discretization_method(grid_info);
 
     if (method == DISCRETIZATION_AVERAGE) {
         /* Average Coefficient Method: (D²)ᵀ D² with uniform stencil
@@ -113,7 +79,7 @@ static void build_band_matrix(double *x, int n, double lambda, double *AB, int l
          * Resulting pentadiagonal matrix with stencil [1, -4, 6, -4, 1]/h^4
          * Natural BCs (D²u = 0 at boundaries) are implicit — no boundary rows in D²
          */
-        double h_avg = (x[n-1] - x[0]) / (n - 1);
+        double h_avg = grid_info->h_avg;
         double h4 = h_avg * h_avg * h_avg * h_avg;
         double coeff = lambda / h4;
 
@@ -169,7 +135,7 @@ static void build_band_matrix(double *x, int n, double lambda, double *AB, int l
     }
 }
 
-static void compute_derivatives(double *x, double *y_smooth, int n, double *y_deriv)
+static void compute_derivatives(const double *x, const double *y_smooth, int n, double *y_deriv)
 {
     if (n < 2) {
         if (n == 1) y_deriv[0] = 0.0;
@@ -204,8 +170,8 @@ static void compute_derivatives(double *x, double *y_smooth, int n, double *y_de
  * - Fixed boundary second derivative computation using proper one-sided formulas
  * ============================================================================
  */
-static void compute_functional(double *x, double *y, double *y_smooth, int n, double lambda,
-                              GridAnalysis *grid_info,
+static void compute_functional(const double *x, const double *y, const double *y_smooth, int n, double lambda,
+                              const GridAnalysis *grid_info,
                               double *data_term, double *reg_term, double *total_functional)
 {
     /* Data fidelity term: ||y - u||² */
@@ -220,12 +186,12 @@ static void compute_functional(double *x, double *y, double *y_smooth, int n, do
     
     if (lambda > 0.0 && n >= 3) {
         /* FIX 1.1: Use unified method selection - same as build_band_matrix */
-        DiscretizationMethod method = select_discretization_method(grid_info, x, n);
+        DiscretizationMethod method = select_discretization_method(grid_info);
         
         if (method == DISCRETIZATION_AVERAGE) {
             /* Average coefficient method: ||D²u||² with uniform stencil
              * Interior points only — natural BCs (D²u = 0 at boundaries) are implicit */
-            double h_avg = (x[n-1] - x[0]) / (n - 1);
+            double h_avg = grid_info->h_avg;
             double h_avg_sq = h_avg * h_avg;
             for (int i = 1; i < n-1; i++) {
                 double d2u = (y_smooth[i-1] - 2.0*y_smooth[i] + y_smooth[i+1]) / h_avg_sq;
@@ -258,8 +224,8 @@ static void compute_functional(double *x, double *y, double *y_smooth, int n, do
 }
 
 /* Main function with IMPROVED Memory Management */
-TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda,
-                                GridAnalysis *grid_info)
+TikhonovResult* tikhonov_smooth(const double *x, const double *y, int n, double lambda,
+                                const GridAnalysis *grid_info)
 {
     /* Initialize pointers to NULL for safe cleanup */
     TikhonovResult *result = NULL;
@@ -269,6 +235,11 @@ TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda,
     /* Input Validation */
     if (x == NULL || y == NULL || n < 1 || lambda < 0) {
         fprintf(stderr, "ERROR: Invalid input parameters\n");
+        return NULL;
+    }
+
+    if (grid_info == NULL) {
+        fprintf(stderr, "ERROR: Grid info not available\n");
         return NULL;
     }
 
@@ -368,8 +339,8 @@ error:
 }
 
 /* Improved GCV with trace(H) penalty to avoid over-fitting */
-static double compute_gcv_score_robust(double *x, double *y, int n, double lambda, 
-                                       GridAnalysis *grid_info, int verbose)
+static double compute_gcv_score_robust(const double *x, const double *y, int n, double lambda,
+                                       const GridAnalysis *grid_info, int verbose)
 {
     TikhonovResult *result;
     double rss = 0.0;
@@ -398,7 +369,7 @@ static double compute_gcv_score_robust(double *x, double *y, int n, double lambd
     }
     double ratio = h_max / h_min;
     
-    double h_avg = (x[n-1] - x[0]) / (n-1);
+    double h_avg = grid_info->h_avg;
     double h4 = h_avg * h_avg * h_avg * h_avg;
     double scale = lambda / h4;
 
@@ -450,8 +421,8 @@ static double compute_gcv_score_robust(double *x, double *y, int n, double lambd
 }
 
 /* L-curve method: find corner of L-curve (RSS vs Regularization) */
-static double find_lambda_lcurve(double *x, double *y, int n, double *lambda_range, int n_lambda,
-                                 GridAnalysis *grid_info)
+static double find_lambda_lcurve(const double *x, const double *y, int n, const double *lambda_range, int n_lambda,
+                                 const GridAnalysis *grid_info)
 {
     /* Safe allocation with goto cleanup */
     double *rss_vals = NULL;
@@ -528,10 +499,15 @@ lcurve_cleanup:
 }
 
 /* Enhanced lambda selection with multiple methods */
-double find_optimal_lambda_gcv(double *x, double *y, int n, GridAnalysis *grid_info)
+double find_optimal_lambda_gcv(const double *x, const double *y, int n, const GridAnalysis *grid_info)
 {
     double best_lambda = 0.01;
     double best_gcv = 1e20;
+
+    if (grid_info == NULL) {
+        fprintf(stderr, "ERROR: Grid info not available\n");
+        return best_lambda;
+    }
 
     if (n < 3) {
         fprintf(stderr, "Warning: Too few points for GCV (n=%d)\n", n);
@@ -539,13 +515,11 @@ double find_optimal_lambda_gcv(double *x, double *y, int n, GridAnalysis *grid_i
     }
 
     printf("# Penalized-GCV optimization for n=%d points (see README: Enhanced GCV)\n", n);
-    if (grid_info) {
-        printf("# Grid CV = %.3f, using %s method\n", 
-               grid_info->cv,
-               (grid_info->cv < CV_THRESHOLD) ? "AVERAGE" : "LOCAL");
-        if (grid_info->cv > 0.2) {
-            printf("# WARNING: Highly non-uniform grid detected. Trace approximation less accurate.\n");
-        }
+    printf("# Grid CV = %.3f, using %s method\n",
+           grid_info->cv,
+           (grid_info->cv < CV_THRESHOLD) ? "AVERAGE" : "LOCAL");
+    if (grid_info->cv > 0.2) {
+        printf("# WARNING: Highly non-uniform grid detected. Trace approximation less accurate.\n");
     }
     
     if (n > 20000) {

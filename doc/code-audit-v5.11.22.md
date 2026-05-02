@@ -55,7 +55,7 @@ Konvence dokumentovaná v CLAUDE.md ("ERROR: ... — hard failures") sedí na bu
 
 **Recommendation:** sjednotit na `ERROR:` pro hard failure (návrat NULL) a `Error:` zrušit. Jeden grep&replace + drobné touchups v testech, pokud nějaké testy parsují stderr (nezdá se).
 
-### B2. const-correctness mezi metodami — `butterworth.h:71` vs `tikhonov.h:55`, `savgol.h:78`
+### B2. ~~const-correctness mezi metodami~~ — `butterworth.h:71` vs `tikhonov.h:55`, `savgol.h:78` — **FIXED v5.11.25**
 
 ```c
 ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
@@ -73,7 +73,7 @@ SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int po
 
 **Recommendation:** dotáhnout `const` na všechny veřejné API metody — přínos čtenářské jasnosti je velký, kompilátorová cena nulová.
 
-### B3. Tikhonov třikrát přepočítává `h_avg` přes lokální výpočet — `tikhonov.c:76, 116, 228, 401`
+### B3. ~~Tikhonov třikrát přepočítává `h_avg` přes lokální výpočet~~ — `tikhonov.c:76, 116, 228, 401` — **FIXED v5.11.26**
 
 `select_discretization_method` má fallback s vlastním výpočtem `h_avg` (`tikhonov.c:67–82`), ale ten se vždy zavolá s `grid_info != NULL` (jediné callsite v smooth.c projde `analyze_grid`). Mrtvý kód pro produkci. Stejný `(x[n-1] - x[0]) / (n-1)` se opakuje v `build_band_matrix:116`, `compute_functional:228` a `compute_gcv_score_robust:401` místo dotázání na `grid_info->h_avg`.
 

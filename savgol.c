@@ -153,8 +153,8 @@ int savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, double
 }
 
 /* Main Savitzky-Golay smoothing function - OPTIMIZED */
-SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int poly_degree,
-                            GridAnalysis *grid_info)
+SavgolResult* savgol_smooth(const double *x, const double *y, int n, int window_size, int poly_degree,
+                            const GridAnalysis *grid_info)
 {
     SavgolResult *result;
     int i, k;

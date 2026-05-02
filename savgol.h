@@ -75,8 +75,8 @@ typedef struct {
  *   SavgolResult *result = savgol_smooth(x, y, 6, 5, 2);
  *   // Returns NULL with error message suggesting Tikhonov method
  */
-SavgolResult* savgol_smooth(double *x, double *y, int n, int window_size, int poly_degree,
-                            GridAnalysis *grid_info);
+SavgolResult* savgol_smooth(const double *x, const double *y, int n, int window_size, int poly_degree,
+                            const GridAnalysis *grid_info);
 
 /* Calculate Savitzky-Golay coefficients
  *

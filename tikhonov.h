@@ -52,8 +52,8 @@ typedef struct {
  *   - Correct discretization for both uniform and non-uniform grids
  *   - Memory must be freed using free_tikhonov_result()
  */
-TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda,
-                                GridAnalysis *grid_info);
+TikhonovResult* tikhonov_smooth(const double *x, const double *y, int n, double lambda,
+                                const GridAnalysis *grid_info);
 
 /* Automatic lambda selection using Generalized Cross Validation (GCV)
  * 
@@ -76,7 +76,7 @@ TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda,
  *   - For small datasets (n < 3), returns conservative default
  *   - Warns if regularization term dominates excessively
  */
-double find_optimal_lambda_gcv(double *x, double *y, int n, GridAnalysis *grid_info);
+double find_optimal_lambda_gcv(const double *x, const double *y, int n, const GridAnalysis *grid_info);
 
 /* Free allocated memory for TikhonovResult structure
  * 

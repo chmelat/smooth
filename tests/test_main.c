@@ -88,7 +88,7 @@ void test_tikhonov_lambda_effect(void);
 void test_tikhonov_uniform_grid_average_method(void);
 void test_tikhonov_nonuniform_grid_local_method(void);
 void test_tikhonov_discretization_threshold_cv015(void);
-void test_tikhonov_grid_info_null_fallback(void);
+void test_tikhonov_null_grid_info_returns_null(void);
 
 // Testy pro tikhonov.c - GCV optimization
 void test_gcv_optimal_lambda_constant_with_noise(void);
@@ -314,7 +314,7 @@ int main(void) {
     RUN_TEST(test_tikhonov_uniform_grid_average_method);
     RUN_TEST(test_tikhonov_nonuniform_grid_local_method);
     RUN_TEST(test_tikhonov_discretization_threshold_cv015);
-    RUN_TEST(test_tikhonov_grid_info_null_fallback);
+    RUN_TEST(test_tikhonov_null_grid_info_returns_null);
 
     printf("\n--- GCV optimization tests ---\n");
     RUN_TEST(test_gcv_optimal_lambda_constant_with_noise);

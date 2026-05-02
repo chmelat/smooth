@@ -50,7 +50,7 @@ typedef struct {
  *   ill-conditioned, small singular values are truncated, yielding a stable
  *   solution with minimal norm.
  */
-PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int poly_degree);
+PolyfitResult* polyfit_smooth(const double *x, const double *y, int n, int window_size, int poly_degree);
 
 /* Free allocated memory for PolyfitResult structure
  * 

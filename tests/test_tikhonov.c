@@ -540,8 +540,8 @@ void test_tikhonov_discretization_threshold_cv015(void) {
     #undef N
 }
 
-/* TEST 11: NULL grid_info fallback */
-void test_tikhonov_grid_info_null_fallback(void) {
+/* TEST 11: NULL grid_info is rejected (contract since v5.11.26) */
+void test_tikhonov_null_grid_info_returns_null(void) {
     /* ARRANGE */
     #define N 50
     double x[N], y[N];
@@ -551,21 +551,11 @@ void test_tikhonov_grid_info_null_fallback(void) {
         y[i] = 5.0 + 0.2 * x[i];
     }
 
-    /* ACT - předat grid_info = NULL */
+    /* ACT - grid_info = NULL must now be rejected */
     TikhonovResult *result = tikhonov_smooth(x, y, N, 0.01, NULL);
 
     /* ASSERT */
-    TEST_ASSERT_NOT_NULL(result);
-
-    /* Funkce by měla sama spočítat CV a vybrat metodu */
-    /* Výsledek by měl být správný */
-    for (int i = 5; i < N-5; i++) {
-        double expected = 5.0 + 0.2 * x[i];
-        TEST_ASSERT_DOUBLE_WITHIN(0.05, expected, result->y_smooth[i]);
-    }
-
-    /* CLEANUP */
-    free_tikhonov_result(result);
+    TEST_ASSERT_NULL(result);
     #undef N
 }
 

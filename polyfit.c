@@ -95,7 +95,7 @@ static void build_vandermonde(const double *x, int x_start, int x_end,
  * Helper function: Fill boundary points with fallback values
  * ============================================================================
  */
-static void fill_boundary_fallback_left(double *x, double *y, int n, int offset,
+static void fill_boundary_fallback_left(const double *x, const double *y, int n, int offset,
                                         double *y_smooth, double *y_deriv)
 {
     int i0 = offset;
@@ -116,7 +116,7 @@ static void fill_boundary_fallback_left(double *x, double *y, int n, int offset,
     }
 }
 
-static void fill_boundary_fallback_right(double *x, double *y, int n, int offset,
+static void fill_boundary_fallback_right(const double *x, const double *y, int n, int offset,
                                          double *y_smooth, double *y_deriv)
 {
     int i0 = n - offset - 1;
@@ -148,7 +148,7 @@ static void fill_boundary_fallback_right(double *x, double *y, int n, int offset
  * - Reports effective rank and condition number from singular values
  * ============================================================================
  */
-PolyfitResult* polyfit_smooth(double *x, double *y, int n, int window_size, int poly_degree)
+PolyfitResult* polyfit_smooth(const double *x, const double *y, int n, int window_size, int poly_degree)
 {
     PolyfitResult *result = NULL;
     double *V = NULL;           /* Vandermonde matrix */
