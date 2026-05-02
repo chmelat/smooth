@@ -55,7 +55,7 @@ char *progname;
 int main(int argc, char **argv)
 {
   char *filename;
-  FILE *fp;
+  FILE *fp = NULL;
   double *x = NULL;
   double *y = NULL;
   int n=0;
@@ -75,6 +75,8 @@ int main(int argc, char **argv)
   int timestamp_mode = 0;  /* Flag for timestamp input mode */
   char **timestamp_strings = NULL;  /* Array of timestamp strings */
   TimestampContext *ts_ctx = NULL;  /* Timestamp conversion context */
+  GridAnalysis *grid_info = NULL;
+  int exit_status = EXIT_FAILURE;
 
   progname = basename(argv[0]);
 
@@ -245,15 +247,7 @@ int main(int argc, char **argv)
                     "ERROR: Line %d exceeds %zu-byte read buffer (MAX_LINE). "
                     "Increase MAX_LINE in smooth.c or shorten the input line.\n",
                     line_number, sizeof(line));
-            if (timestamp_mode) {
-              for (int i = 0; i < n; i++) free(timestamp_strings[i]);
-              free(timestamp_strings);
-            } else {
-              free(x);
-            }
-            free(y);
-            fclose(fp);
-            exit(EXIT_FAILURE);
+            goto cleanup;
           }
         }
       }
@@ -288,11 +282,7 @@ int main(int argc, char **argv)
                     "ERROR: Line %d has more than %d tokens (MAX_COLS). "
                     "Increase MAX_COLS in smooth.c.\n",
                     line_number, MAX_COLS);
-            for (int i = 0; i < n; i++) free(timestamp_strings[i]);
-            free(timestamp_strings);
-            free(y);
-            fclose(fp);
-            exit(EXIT_FAILURE);
+            goto cleanup;
           }
         }
 
@@ -301,11 +291,7 @@ int main(int argc, char **argv)
         if (ts_tok_start >= ntok) {
           fprintf(stderr, "ERROR: Line %d has %d token(s), but timestamp column %d was requested\n",
                   line_number, ntok, x_column);
-          for (int i = 0; i < n; i++) free(timestamp_strings[i]);
-          free(timestamp_strings);
-          free(y);
-          fclose(fp);
-          exit(EXIT_FAILURE);
+          goto cleanup;
         }
 
         /* Detect timestamp format and assemble timestamp_str */
@@ -330,11 +316,7 @@ int main(int argc, char **argv)
         if (y_token_idx >= ntok) {
           fprintf(stderr, "ERROR: Line %d has insufficient columns for y column %d\n",
                   line_number, y_column);
-          for (int i = 0; i < n; i++) free(timestamp_strings[i]);
-          free(timestamp_strings);
-          free(y);
-          fclose(fp);
-          exit(EXIT_FAILURE);
+          goto cleanup;
         }
 
         char *endptr;
@@ -354,10 +336,7 @@ int main(int argc, char **argv)
           char **temp_ts = (char**)realloc(timestamp_strings, abuf * sizeof(char*));
           if (!temp_ts) {
             fprintf(stderr, "No memory for timestamp strings!\n");
-            for (int i = 0; i < n; i++) free(timestamp_strings[i]);
-            free(timestamp_strings);
-            free(y);
-            exit(EXIT_FAILURE);
+            goto cleanup;
           }
           timestamp_strings = temp_ts;
 
@@ -365,10 +344,7 @@ int main(int argc, char **argv)
           double *temp_y = (double*)realloc(y, abuf * sizeof(double));
           if (!temp_y) {
             fprintf(stderr, "No memory for data table!\n");
-            for (int i = 0; i < n; i++) free(timestamp_strings[i]);
-            free(timestamp_strings);
-            free(y);
-            exit(EXIT_FAILURE);
+            goto cleanup;
           }
           y = temp_y;
         }
@@ -377,10 +353,7 @@ int main(int argc, char **argv)
         timestamp_strings[n] = strdup(timestamp_str);
         if (!timestamp_strings[n]) {
           fprintf(stderr, "No memory for timestamp string!\n");
-          for (int i = 0; i < n; i++) free(timestamp_strings[i]);
-          free(timestamp_strings);
-          free(y);
-          exit(EXIT_FAILURE);
+          goto cleanup;
         }
         y[n] = y_value;
         n++;
@@ -431,10 +404,7 @@ int main(int argc, char **argv)
                   "ERROR: Line %d has more than %d columns (MAX_COLS). "
                   "Increase MAX_COLS in smooth.c.\n",
                   line_number, MAX_COLS);
-          free(x);
-          free(y);
-          fclose(fp);
-          exit(EXIT_FAILURE);
+          goto cleanup;
         }
 
         /* Check if we have enough columns */
@@ -446,10 +416,7 @@ int main(int argc, char **argv)
         if (col_count < max_col) {
           fprintf(stderr, "ERROR: Line %d has only %d column(s), but columns %d (x) and %d (y) were requested\n",
                   line_number, col_count, x_column, y_column);
-          free(x);
-          free(y);
-          fclose(fp);
-          exit(EXIT_FAILURE);
+          goto cleanup;
         }
 
         /* Reject row if x or y token is a placeholder (non-numeric or NaN/Inf) */
@@ -465,22 +432,16 @@ int main(int argc, char **argv)
           /* Safe realloc for x */
           double *temp_x = (double *)realloc(x, abuf*sizeof(double));
           if (temp_x == NULL) {
-            free(x);
-            free(y);
             fprintf(stderr,"No memory for data table!\n");
-            fclose(fp);
-            exit(EXIT_FAILURE);
+            goto cleanup;
           }
           x = temp_x;
 
           /* Safe realloc for y */
           double *temp_y = (double *)realloc(y, abuf*sizeof(double));
           if (temp_y == NULL) {
-            free(x);
-            free(y);
             fprintf(stderr,"No memory for data table!\n");
-            fclose(fp);
-            exit(EXIT_FAILURE);
+            goto cleanup;
           }
           y = temp_y;
         }
@@ -493,6 +454,7 @@ int main(int argc, char **argv)
     }  /* end while (fgets) */
 
     fclose(fp);
+    fp = NULL;
 
     /* Summarize rows skipped due to non-numeric or NaN/Inf in selected columns */
     if (skipped_nonnumeric > 0) {
@@ -509,10 +471,7 @@ int main(int argc, char **argv)
     if (timestamp_mode) {
       if (n == 0) {
         fprintf(stderr, "ERROR: No valid data points found\n");
-        for (int i = 0; i < n; i++) free(timestamp_strings[i]);
-        free(timestamp_strings);
-        free(y);
-        exit(EXIT_FAILURE);
+        goto cleanup;
       }
 
       int first_error_line = -1;
@@ -523,10 +482,7 @@ int main(int argc, char **argv)
         if (first_error_line > 0) {
           fprintf(stderr, "First invalid timestamp at line %d\n", first_error_line);
         }
-        for (int i = 0; i < n; i++) free(timestamp_strings[i]);
-        free(timestamp_strings);
-        free(y);
-        exit(EXIT_FAILURE);
+        goto cleanup;
       }
 
       /* Print warning if some timestamps were invalid */
@@ -550,25 +506,21 @@ int main(int argc, char **argv)
 
   if (n < sp && method != METHOD_TIKHONOV) {
     fprintf(stderr,"Need more data (n < %d)!\n",sp);
-    exit (EXIT_FAILURE);
+    goto cleanup;
   }
 
   /* Perform grid uniformity analysis (always done before smoothing) */
-  GridAnalysis *grid_info = analyze_grid(x, n, 0);  /* store_spacings=0 - no histogram needed */
+  grid_info = analyze_grid(x, n, 0);  /* store_spacings=0 - no histogram needed */
   if (grid_info == NULL) {
     fprintf(stderr, "ERROR: Grid analysis failed\n");
-    free(x);
-    free(y);
-    exit(EXIT_FAILURE);
+    goto cleanup;
   }
 
   /* If -g flag: show detailed analysis and exit (no smoothing) */
   if (show_grid_analysis) {
     print_grid_analysis(grid_info, 1, "# ");  /* verbose=1 - basic stats + recommendations only */
-    free_grid_analysis(grid_info);
-    free(x);
-    free(y);
-    return EXIT_SUCCESS;
+    exit_status = EXIT_SUCCESS;
+    goto cleanup;
   }
 
   /* Show warnings if grid has reliability concerns */
@@ -594,7 +546,7 @@ int main(int argc, char **argv)
 
         if (result == NULL) {
           fprintf(stderr, "Tikhonov smoothing failed!\n");
-          exit(EXIT_FAILURE);
+          goto cleanup;
         }
 
         /* Output header with functional information */
@@ -621,7 +573,7 @@ int main(int argc, char **argv)
         
         if (result == NULL) {
           fprintf(stderr, "Savitzky-Golay smoothing failed!\n");
-          exit(EXIT_FAILURE);
+          goto cleanup;
         }
         
         printf("# Data smooth - Savitzky-Golay filter, poly deg %d from %d points of moving window\n", dp, sp);
@@ -642,7 +594,7 @@ int main(int argc, char **argv)
 
         if (result == NULL) {
           fprintf(stderr, "Butterworth filtering failed!\n");
-          exit(EXIT_FAILURE);
+          goto cleanup;
         }
 
         /* Output header */
@@ -671,7 +623,7 @@ int main(int argc, char **argv)
 
         if (result == NULL) {
           fprintf(stderr, "Polynomial fitting failed!\n");
-          exit(EXIT_FAILURE);
+          goto cleanup;
         }
 
         printf("# Data smooth - aprox. pol. %ddg from %d points of moving window (least square)\n", dp, sp);
@@ -684,15 +636,20 @@ int main(int argc, char **argv)
       break;
   }
 
-  /* Clean up */
-  free_grid_analysis(grid_info);
+  exit_status = EXIT_SUCCESS;
+
+cleanup:
+  if (timestamp_strings) {
+    for (int i = 0; i < n; i++) free(timestamp_strings[i]);
+    free(timestamp_strings);
+  }
   free(x);
   free(y);
-  if (timestamp_mode && ts_ctx) {
-    free_timestamp_context(ts_ctx);
-  }
+  if (ts_ctx) free_timestamp_context(ts_ctx);
+  if (grid_info) free_grid_analysis(grid_info);
+  if (fp) fclose(fp);
 
-  return EXIT_SUCCESS;
+  return exit_status;
 }
 
 /* Print column header and data rows for any smoothing method.

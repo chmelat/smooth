@@ -3,7 +3,16 @@
  *
  * Version History
  * ---------------
- * v5.11.26 (current): Audit v5.11.22 B3 — Tikhonov h_avg de-duplication.
+ * v5.11.27 (current): Audit v5.11.22 B4 (partial) — main() goto-cleanup.
+ *           The 11 duplicated parser-error cleanup blocks in `smooth.c`
+ *           collapse into a single `cleanup:` label at the end of `main()`.
+ *           `main()` shrinks from 642 to 599 lines; `smooth.c` from 797 to
+ *           754. Two pre-existing exit-time leaks fixed as a side effect:
+ *           the `n < sp` early-out and all four "<method> failed!" branches
+ *           used to call `exit()` without freeing `x`/`y`/`grid_info`
+ *           (previously masked by OS reclaim). Parser extraction into a
+ *           dedicated `parser.c` module (the second half of B4) is deferred.
+ * v5.11.26: Audit v5.11.22 B3 — Tikhonov h_avg de-duplication.
  *           `select_discretization_method` no longer carries a NULL-grid_info
  *           fallback (the production callsite always passes the result of
  *           `analyze_grid`); the helper now only reads `grid_info->cv` and
@@ -117,5 +126,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.26"
+#define VERSION "5.11.27"
 #define REVDATE "2026-05-02"
