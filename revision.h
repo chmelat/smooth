@@ -3,7 +3,18 @@
  *
  * Version History
  * ---------------
- * v5.11.27 (current): Audit v5.11.22 B4 (partial) — main() goto-cleanup.
+ * v5.11.28 (current): Audit v5.11.22 B4 (complete) — parser extracted.
+ *           The input parser (~290 lines: line-overflow detection,
+ *           normal-mode tokenizer with placeholder semantics,
+ *           timestamp-mode tokenizer with logical-column model,
+ *           timestamp-to-relative conversion) moves out of `main()` into
+ *           a new `parser.c`/`parser.h` module exposing `parse_input()` /
+ *           `free_parse_result()`. `main()` shrinks from 599 to 315
+ *           lines; `smooth.c` from 754 to 466. The MAX_LINE / MAX_COLS
+ *           / BUF constants and the `math.h` / `errno.h` includes move
+ *           with the parser. No behavioural change to the binary; B4
+ *           closed.
+ * v5.11.27: Audit v5.11.22 B4 (partial) — main() goto-cleanup.
  *           The 11 duplicated parser-error cleanup blocks in `smooth.c`
  *           collapse into a single `cleanup:` label at the end of `main()`.
  *           `main()` shrinks from 642 to 599 lines; `smooth.c` from 797 to
@@ -126,5 +137,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.27"
+#define VERSION "5.11.28"
 #define REVDATE "2026-05-02"

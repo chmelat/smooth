@@ -10,9 +10,9 @@ VERSION=$(shell grep '^#define VERSION' revision.h | sed 's/.*"\(.*\)".*/\1/')
 PREFIX = /usr/local
 
 # Files
-SRC = smooth.c decomment.c tikhonov.c polyfit.c savgol.c butterworth.c grid_analysis.c timestamp.c
+SRC = smooth.c decomment.c tikhonov.c polyfit.c savgol.c butterworth.c grid_analysis.c timestamp.c parser.c
 OBJ = $(SRC:.c=.o)
-HEAD = decomment.h revision.h tikhonov.h polyfit.h savgol.h butterworth.h grid_analysis.h timestamp.h
+HEAD = decomment.h revision.h tikhonov.h polyfit.h savgol.h butterworth.h grid_analysis.h timestamp.h parser.h
 
 # Test files
 TEST_DIR = tests
