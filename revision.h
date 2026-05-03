@@ -3,7 +3,16 @@
  *
  * Version History
  * ---------------
- * v5.11.28 (current): Audit v5.11.22 B4 (complete) — parser extracted.
+ * v5.11.29 (current): Butterworth `-f` default flipped to `auto`.
+ *           Without `-f`, the program now invokes
+ *           `estimate_cutoff_frequency` (Morozov's discrepancy principle)
+ *           instead of using the fixed fc=0.2. The selected fc continues
+ *           to appear in the output header (already printed via
+ *           `result->cutoff_freq`). Numeric `-f <value>` still overrides
+ *           and now explicitly sets `auto_cutoff = 0`. Help text and
+ *           README updated. No API change; tests unaffected (they call
+ *           `butterworth_filtfilt` directly with explicit args).
+ * v5.11.28: Audit v5.11.22 B4 (complete) — parser extracted.
  *           The input parser (~290 lines: line-overflow detection,
  *           normal-mode tokenizer with placeholder semantics,
  *           timestamp-mode tokenizer with logical-column model,
@@ -137,5 +146,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.28"
-#define REVDATE "2026-05-02"
+#define VERSION "5.11.29"
+#define REVDATE "2026-05-03"

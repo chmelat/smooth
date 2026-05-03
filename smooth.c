@@ -62,7 +62,7 @@ int main(int argc, char **argv)
   double lambda = LAMBDA_DEFAULT;
   int auto_lambda = 0;
   double cutoff_freq = CUTOFF_DEFAULT;
-  int auto_cutoff = 0;
+  int auto_cutoff = 1;
   int show_derivative = 0;
   int show_grid_analysis = 0;
   int x_column = 1;  /* Default: first column for x-data (1-indexed) */
@@ -130,6 +130,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "where fc = 1 corresponds to Nyquist frequency (fs/2)\n");
             exit(EXIT_FAILURE);
           }
+          auto_cutoff = 0;
         }
         break;
       case 'k': {
@@ -424,10 +425,11 @@ static void help(void)
     "-m\tMethod: 0 (polyfit, default), 1 (savgol), 2 (tikhonov), or 3 (butterworth)",
     "-l\tLambda regularization parameter for Tikhonov method, default 0.1",
     "\tUse '-l auto' for automatic lambda selection using GCV",
-    "-f\tNormalized cutoff frequency for Butterworth filter, default 0.2",
+    "-f\tNormalized cutoff frequency for Butterworth filter",
+    "\tDefault: auto (Morozov's discrepancy principle, see '-f auto' below)",
     "\tRange: 0 < fc < 1, where fc = f_cutoff / f_Nyquist",
     "\t(fc = 1 corresponds to Nyquist frequency = f_sample/2)",
-    "\tUse '-f auto' for automatic cutoff selection",
+    "\tUse '-f auto' for explicit automatic cutoff selection",
     "-k\tColumn selection: 'M' picks y-data column (x=1), 'N:M' picks x and y columns",
     "\tDefault: 1:2 (x from column 1, y from column 2). Columns are 1-indexed.",
     "-T\tTimestamp mode: first column is RFC3339-style timestamp, second is y-value",

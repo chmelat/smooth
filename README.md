@@ -86,7 +86,7 @@ gcc -o smooth smooth.c polyfit.c savgol.c tikhonov.c butterworth.c \
 | `-n N` | Smoothing window size (polyfit, savgol) |
 | `-p P` | Polynomial degree (polyfit, savgol, max 12) |
 | `-l λ` | Regularization parameter (tikhonov), use `-l auto` for GCV |
-| `-f fc` | Normalized cutoff frequency (butterworth, 0 < fc < 1.0), use `-f auto` for Morozov's discrepancy principle |
+| `-f fc` | Normalized cutoff frequency (butterworth, 0 < fc < 1.0). Default: `auto` (Morozov's discrepancy principle); pass a numeric `fc` to override |
 | `-T` | Timestamp mode: a column holds an RFC3339 timestamp (default position 1, y at position 2; both adjustable via `-k`) |
 | `-k M` or `-k N:M` | Column selection: `M` sets the y-data column (x defaults to column 1); `N:M` sets x at column N and y at column M. Default: `1:2`. Columns are 1-indexed; N and M must differ. In `-T` mode, N is the **timestamp** column (still column 1 by default), and the timestamp counts as a single logical column even when its space-separated form spans two whitespace tokens. |
 | `-d` | Include first derivative in output |
@@ -277,9 +277,9 @@ Good balance: both terms contribute 30-70% of total. Data term > 95% means under
 | 0.15 - 0.30 | **Light** | Good quality data, preserve features |
 | > 0.30 | **Minimal** | Low noise, want to keep almost everything |
 
-**Quick start:** Start with fc = 0.15. Too noisy after smoothing? Decrease fc. Lost important details? Increase fc.
+**Quick start:** The default is `-f auto` (described below). To override, pass a numeric value: start with fc = 0.15. Too noisy after smoothing? Decrease fc. Lost important details? Increase fc.
 
-**Automatic selection:** Use `-f auto` to select fc via **Morozov's discrepancy principle**. The program estimates noise $\hat{\sigma}$ from the MAD of second differences, then scans candidate cutoffs $\{0.02, 0.05, 0.1, 0.2, 0.35, 0.5\}$ in increasing order and picks the smallest fc whose residual std does not exceed a tolerance multiple of $\hat{\sigma}$ (i.e. the most aggressive smoothing that still leaves only noise-sized residuals). If no candidate satisfies the criterion (very high SNR or pathological data), falls back to fc = 0.2 with a `# Auto cutoff: ... fallback ...` notice. For unusual data, manual tuning is still recommended.
+**Automatic selection (default):** Without `-f` (or with explicit `-f auto`) the program selects fc via **Morozov's discrepancy principle**. It estimates noise $\hat{\sigma}$ from the MAD of second differences, then scans candidate cutoffs $\{0.02, 0.05, 0.1, 0.2, 0.35, 0.5\}$ in increasing order and picks the smallest fc whose residual std does not exceed a tolerance multiple of $\hat{\sigma}$ (i.e. the most aggressive smoothing that still leaves only noise-sized residuals). If no candidate satisfies the criterion (very high SNR or pathological data), falls back to fc = 0.2 with a `# Auto cutoff: ... fallback ...` notice. The selected fc is reported in the output header. For unusual data, manual tuning is still recommended.
 
 **Physical interpretation:**
 
