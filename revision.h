@@ -3,7 +3,12 @@
  *
  * Version History
  * ---------------
- * v5.11.29 (current): Butterworth `-f` default flipped to `auto`.
+ * v5.11.30 (current): Audit v5.11.22 B5 — `estimate_cutoff_frequency`
+ *           made `static` and removed from `butterworth.h`. Function had
+ *           a single internal callsite (`butterworth_filtfilt`) and no
+ *           tests/external consumers; declaration in the header was dead
+ *           API surface. No behavioural change; B5 closed.
+ * v5.11.29: Butterworth `-f` default flipped to `auto`.
  *           Without `-f`, the program now invokes
  *           `estimate_cutoff_frequency` (Morozov's discrepancy principle)
  *           instead of using the fixed fc=0.2. The selected fc continues
@@ -146,5 +151,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.29"
-#define REVDATE "2026-05-03"
+#define VERSION "5.11.30"
+#define REVDATE "2026-05-04"

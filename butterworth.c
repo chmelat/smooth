@@ -425,7 +425,7 @@ static int run_filtfilt_trial(const double *y, double *out, int n, double fc)
  *    does not exceed DISCREPANCY_TOLERANCE * sigma_hat (signal preserved).
  * 3. On failure, return AUTO_CUTOFF_FALLBACK.
  */
-double estimate_cutoff_frequency(const double *y, int n)
+static double estimate_cutoff_frequency(const double *y, int n)
 {
     static const double fc_candidates[N_AUTO_CANDIDATES] = {
         0.02, 0.05, 0.1, 0.2, 0.35, 0.5

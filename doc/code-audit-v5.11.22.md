@@ -96,7 +96,7 @@ exit(EXIT_FAILURE);
 
 **Fix:** dvoufázově. v5.11.27 nahradil 11 duplikovaných error-cleanup bloků v `main()` jediným `cleanup:` labelem na konci (goto-pattern), čímž popadl pre-existing exit-leaky na `n < sp` a "<method> failed!" cestách. v5.11.28 vytáhl ~290 řádků parsing logiky do nového modulu `parser.c`/`parser.h` (`parse_input()` + `free_parse_result()` + `ParseResult` struct s ownership-transfer kontraktem). `main()` 641 → 315 řádků, `smooth.c` 797 → 466. `MAX_LINE`/`MAX_COLS`/`BUF` konstanty + `math.h`/`errno.h` includes přesunuty s parserem. `tests/test_parser.c` zatím stále drive-uje binárku přes `popen()`; přepsání na přímé volání `parse_input()` je samostatný follow-up (audit motivace pro testovatelnost je tím připravená, ale ne vybraná).
 
-### B5. `estimate_cutoff_frequency` zveřejněna v hlavičce, používaná jen interně — `butterworth.h:76`, `butterworth.c:428`
+### B5. ~~`estimate_cutoff_frequency` zveřejněna v hlavičce, používaná jen interně~~ — `butterworth.h:76`, `butterworth.c:428` — **FIXED v5.11.30**
 
 ```c
 double estimate_cutoff_frequency(const double *y, int n);  /* in butterworth.h */
@@ -244,7 +244,7 @@ Po B9 řešení z v5.11.8 jsou hodnoty pojmenované, dobré. Ale jsou `#define`-
 | Priorita | Položky |
 |----------|---------|
 | **Fix brzy** | ~~A1~~ (opraveno v5.11.23), A2 (parse_timestamp normalization), ~~C10~~ (opraveno v5.11.23) |
-| **Vyčistit při příležitosti** | ~~B1~~ (opraveno v5.11.24), ~~B2~~ (opraveno v5.11.25), ~~B3~~ (opraveno v5.11.26), ~~B4~~ (opraveno v5.11.27 + v5.11.28), B5/B6 (zveřejněné jen interní funkce), B13 (atoi → strtod, joinout s v5.11.8 B13), B14 (rozšířit butterworth konvenci jinde) |
+| **Vyčistit při příležitosti** | ~~B1~~ (opraveno v5.11.24), ~~B2~~ (opraveno v5.11.25), ~~B3~~ (opraveno v5.11.26), ~~B4~~ (opraveno v5.11.27 + v5.11.28), ~~B5~~ (opraveno v5.11.30), B6 (zveřejněná jen interní funkce), B13 (atoi → strtod, joinout s v5.11.8 B13), B14 (rozšířit butterworth konvenci jinde) |
 | **Kosmetika** | B7, B8, B9, B10, B11, B12, B15, C1–C9 |
 
 **Závěrečné hodnocení.** Kód je stabilní vědecký nástroj s velmi pečlivou matematickou správností (Tikhonov pentadiagonal, biquad cascade, SVD polyfit, SG pre-computed coeffs). Předchozí audit byl drtivou většinou vyřešen — projekt má disciplínu na regulérní cleanup. Hlavní designová témata tohoto auditu (B1 error-label konzistence, B2 const-correctness, B3 h_avg duplikace, B4 monolitický main()) byla zavřena ve v5.11.24–v5.11.28. Otevřený zbytek je drobnost: A2 (timestamp normalizace) zůstává jediný skutečný bug, B5/B6/B13/B14 jsou stylistická tech-debt-vyčistění, kosmetika v C-řadě. Nic z auditu neohrožuje korektnost vědeckých výsledků na dnešních uniformních/blízko-uniformních mřížkách.
