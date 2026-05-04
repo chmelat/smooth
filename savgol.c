@@ -51,11 +51,23 @@ static double factorial(int n)
     return result;
 }
 
-/* Calculate Savitzky-Golay filter coefficients
- * REFACTORED: Uses stack allocation for better readability and safety
- * Returns: 0 on success, -1 on error
+/* Calculate Savitzky-Golay convolution coefficients.
+ *
+ * Parameters:
+ *   nl           - Number of points to the left of center
+ *   nr           - Number of points to the right of center
+ *   poly_degree  - Degree of polynomial
+ *   deriv_order  - Order of derivative (0 for smoothing, 1 for first derivative)
+ *   c            - Output array (size nl+nr+1, pre-allocated by caller)
+ *
+ * Returns 0 on success, -1 on error. On error, c is zeroed for safety.
+ *
+ * Special case: if deriv_order > poly_degree, returns 0 with zero coefficients
+ * (mathematically the derivative of a lower-degree polynomial is zero).
+ *
+ * Assumes integer spacing (normalized coordinates); for symmetric windows nl=nr.
  */
-int savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, double *c)
+static int savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, double *c)
 {
     int i, j;
     

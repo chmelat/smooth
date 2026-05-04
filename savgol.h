@@ -78,34 +78,6 @@ typedef struct {
 SavgolResult* savgol_smooth(const double *x, const double *y, int n, int window_size, int poly_degree,
                             const GridAnalysis *grid_info);
 
-/* Calculate Savitzky-Golay coefficients
- *
- * Computes the convolution coefficients for a given window configuration.
- * This is a low-level function used internally by savgol_smooth().
- *
- * Parameters:
- *   nl           - Number of points to the left of center
- *   nr           - Number of points to the right of center
- *   poly_degree  - Degree of polynomial
- *   deriv_order  - Order of derivative (0 for smoothing, 1 for first derivative)
- *   c            - Output array for coefficients (must be pre-allocated with size nl+nr+1)
- *
- * Returns:
- *   0 on success, -1 on error.
- *   On error, output array 'c' is zeroed for safety.
- *
- * Special cases:
- *   - If deriv_order > poly_degree, returns 0 with zero coefficients
- *     (mathematically correct: derivative of lower-degree polynomial is zero)
- *
- * Notes:
- *   - For symmetric windows: nl = nr
- *   - For boundary handling: nl != nr
- *   - Total window size = nl + nr + 1
- *   - Assumes integer spacing (normalized coordinates)
- */
-int savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, double *c);
-
 /* Free allocated memory for SavgolResult structure
  * 
  * Parameters:

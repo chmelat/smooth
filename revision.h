@@ -3,7 +3,14 @@
  *
  * Version History
  * ---------------
- * v5.11.30 (current): Audit v5.11.22 B5 — `estimate_cutoff_frequency`
+ * v5.11.31 (current): Audit v5.11.22 B6 — `savgol_coefficients` made
+ *           `static` and removed from `savgol.h`. Six internal callsites
+ *           inside `savgol.c`, no tests, no external consumers; same
+ *           pattern as B5. Substantive docstring (parameter semantics,
+ *           special-case behaviour for `deriv_order > poly_degree`)
+ *           preserved by moving it above the definition in `savgol.c`.
+ *           No behavioural change; B6 closed.
+ * v5.11.30: Audit v5.11.22 B5 — `estimate_cutoff_frequency`
  *           made `static` and removed from `butterworth.h`. Function had
  *           a single internal callsite (`butterworth_filtfilt`) and no
  *           tests/external consumers; declaration in the header was dead
@@ -151,5 +158,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.30"
+#define VERSION "5.11.31"
 #define REVDATE "2026-05-04"
