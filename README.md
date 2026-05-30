@@ -490,9 +490,9 @@ The `-g` flag provides detailed grid uniformity statistics to help choose approp
 |----------|-----------|-------------------|
 | CV <= 0.01 | Uniform | All methods work optimally |
 | CV < 0.05 | Nearly uniform | SAVGOL works with warning; BUTTERWORTH info note; all others fine |
-| 0.05 <= CV < 0.15 | Moderately non-uniform | SAVGOL rejected; BUTTERWORTH warns; TIKHONOV uses average coefficient method |
-| 0.15 <= CV < 0.20 | Non-uniform | SAVGOL rejected; BUTTERWORTH rejected; TIKHONOV uses local spacing method |
-| CV >= 0.20 | Highly non-uniform | SAVGOL rejected; BUTTERWORTH rejected; TIKHONOV uses local spacing method (warning issued) |
+| 0.05 <= CV < 0.15 | Moderately non-uniform | SAVGOL rejected; BUTTERWORTH warns; TIKHONOV uses integral-measure Gram matrix |
+| 0.15 <= CV < 0.20 | Non-uniform | SAVGOL rejected; BUTTERWORTH rejected; TIKHONOV uses integral-measure Gram matrix |
+| CV >= 0.20 | Highly non-uniform | SAVGOL rejected; BUTTERWORTH rejected; TIKHONOV uses integral-measure Gram matrix (GCV trace less accurate) |
 
 The coefficient of variation (CV) is defined as: $CV = \sigma(h) / h_{\text{avg}}$
 
@@ -850,11 +850,11 @@ Larger $\lambda$ → lower cutoff → more aggressive low-pass filtering → smo
 
 The effective regularization strength depends on grid spacing:
 
-$$\text{Effective strength} \sim \frac{\lambda}{h_{\text{avg}}^4}$$
+$$\text{Effective strength} \sim \frac{\lambda}{h_{\text{avg}}^3}$$
 
 Same $\lambda$ on finer grid → weaker smoothing; same $\lambda$ on coarser grid → stronger smoothing.
 
-For dimensional consistency, $\lambda$ has units $[\text{Length}^4]$ (since it scales the squared second derivative).
+For dimensional consistency, $\lambda$ has units $[\text{Length}^3]$ (it scales the squared second derivative integrated over the grid; the data term is an unweighted sum).
 
 #### Second Derivative Penalty: (D²)ᵀWD² Gram Matrix
 
@@ -866,35 +866,34 @@ $$(D^2)^T W D^2 = \sum_{k=1}^{n-2} w_k \cdot \mathbf{d}_k^T \cdot \mathbf{d}_k$$
 
 where $\mathbf{d}_k$ is the $k$-th row of $D^2$ (a 3-element stencil at positions $k{-}1, k, k{+}1$) and $w_k$ is the integration weight. Since each $\mathbf{d}_k$ touches 3 consecutive points, the Gram matrix is **pentadiagonal** (bandwidth $kd = 2$).
 
-Automatic selection between two discretization schemes based on grid uniformity.
+A single discretization scheme is used for **all** grids (uniform and
+non-uniform alike) — there is no CV-based method switch.
 
-**Grid Uniformity Detection:**
+Each interior row $k$ uses the local spacings $h_l = x_k - x_{k-1}$,
+$h_r = x_{k+1} - x_k$:
 
-$$CV = \frac{h_{\text{std}}}{h_{\text{avg}}}$$
+$$\mathbf{d}_k = [a_k, \; b_k, \; c_k] \qquad \text{at positions } (k{-}1, \; k, \; k{+}1)$$
 
-| CV range | Discretization |
-|----------|---------------|
-| $CV < 0.15$ | Average Coefficient Method (nearly uniform) |
-| $CV \ge 0.15$ | Local Spacing Method (non-uniform) |
+where:
 
-**Method 1: Average Coefficient (for CV < 0.15)**
+$$a_k = \frac{2}{(h_l + h_r) \cdot h_l}, \qquad b_k = \frac{-2}{h_l \cdot h_r}, \qquad c_k = \frac{2}{(h_l + h_r) \cdot h_r}$$
 
-Used for uniform and mildly non-uniform grids. More robust numerically.
+This is the standard second-derivative formula for non-uniform grids derived
+from Taylor expansion. The integration weight is $w_k = (h_l + h_r)/2$, so the
+penalty approximates the integral $\lambda \int (u'')^2 \, dx$.
 
-$D^2$ stencil: Each interior row $k$ uses uniform spacing $h_{\text{avg}}$:
+For each interior point $k$, the rank-1 outer product
+$w_k \cdot \mathbf{d}_k^T \mathbf{d}_k$ is accumulated into the pentadiagonal
+matrix (upper triangle only): diagonal, 1st superdiagonal, and 2nd
+superdiagonal. The result is symmetric (guaranteed by the Gram structure),
+positive definite, and pentadiagonal (bandwidth $kd = 2$).
 
-$$\mathbf{d}_k = \frac{1}{h_{\text{avg}}^2} [1, \; -2, \; 1] \qquad \text{at positions } (k{-}1, \; k, \; k{+}1)$$
-
-Gram matrix construction:
-
-$$(D^2)^T D^2 = \sum_{k=1}^{n-2} \mathbf{d}_k^T \mathbf{d}_k = \frac{1}{h_{\text{avg}}^4} \sum_{k=1}^{n-2} \mathbf{d}_k^T \mathbf{d}_k$$
-
-The accumulated result is a pentadiagonal matrix with the classical 4th-difference stencil $[1, -4, 6, -4, 1] / h_{\text{avg}}^4$.
-
-**Example** for $n = 6$ points with $c = \lambda / h^4$:
+**Uniform-grid reduction.** When $h_l = h_r = h$ the stencil collapses to the
+classical 4th-difference $[1, -4, 6, -4, 1] \cdot \lambda / h^3$. **Example**
+for $n = 6$ with $c = \lambda / h^3$:
 
 $$
-A = I + \lambda (D^2)^T D^2 = \begin{pmatrix}
+A = I + \lambda (D^2)^T W D^2 = \begin{pmatrix}
 1+c & -2c & c & 0 & 0 & 0 \\
 -2c & 1+5c & -4c & c & 0 & 0 \\
 c & -4c & 1+6c & -4c & c & 0 \\
@@ -904,31 +903,8 @@ c & -4c & 1+6c & -4c & c & 0 \\
 \end{pmatrix}
 $$
 
-Note: Boundary points (first/last rows) receive less regularization because fewer $D^2$ stencils overlap them.
-
-**Method 2: Local Spacing (for CV >= 0.15)**
-
-Used for highly non-uniform grids. More accurate for variable spacing.
-
-$D^2$ stencil: Each interior row $k$ uses local spacings $h_l = x_k - x_{k-1}$, $h_r = x_{k+1} - x_k$:
-
-$$\mathbf{d}_k = [a_k, \; b_k, \; c_k] \qquad \text{at positions } (k{-}1, \; k, \; k{+}1)$$
-
-where:
-
-$$a_k = \frac{2}{(h_l + h_r) \cdot h_l}, \qquad b_k = \frac{-2}{h_l \cdot h_r}, \qquad c_k = \frac{2}{(h_l + h_r) \cdot h_r}$$
-
-This is the **correct second derivative formula** for non-uniform grids derived from Taylor expansion.
-
-Integration weight: $w_k = (h_l + h_r) / 2$
-
-Gram matrix construction:
-
-$$(D^2)^T W D^2 = \sum_{k=1}^{n-2} w_k \cdot \mathbf{d}_k^T \mathbf{d}_k$$
-
-For each interior point $k$, the rank-1 outer product $w_k \cdot \mathbf{d}_k^T \mathbf{d}_k$ is accumulated into the pentadiagonal matrix (upper triangle only): diagonal, 1st superdiagonal, and 2nd superdiagonal.
-
-The resulting matrix is symmetric (Gram matrix structure guarantees this automatically), positive definite, and pentadiagonal (bandwidth $kd = 2$).
+Note: Boundary points (first/last rows) receive less regularization because
+fewer $D^2$ stencils overlap them.
 
 #### Natural Boundary Conditions
 
@@ -954,13 +930,7 @@ $$\|\mathbf{y} - \mathbf{u}\|^2 = \sum_{i=0}^{n-1} (y_i - u_i)^2$$
 
 **Regularization term (interior points only):**
 
-Consistent with the Gram matrix construction, the regularization term sums only over interior points (natural BCs are implicit — no boundary terms):
-
-For **average coefficient method:**
-
-$$\|D^2 \mathbf{u}\|^2 = \sum_{i=1}^{n-2} \left[\frac{u_{i-1} - 2u_i + u_{i+1}}{h_{\text{avg}}^2}\right]^2$$
-
-For **local spacing method:**
+Consistent with the Gram matrix construction, the regularization term sums only over interior points (natural BCs are implicit — no boundary terms), using the same integral-measure weighting as the matrix:
 
 $$\|D^2 \mathbf{u}\|_W^2 = \sum_{i=1}^{n-2} (D^2 u_i)^2 \cdot \frac{h_l + h_r}{2}$$
 
@@ -1048,18 +1018,10 @@ The trace computation and lambda search switch between two regimes based on data
 | Size | Trace estimator | Lambda search |
 |------|-----------------|---------------|
 | $n \le 5000$ | Eigenvalue sum above (exact for uniform grids) | 13-point log scan over $[10^{-8}, 10^0]$ + 8-point refinement around the minimum |
-| $5000 < n \le 20000$ | Fast approximation $\text{tr}(H) \approx n / (1 + \sqrt{\lambda/h^4})$ | 13-point log scan only (no refinement) |
+| $5000 < n \le 20000$ | Fast approximation $\text{tr}(H) \approx n / (1 + \sqrt{\lambda/h^3})$ | 13-point log scan only (no refinement) |
 | $n > 20000$ | Fast approximation (same as above) | 12-point conservative scan + L-curve backup (see below) |
 
 The fast approximation for large $n$ avoids the $O(n)$ eigenvalue sum at every $\lambda$ candidate, trading accuracy for speed. The refinement step at $n \le 5000$ adds 8 extra $\lambda$ evaluations clustered around the coarse-scan minimum (factors $0.3 \ldots 1.7$). Datasets that straddle a threshold may therefore receive slightly different optimal $\lambda$ from otherwise-identical inputs.
-
-**Enhanced GCV:**
-
-**Over-fitting penalty:** If $\text{tr}(H)/n > 0.7$:
-
-$$\text{GCV}_{\text{modified}} = \text{GCV} \cdot \exp\!\left(10 \cdot \left(\frac{\text{tr}(H)}{n} - 0.7\right)\right)$$
-
-This exponential penalty prevents selection of too-small $\lambda$ that would lead to overfitting.
 
 **L-curve backup (for n > 20000):**
 

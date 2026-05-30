@@ -3,7 +3,45 @@
  *
  * Version History
  * ---------------
- * v5.11.31 (current): Audit v5.11.22 B6 — `savgol_coefficients` made
+ * v5.11.34 (current): Audit V5.0 A1 — unify Tikhonov discretization.
+ *           The penalty now uses ONE integral-measure scheme for all grids:
+ *           the Gram matrix (D2)^T W D2 with weights w_k=(h_l+h_r)/2. The
+ *           AVERAGE branch (lambda/h^4 unweighted sum), the CV=0.15 method
+ *           switch, the DiscretizationMethod enum and select_discretization_
+ *           method() are removed; build_band_matrix and compute_functional
+ *           collapse to a single path (grid_info param dropped from both). On
+ *           a uniform grid the matrix reduces to [1,-4,6,-4,1]*lambda/h^3, so
+ *           lambda now scales as ~lambda/h^3 (units Length^3) and reg_term
+ *           carries the integration measure; GCV trace eigenvalues rescaled by
+ *           h_avg. NOT backward compatible: a given numeric -l value smooths
+ *           differently than in <=v5.11.33. Tests: removed two branch-specific
+ *           tests (uniform_grid_average_method, discretization_threshold_cv015),
+ *           added average_branch_integral_measure. README/CLAUDE.md updated.
+ *           111 tests pass, zero leaks.
+ * v5.11.33: Audit V5.0 A4+A5+A6 — Tikhonov GCV cleanup.
+ *           (A4) Removed the ad-hoc over-fitting penalty
+ *           `GCV *= exp(10*(tr(H)/n - 0.7))` from `compute_gcv_score_robust`;
+ *           `-l auto` now minimizes textbook GCV. Empirically the penalty
+ *           changed the selected lambda by at most one grid step (the GCV
+ *           denominator (1 - tr(H)/n)^2 already penalizes tr(H)->n), so the
+ *           practical effect is negligible while the code and the diagnostic
+ *           label ("pGCV" -> "GCV") become simpler. README "Enhanced GCV"
+ *           subsection dropped. (A5) `dpbsv` info>0 message no longer
+ *           suggests "Try larger lambda" (I + lambda*(D2)^T D2 is SPD for
+ *           lambda>=0, so info>0 means ill-conditioning, not small lambda).
+ *           (A6) `compute_gcv_score_robust` reuses `grid_info->ratio_max_min`
+ *           instead of recomputing h_min/h_max, and the h4/scale dead
+ *           computation moved into the large-n branch where it is used.
+ *           No test changes; 112 tests pass.
+ * v5.11.32: Audit V5.0 A2 — Tikhonov L-curve corner now uses
+ *           the regularization seminorm ||D^2 u||^2 instead of the
+ *           lambda-scaled penalty. `find_lambda_lcurve` divides
+ *           `regularization_term` (which already includes lambda) back
+ *           out before log-transforming the L-curve axes; leaving lambda
+ *           in added a monotone log(lambda) ramp that shifted the detected
+ *           corner. Affects auto-lambda only for n>20000 where the L-curve
+ *           cross-check runs. 112 tests pass.
+ * v5.11.31: Audit v5.11.22 B6 — `savgol_coefficients` made
  *           `static` and removed from `savgol.h`. Six internal callsites
  *           inside `savgol.c`, no tests, no external consumers; same
  *           pattern as B5. Substantive docstring (parameter semantics,
@@ -158,5 +196,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.31"
-#define REVDATE "2026-05-04"
+#define VERSION "5.11.34"
+#define REVDATE "2026-05-30"

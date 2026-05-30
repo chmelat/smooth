@@ -81,8 +81,7 @@ Each method uses CV to make a policy decision:
 |-------------|-----------|
 | $\le 0.01$  | `is_uniform = 1` |
 | $> 0.05$    | Savgol **rejects** with detailed error (uniformity is a mathematical requirement, not implementation choice) |
-| $< 0.15$    | Tikhonov uses average-coefficient discretization (uniform stencil $[1,-4,6,-4,1]/h^4$) |
-| $\ge 0.15$  | Tikhonov switches to local-spacing discretization (weighted Gram matrix $\sum w_k \mathbf{d}_k^T \mathbf{d}_k$) |
+| any         | Tikhonov uses one integral-measure scheme: weighted Gram matrix $\sum w_k \mathbf{d}_k^T \mathbf{d}_k$ (uniform stencil $[1,-4,6,-4,1]/h^3$ on uniform grids; no CV switch) |
 | $> 0.15$    | Butterworth **rejects** (frequency analysis assumes uniform sampling) |
 
 Polyfit tolerates any grid (local fit per window). When changing CV thresholds
@@ -101,8 +100,8 @@ that):
   applied at every interior point. Uniform-grid requirement enforced by CV
   check, not silently degraded.
 - **Tikhonov:** True 2nd-order penalty $(D^2)^T W D^2$ (pentadiagonal Gram
-  matrix), corrected in v5.11. Hybrid discretization (auto-switch at CV=0.15).
-  GCV trace uses 2D null space (constants and linear functions are unpenalized).
+  matrix), corrected in v5.11. Single integral-measure discretization (no CV
+  switch; unified in v5.11.34). GCV trace uses 2D null space (constants and linear functions are unpenalized).
 - **Butterworth:** 4th-order low-pass split into a biquad cascade for numerical
   stability. Filtfilt (forward-backward) gives zero phase. Per-biquad analytical
   IC via Cramer's rule avoids LAPACK and `complex.h`. Auto-cutoff via Morozov's
@@ -112,8 +111,8 @@ that):
 
 Uses the **Unity** framework (vendored in `tests/`).
 
-- 106 tests total: grid_analysis (7), polyfit (21), savgol (16), tikhonov (26),
-  butterworth (20), timestamp (16). Source of truth is `tests/test_main.c`.
+- 111 tests total: grid_analysis (7), polyfit (21), savgol (16), tikhonov (23),
+  butterworth (20), timestamp (16), parser (6). Source of truth is `tests/test_main.c`.
 - Zero leaks. `make test-valgrind` exits 1 on any definite/indirect leak or
   memory error — keep it that way.
 

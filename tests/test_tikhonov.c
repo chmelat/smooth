@@ -370,46 +370,6 @@ void test_tikhonov_lambda_effect(void) {
  * ============================================================================
  */
 
-/* TEST 8: Uniformní grid - Average method */
-void test_tikhonov_uniform_grid_average_method(void) {
-    /* ARRANGE */
-    #define N 50
-    double x[N], y[N];
-
-    /* Perfektně uniformní grid (CV < 0.01) */
-    create_uniform_grid(x, N, 0.0, 0.1);
-
-    /* Parabola */
-    for (int i = 0; i < N; i++) {
-        y[i] = 1.0 + 0.5 * x[i] * x[i];
-    }
-
-    GridAnalysis *grid = analyze_grid(x, N, 0);
-
-    /* ACT */
-    TikhonovResult *result = tikhonov_smooth(x, y, N, 0.01, grid);
-
-    /* ASSERT */
-    TEST_ASSERT_NOT_NULL(result);
-    TEST_ASSERT_NOT_NULL(grid);
-
-    /* Ověř že grid je opravdu uniformní */
-    TEST_ASSERT_LESS_THAN_DOUBLE(0.01, grid->cv);
-    TEST_ASSERT_EQUAL_INT(1, grid->is_uniform);
-
-    /* Výsledek by měl být dobrá aproximace paraboly
-     * With D² penalty, parabola has constant d²y/dx²=1.0, penalty active */
-    for (int i = 5; i < N-5; i++) {
-        double expected = 1.0 + 0.5 * x[i] * x[i];
-        TEST_ASSERT_DOUBLE_WITHIN(0.15, expected, result->y_smooth[i]);
-    }
-
-    /* CLEANUP */
-    free_tikhonov_result(result);
-    free_grid_analysis(grid);
-    #undef N
-}
-
 /* TEST 9: Neuniformní grid - Local method
  *
  * REVISED TEST: Uses Gaussian function that naturally satisfies boundary
@@ -488,50 +448,6 @@ void test_tikhonov_nonuniform_grid_local_method(void) {
         /* Unity syntax: TEST_ASSERT_GREATER_THAN(threshold, actual) means actual > threshold */
         TEST_ASSERT_GREATER_THAN_DOUBLE(expected * 0.8, result->y_smooth[i]);  /* result > 0.8*expected */
         TEST_ASSERT_LESS_THAN_DOUBLE(expected * 1.2, result->y_smooth[i]);     /* result < 1.2*expected */
-    }
-
-    /* CLEANUP */
-    free_tikhonov_result(result);
-    free_grid_analysis(grid);
-    #undef N
-}
-
-/* TEST 10: Diskretizace na hranici CV=0.15 */
-void test_tikhonov_discretization_threshold_cv015(void) {
-    /* ARRANGE */
-    #define N 50
-    double x[N], y[N];
-
-    /* Vytvořit grid s CV přesně kolem 0.15 */
-    x[0] = 0.0;
-    double base_spacing = 0.1;
-    for (int i = 1; i < N; i++) {
-        /* Malá variace aby CV bylo kolem 0.14-0.16 */
-        double variation = 0.015 * sin(i * 0.5);
-        x[i] = x[i-1] + base_spacing + variation;
-    }
-
-    /* Lineární funkce */
-    for (int i = 0; i < N; i++) {
-        y[i] = 3.0 + 0.4 * x[i];
-    }
-
-    GridAnalysis *grid = analyze_grid(x, N, 0);
-
-    /* ACT */
-    TikhonovResult *result = tikhonov_smooth(x, y, N, 0.05, grid);
-
-    /* ASSERT */
-    TEST_ASSERT_NOT_NULL(result);
-    TEST_ASSERT_NOT_NULL(grid);
-
-    /* CV by mělo být blízko threshold 0.15 */
-    TEST_ASSERT_DOUBLE_WITHIN(0.05, 0.15, grid->cv);
-
-    /* Výsledek by měl být konzistentní (bez skoků) */
-    for (int i = 5; i < N-5; i++) {
-        double expected = 3.0 + 0.4 * x[i];
-        TEST_ASSERT_DOUBLE_WITHIN(0.1, expected, result->y_smooth[i]);
     }
 
     /* CLEANUP */
@@ -1145,11 +1061,66 @@ void test_tikhonov_linear_exact_null_space(void) {
     #undef N
 }
 
+/* TEST 27 (A1 characterization): AVERAGE branch must use the integral measure
+ *
+ * The penalty should discretize  lambda * integral (u'')^2 dx  (consistent with
+ * the LOCAL branch and with the README functional), NOT the grid-dependent
+ * unweighted sum  lambda * sum (u'')^2.
+ *
+ * For a parabola f(x) = c*x^2 the second derivative is constant (u'' = 2c).
+ * With a weak lambda the smoother leaves u ~= y, so regularization_term reflects
+ * purely how the penalty is discretized:
+ *
+ *   integral measure (target):  reg = lambda * (2c)^2 * (n-2) * h_avg
+ *   unweighted sum (legacy):    reg = lambda * (2c)^2 * (n-2)
+ *
+ * These differ by a factor h_avg (= 0.1 here, i.e. 10x). This test asserts the
+ * integral form. It FAILS on the legacy lambda/h^4 discretization and should
+ * PASS once A1 rescales the AVERAGE branch to the integral measure (lambda/h^3
+ * matrix plus the matching h_avg-weighted reg_term).
+ */
+void test_tikhonov_average_branch_integral_measure(void) {
+    /* ARRANGE */
+    #define N 50
+    double x[N], y[N];
+    const double c = 0.5;          /* u'' = 2c = 1.0 */
+    const double h = 0.1;
+    const double lambda = 1e-6;    /* lambda/h^4 = 1e-2: weak penalty, u ~= y */
+
+    create_uniform_grid(x, N, 0.0, h);
+    for (int i = 0; i < N; i++) {
+        y[i] = c * x[i] * x[i];
+    }
+
+    GridAnalysis *grid = analyze_grid(x, N, 0);
+    TEST_ASSERT_NOT_NULL(grid);
+    /* Uniform grid -> AVERAGE branch */
+    TEST_ASSERT_LESS_THAN_DOUBLE(0.15, grid->cv);
+
+    /* ACT */
+    TikhonovResult *result = tikhonov_smooth(x, y, N, lambda, grid);
+    TEST_ASSERT_NOT_NULL(result);
+
+    /* Guard: weak lambda keeps u ~= y, so reg_term reflects the discretization
+     * of the penalty, not deformation of the solution. */
+    TEST_ASSERT_LESS_THAN_DOUBLE(1e-4, result->data_term);
+
+    /* ASSERT: integral measure  reg = lambda * (2c)^2 * (n-2) * h_avg */
+    double d2 = 2.0 * c;
+    double expected = lambda * d2 * d2 * (double)(N - 2) * grid->h_avg;
+    TEST_ASSERT_DOUBLE_WITHIN(0.15 * expected, expected, result->regularization_term);
+
+    /* CLEANUP */
+    free_tikhonov_result(result);
+    free_grid_analysis(grid);
+    #undef N
+}
+
 /* ============================================================================
  * POZNÁMKY K TESTŮM:
  * ============================================================================
  *
- * STRUKTURA TESTŮ (25 testů celkem):
+ * STRUKTURA TESTŮ (24 testy celkem):
  *
  * A. Mathematical Correctness (7 testů)
  *    - Validace algoritmické správnosti na známých řešeních
@@ -1157,10 +1128,9 @@ void test_tikhonov_linear_exact_null_space(void) {
  *    - Noise rejection capability
  *    - Lambda parameter effect
  *
- * B. Discretization Methods (4 testy)
- *    - Average coefficient method (uniformní grid)
- *    - Local spacing method (neuniformní grid)
- *    - Threshold CV=0.15 testing
+ * B. Discretization Methods (3 testy)
+ *    - Single integral-measure Gram matrix (parabola, AVERAGE-removed regression)
+ *    - Local spacing on non-uniform grid
  *    - NULL grid_info fallback
  *
  * C. GCV Optimization (3 testy)

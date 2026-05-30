@@ -85,9 +85,7 @@ void test_tikhonov_with_noise_linear(void);
 void test_tikhonov_lambda_effect(void);
 
 // Testy pro tikhonov.c - Discretization methods
-void test_tikhonov_uniform_grid_average_method(void);
 void test_tikhonov_nonuniform_grid_local_method(void);
-void test_tikhonov_discretization_threshold_cv015(void);
 void test_tikhonov_null_grid_info_returns_null(void);
 
 // Testy pro tikhonov.c - GCV optimization
@@ -114,6 +112,9 @@ void test_tikhonov_memory_error_handling(void);
 
 // Testy pro tikhonov.c - Null space verification
 void test_tikhonov_linear_exact_null_space(void);
+
+// Testy pro tikhonov.c - A1: discretization measure
+void test_tikhonov_average_branch_integral_measure(void);
 
 // Testy pro butterworth.c - Basic functionality
 void test_butterworth_returns_valid_result(void);
@@ -311,9 +312,7 @@ int main(void) {
     RUN_TEST(test_tikhonov_lambda_effect);
 
     printf("\n--- Discretization method tests ---\n");
-    RUN_TEST(test_tikhonov_uniform_grid_average_method);
     RUN_TEST(test_tikhonov_nonuniform_grid_local_method);
-    RUN_TEST(test_tikhonov_discretization_threshold_cv015);
     RUN_TEST(test_tikhonov_null_grid_info_returns_null);
 
     printf("\n--- GCV optimization tests ---\n");
@@ -340,6 +339,7 @@ int main(void) {
 
     printf("\n--- Null space verification tests ---\n");
     RUN_TEST(test_tikhonov_linear_exact_null_space);
+    RUN_TEST(test_tikhonov_average_branch_integral_measure);
 
     printf("\n");
     printf("========================================\n");
