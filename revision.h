@@ -3,7 +3,15 @@
  *
  * Version History
  * ---------------
- * v5.11.34 (current): Audit V5.0 A1 — unify Tikhonov discretization.
+ * v5.11.35 (current): Butterworth cleanup. (1) Reordered the grid-uniformity
+ *           CV check ahead of auto-cutoff estimation so a non-uniform grid is
+ *           rejected immediately instead of after running several trial
+ *           filtfilts and emitting stdout diagnostics. (2) Corrected the
+ *           derivative comments: the 5-point stencils are O(h^4) only on a
+ *           uniform grid and degrade toward first order (O(CV)) as CV
+ *           approaches the 0.15 cap — the old "adds only O(CV*h^2)" claim was
+ *           optimistic. No behaviour change on uniform grids; 111 tests pass.
+ * v5.11.34: Audit V5.0 A1 — unify Tikhonov discretization.
  *           The penalty now uses ONE integral-measure scheme for all grids:
  *           the Gram matrix (D2)^T W D2 with weights w_k=(h_l+h_r)/2. The
  *           AVERAGE branch (lambda/h^4 unweighted sum), the CV=0.15 method
@@ -196,5 +204,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.34"
-#define REVDATE "2026-05-30"
+#define VERSION "5.11.35"
+#define REVDATE "2026-05-31"

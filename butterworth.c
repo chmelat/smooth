@@ -265,10 +265,14 @@ static void reverse_array_inplace(double *arr, size_t n)
     }
 }
 
-/* Compute first derivatives of filtered signal using 5-point stencils,
- * O(h^4) accuracy with uniform spacing assumption (h = grid->h_avg).
- * Butterworth already requires CV <= 0.15, so using h_avg adds only
- * O(CV*h^2) additional error, well within filter assumptions.
+/* Compute first derivatives of filtered signal using 5-point stencils.
+ * Achieves O(h^4) accuracy only on a uniform grid; the stencils assume
+ * constant spacing h = grid->h_avg. On a non-uniform grid the equispaced
+ * coefficients are no longer consistent and accuracy degrades toward
+ * first order (error O(CV) in the worst case). Butterworth caps CV at
+ * 0.15, so the derivative is approximate near that bound — adequate for a
+ * frequency-domain smoother that already presumes near-uniform sampling,
+ * but not a high-accuracy derivative on irregular grids.
  *
  * Requires n >= 5 (guaranteed by BUTTERWORTH_MIN_POINTS = 20).
  */
@@ -520,6 +524,23 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
         }
     }
 
+    /* Check grid uniformity before any filtering work (auto-cutoff runs
+     * several trial filtfilts, so reject a non-uniform grid first). */
+    if (grid_info->cv > UNIFORMITY_CV_THRESHOLD) {
+        fprintf(stderr, "ERROR: Butterworth filter not suitable for "
+                "non-uniform grid (CV=%.4f, threshold=%.4f)!\n",
+                grid_info->cv, UNIFORMITY_CV_THRESHOLD);
+        return NULL;
+    }
+
+    if (grid_info->cv > UNIFORMITY_CV_WARNING) {
+        printf("# WARNING: Grid is moderately non-uniform (CV=%.4f)\n", grid_info->cv);
+        printf("#   Butterworth frequency response may be distorted.\n");
+        printf("#   Consider using Tikhonov method (-m 2 -l auto) for better results.\n");
+    } else if (grid_info->cv > NEARLY_UNIFORM_CV_THRESHOLD) {
+        printf("# Butterworth: Grid is nearly uniform (CV=%.4f)\n", grid_info->cv);
+    }
+
     /* Auto cutoff selection */
     double fc = cutoff_freq;
     if (auto_cutoff > 0) {
@@ -546,22 +567,6 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
         printf("# WARNING: fc = %.4f is close to Nyquist limit. "
                "Filter passes nearly the entire spectrum unattenuated; "
                "consider a smaller fc for meaningful smoothing.\n", fc);
-    }
-
-    /* Check grid uniformity */
-    if (grid_info->cv > UNIFORMITY_CV_THRESHOLD) {
-        fprintf(stderr, "ERROR: Butterworth filter not suitable for "
-                "non-uniform grid (CV=%.4f, threshold=%.4f)!\n",
-                grid_info->cv, UNIFORMITY_CV_THRESHOLD);
-        return NULL;
-    }
-
-    if (grid_info->cv > UNIFORMITY_CV_WARNING) {
-        printf("# WARNING: Grid is moderately non-uniform (CV=%.4f)\n", grid_info->cv);
-        printf("#   Butterworth frequency response may be distorted.\n");
-        printf("#   Consider using Tikhonov method (-m 2 -l auto) for better results.\n");
-    } else if (grid_info->cv > NEARLY_UNIFORM_CV_THRESHOLD) {
-        printf("# Butterworth: Grid is nearly uniform (CV=%.4f)\n", grid_info->cv);
     }
 
     double sample_rate = 1.0 / grid_info->h_avg;
@@ -627,8 +632,9 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
         result->y_smooth[i] = y_work[pad_len + i];
     }
 
-    /* Compute first derivatives via 5-point stencils, O(h^4) accuracy.
-     * Using h_avg is valid because filter requires CV <= 0.15. */
+    /* Compute first derivatives via 5-point stencils. O(h^4) on a uniform
+     * grid; only approximate when CV approaches the 0.15 cap (see
+     * compute_derivatives_5pt). */
     compute_derivatives_5pt(result->y_smooth, n, grid_info->h_avg,
                             result->y_deriv);
 
