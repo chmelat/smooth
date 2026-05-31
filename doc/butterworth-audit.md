@@ -1,10 +1,15 @@
 # Analýza implementace Butterworthova filtru
 
-**Datum auditu:** 2026-04-18 (aktualizováno)
-**Verze projektu:** smooth v5.11.7
+**Datum auditu:** 2026-05-31 (aktualizováno)
+**Verze projektu:** smooth v5.11.35
 **Auditované soubory:** `butterworth.c` (V1.4/2025-12-07), `butterworth.h`, volající část `smooth.c`
 
 **Historie změn dokumentu:**
+- 2026-05-31 (v5.11.35): kritická re-analýza (Opus 4.8). #13 přesunut CV check
+  uniformity gridu před auto-cutoff (odmítnutí neuniformního gridu bez 6 zbytečných
+  zkušebních filtfiltů a stdout šumu). #14 opraveny zavádějící komentáře u derivace
+  (O(h⁴) jen na uniformním gridu; degraduje k O(CV) u CV→0.15). #3 doplněn explicitní
+  důkaz invariantu `buf[0]` v cascade IC. 111 testů.
 - 2026-04-18 (v5.11.7): #1 doplněna podpora derivací přes 5-bodové stencily O(h⁴)
   na vyhlazeném výstupu; `-d` flag nyní funguje pro Butterworth, 106 testů.
 - 2026-04-18 (v5.11.6): #9 odstraněn nepoužívaný parametr `x`, #10 vyjasněn output
@@ -159,6 +164,41 @@ odpovídající filtrovému reziduálu, ne chybě stencilu.
 
 ---
 
+### [RESOLVED v5.11.35] 13. Pořadí auto-cutoff vs. kontrola uniformity gridu
+
+Před opravou se `estimate_cutoff_frequency()` (Morozov) volala **před** kontrolou
+`grid_info->cv > UNIFORMITY_CV_THRESHOLD`. Při `-f auto` na neuniformním gridu
+to znamenalo:
+
+1. spuštění **6 zkušebních filtfiltů** (`run_filtfilt_trial` pro každého kandidáta),
+2. výpis `# Auto cutoff: noise sigma estimate = ...` na stdout,
+3. **až poté** tvrdé odmítnutí `ERROR: ... non-uniform grid` na stderr.
+
+Tedy plýtvání výpočtem a matoucí pořadí výstupu (info-hlavička na stdout
+před chybou na stderr, kterou uživatel ve výsledku stejně zahodí).
+
+**Oprava:** blok kontroly CV (reject + warnings) přesunut v `butterworth_filtfilt`
+**před** sekci auto-cutoff. Neuniformní grid je nyní odmítnut okamžitě, ještě
+před jakýmkoli filtrováním. Pro platné (uniformní) vstupy je chování beze změny.
+
+### [RESOLVED v5.11.35] 14. Zavádějící komentáře u přesnosti derivace
+
+Komentáře u `compute_derivatives_5pt()` a v hlavní funkci tvrdily, že použití
+`h = h_avg` na neuniformním gridu „adds only O(CV·h²) additional error, well
+within filter assumptions". To bylo příliš optimistické: aplikace ekvidistantních
+stencilů na neekvidistantní uzly není konzistentní a přesnost degraduje
+v nejhorším případě k **prvnímu řádu (O(CV))**, ne O(h⁴).
+
+Vyhlazení samotné je korektní (frekvenční metoda předpokládá uniformní vzorkování
+a CV je shora omezeno 0.15). Slabým místem je **derivace** blízko horní hranice CV.
+
+**Oprava:** komentáře přepsány tak, aby pravdivě říkaly, že O(h⁴) platí jen na
+uniformním gridu a u CV→0.15 je derivace pouze přibližná. Žádná změna kódu/chování —
+jen oprava dokumentační lži. (Implementace neuniformních stencilů by byla větší
+zásah a pro frekvenční smoother, který už uniformitu předpokládá, není nutná.)
+
+---
+
 ## Nadále otevřené problémy
 
 ### 3. Kaskádovaná iniciační podmínka se spoléhá na skrytou invariantu
@@ -176,12 +216,33 @@ for (int s = 0; s < NUM_BIQUADS; s++) {
 
 Funkční komentář nad funkcí (ř. 220-224) nyní alespoň zmiňuje, že se
 spoléhá na unity DC gain. Stále ale chybí vysvětlení, proč je to korektní
-i pro první sample, kdy filtr ještě není ustálený — v kombinaci s odd-reflection
-paddingem (`padded[0] = 2·y[0] - y[pad_len]`) to v praxi funguje, protože
-padding transient zatlumí, ale logika by si zasloužila explicitní důkaz
-či odkaz na referenci (scipy filtfilt).
+i pro první sample, kdy filtr ještě není ustálený.
 
-**Priorita:** nízká (dokumentační, kód je správně).
+**Explicitní důkaz (doplněno v re-analýze v5.11.35):** invariant `buf[0]`
+plyne z definice TDF-II prvního vzorku a krokového IC. Pro vstup `x` se
+škálovaným IC `zi[0] = zi_base[0]·x[0]` platí:
+
+```
+y[0] = b0·x[0] + zi[0] = (b0 + zi_base[0])·x[0]
+```
+
+Přitom `zi_base[0] = (B0+B1)/det`, `B0 = b1 − a1·b0`, `B1 = b2 − a2·b0`,
+`det = 1 + a1 + a2`, takže
+
+```
+b0 + zi_base[0] = [b0(1+a1+a2) + b1+b2 − (a1+a2)b0] / (1+a1+a2)
+               = (b0+b1+b2) / (1+a1+a2) = Σb/Σa = DC zisk = 1.
+```
+
+Tedy `y[0] = x[0]` **přesně**, nezávisle na zbytku signálu a na ustálenosti
+filtru. První vzorek je invariantní napříč sekcemi, takže `first_val = buf[0]`
+po každé sekci je stále `padded[0]`. Škálování IC per-sekci je proto
+matematicky identické se škálováním všech sekcí prvním vzorkem — což je přesně
+to, co dělá `scipy.signal.sosfilt_zi` (jednotkový DC zisk každé sekce → `scale`
+zůstává 1.0). Implementace je tedy korektní a shoduje se se scipy referencí.
+
+**Priorita:** nízká (dokumentační, kód je správně). Zbývá už jen případně
+přenést tento důkaz do code-komentáře.
 
 ### 8. `compute_biquad_ic` tiše nuluje při degenerate case
 
@@ -218,7 +279,9 @@ Rozdíl v praxi zanedbatelný.
 | 10 | Matoucí label `sample_rate` | velmi nízká | **RESOLVED v5.11.6** |
 | 11 | GB formát pro menší datasety | velmi nízká | **RESOLVED v5.11.6** |
 | 1 | Chybí `y_deriv` | **vysoká** | **RESOLVED v5.11.7** (5-bodové stencily O(h⁴)) |
-| 3 | Cascade IC spoléhá na skrytou invariantu | nízká | otevřeno (dokumentace) |
+| 13 | Auto-cutoff běží před CV checkem | nízká | **RESOLVED v5.11.35** (přesun CV checku) |
+| 14 | Zavádějící komentář přesnosti derivace | nízká | **RESOLVED v5.11.35** (oprava komentářů) |
+| 3 | Cascade IC spoléhá na skrytou invariantu | nízká | otevřeno (důkaz doplněn, kód-komentář zbývá) |
 | 8 | Tichý fallback v `compute_biquad_ic` | nízká | otevřeno |
 | 12 | Padding length 14 vs. 9 | velmi nízká | otevřeno |
 
@@ -252,10 +315,20 @@ Od původního auditu (v5.11.1) bylo postupně vyřešeno 8 problémů:
    funguje pro Butterworth stejně jako pro ostatní metody. 106 testů (3 nové
    derivation unit tests).
 
+7. **v5.11.35** — kritická re-analýza (Opus 4.8): #13 přesun CV checku před
+   auto-cutoff (žádné zbytečné zkušební filtfilty ani stdout šum při odmítnutí
+   neuniformního gridu), #14 oprava zavádějících komentářů u přesnosti derivace
+   (O(h⁴) jen na uniformním gridu, jinak O(CV)). #3 doplněn explicitní důkaz
+   invariantu `buf[0]` a shody se `scipy.sosfilt_zi`. Žádná změna chování na
+   uniformním gridu; 111 testů.
+
 **Žádný vysoce prioritní problém už nezbyl.** Zbývající otevřené položky
 (#3, #8, #12) jsou dokumentační/kosmetické a neovlivňují typické použití
 na uniformním gridu.
 
 Matematická stránka (bilineární transformace s prewarpingem, TDF-II biquad,
 odd-reflection padding, IC přes Cramerovo pravidlo, Morozov auto-fc,
-5-point stencil derivatives) je implementovaná **korektně**.
+5-point stencil derivatives) je implementovaná **korektně**. Re-analýza v5.11.35
+ověřila návrh filtru, IC i filtfilt řádek po řádku proti scipy referenci —
+jádro je matematicky správné; jediný reálný dluh byla přesnost derivace na
+neuniformním gridu (nyní pravdivě zdokumentovaná).
