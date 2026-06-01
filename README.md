@@ -1,6 +1,6 @@
 # smooth - Experimental Data Smoothing
 
-**Version 5.11.8** | April 25, 2026
+**Version 5.11.38** | June 1, 2026
 
 A command-line tool for smoothing noisy experimental data and computing derivatives. Implements four methods: polynomial fitting, Savitzky-Golay filtering, Tikhonov regularization, and Butterworth low-pass filtering. Reads two-column ASCII data, outputs smoothed results. Works as a Unix filter.
 
@@ -50,7 +50,7 @@ make                                    # Compile
 ```bash
 make                  # Standard compilation (clang, -O2)
 make debug            # Debug build (-g -O0)
-make test             # Build and run 103 unit tests
+make test             # Build and run 111 unit tests
 make test-valgrind    # Run tests with memory leak detection
 make clean            # Clean build artifacts
 make install-user     # Install to ~/bin
@@ -62,7 +62,7 @@ make help             # Show all available targets
 
 ```bash
 gcc -o smooth smooth.c polyfit.c savgol.c tikhonov.c butterworth.c \
-    grid_analysis.c decomment.c -llapack -lblas -lm -O2
+    grid_analysis.c decomment.c timestamp.c parser.c -llapack -lblas -lm -O2
 ```
 
 ---
@@ -156,7 +156,7 @@ Need frequency-domain control?
 
 **Tikhonov Regularization (TIKHONOV, `-m 2`)** - Global optimization that balances data fidelity against smoothness. Automatic parameter selection via GCV. Handles uniform and non-uniform grids correctly. Best as a general-purpose method when you want automatic, robust smoothing.
 
-**Butterworth Filter (BUTTERWORTH, `-m 3`)** - Digital low-pass filter that removes high-frequency noise. Zero phase distortion via forward-backward filtering. Requires uniform grid. No derivative output. Best when you want frequency-domain control of smoothing.
+**Butterworth Filter (BUTTERWORTH, `-m 3`)** - Digital low-pass filter that removes high-frequency noise. Zero phase distortion via forward-backward filtering. Requires uniform grid. Provides first derivatives (`-d`) via 5-point stencils on the filtfilt output. Best when you want frequency-domain control of smoothing.
 
 ### Comparison Tables
 
@@ -167,7 +167,7 @@ Need frequency-domain control?
 | Local adaptability | ***** | **** | ** | ** |
 | Extreme preservation | **** | ***** | *** | *** |
 | Noise robustness | *** | **** | ***** | ***** |
-| Derivative quality | ***** | ***** | *** | N/A |
+| Derivative quality | ***** | ***** | *** | *** |
 | Boundary behavior | ** | *** | **** | *** |
 | Non-uniform grids | *** | [X] | ***** | ** |
 | Ease of use | **** | **** | ***** | **** |
@@ -360,7 +360,7 @@ cat data.txt | ./smooth -m 0 -n 7 -p 2
 # Polyfit with derivatives
 ./smooth -T -m 0 -n 7 -p 3 -d measurements.csv
 
-# Butterworth filter (no derivatives available)
+# Butterworth filter (add -d for derivatives via 5-point stencils)
 ./smooth -T -m 3 -f 0.15 signal.dat
 ```
 
@@ -389,11 +389,9 @@ sensorA  2025-09-25 14:06:06.391  25.6  100.3  980.0
 # First, analyze your grid
 ./smooth -g nonuniform_data.txt
 
-# Based on the grid uniformity (CV value), the program will automatically select:
-# - Average coefficient method for nearly uniform grids (CV < 0.15)
-# - Local spacing method for non-uniform grids (CV >= 0.15)
-
-# After grid analysis, apply smoothing with automatic parameter selection
+# Tikhonov uses a single integral-measure discretization for all grids
+# (uniform and non-uniform alike); there is no CV-based method switch.
+# Apply smoothing with automatic parameter selection:
 ./smooth -m 2 -l auto nonuniform_data.txt
 
 # For highly non-uniform grids (CV > 0.2), you may see:
@@ -767,7 +765,12 @@ At data boundaries where a full symmetric window cannot be used, the method empl
 - Example: leftmost point uses nl=0, nr=window_size-1
 
 **Edge cases:**
-- If insufficient points for polynomial degree, falls back to original value
+- The window always retains `window_size` points (only its center shifts), and
+  `poly_degree < window_size` is enforced up front, so boundaries always have
+  enough points for the fit
+- If coefficient computation or allocation fails at a boundary point, the whole
+  call is a hard error (returns `NULL`) rather than silently substituting raw
+  data — matching the central-point path (v5.11.36)
 - Maintains polynomial exactness property at boundaries
 
 #### Characteristics
@@ -1225,9 +1228,8 @@ Butterworth filter works best with **uniform or nearly-uniform grids**. The filt
 
 **Disadvantages:**
 - **Requires uniform/nearly-uniform grid** (CV < 0.15 enforced, warning for CV > 0.05)
-- **No derivative output** (Butterworth is smoothing-only)
 - **Less local adaptability** than polynomial methods
-- **Cutoff selection not automatic** (currently manual tuning needed)
+- **Frequency-domain assumption** — presumes near-uniform sampling
 - **Edge effects** despite padding
 - **Frequency interpretation** may be less intuitive than lambda for some users
 
@@ -1256,9 +1258,10 @@ typedef struct {
     int window_size;      // Window size
 } SavgolResult;
 
-// Savitzky-Golay coefficient computation
-void savgol_coefficients(int nl, int nr, int poly_degree,
-                        int deriv_order, double *c);
+// Savitzky-Golay coefficient computation (internal/static; returns 0 on
+// success, -1 on error, with the output array zeroed for safety)
+static int savgol_coefficients(int nl, int nr, int poly_degree,
+                               int deriv_order, double *c);
 
 // Tikhonov result
 typedef struct {
@@ -1272,9 +1275,10 @@ typedef struct {
 } TikhonovResult;
 
 // Tikhonov functions
-TikhonovResult* tikhonov_smooth(double *x, double *y, int n, double lambda,
-                                GridAnalysis *grid_info);
-double find_optimal_lambda_gcv(double *x, double *y, int n, GridAnalysis *grid_info);
+TikhonovResult* tikhonov_smooth(const double *x, const double *y, int n, double lambda,
+                                const GridAnalysis *grid_info);
+double find_optimal_lambda_gcv(const double *x, const double *y, int n,
+                               const GridAnalysis *grid_info);
 void free_tikhonov_result(TikhonovResult *result);
 
 // Butterworth biquad section
@@ -1291,6 +1295,7 @@ typedef struct {
 // Butterworth result
 typedef struct {
     double *y_smooth;     // Smoothed values
+    double *y_deriv;      // First derivatives (5-point stencils)
     int n;                // Number of points
     int order;            // Filter order (BUTTERWORTH_ORDER = 4)
     double cutoff_freq;   // Normalized cutoff frequency (0 < fc < 1)
@@ -1301,7 +1306,8 @@ typedef struct {
 ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
                                         double cutoff_freq, int auto_cutoff,
                                         const GridAnalysis *grid_info);
-double estimate_cutoff_frequency(const double *x, const double *y, int n);
+// Automatic cutoff (Morozov); internal/static, operates on normalized freqs
+static double estimate_cutoff_frequency(const double *y, int n);
 void free_butterworth_result(ButterworthResult *result);
 
 // Grid analysis
@@ -1323,10 +1329,10 @@ typedef struct {
 } GridAnalysis;
 
 // Grid analysis functions
-GridAnalysis* analyze_grid(double *x, int n, int store_spacings);
-int is_uniform_grid(double *x, int n, double *h_avg, double tolerance);
+GridAnalysis* analyze_grid(const double *x, int n, int store_spacings);
 const char* get_grid_recommendation(GridAnalysis *analysis);
-int optimal_window_size(GridAnalysis *analysis, int min_window, int max_window);
+void print_grid_analysis(GridAnalysis *analysis, int verbose, const char *prefix);
+void free_grid_analysis(GridAnalysis *analysis);
 ```
 
 ### LAPACK Routines Used
@@ -1399,26 +1405,63 @@ smooth/
 |--- grid_analysis.c/h  # Grid analysis module
 |--- decomment.c/h      # Comment removal utility
 |--- timestamp.c/h      # Timestamp parsing module
+|--- parser.c/h         # Input parser (tokenizing, column/timestamp model)
 |--- revision.h         # Program version
 |--- Makefile           # Build system with test targets
 |--- README.md          # This documentation
 +--- tests/             # Unit testing framework (Unity)
     |--- unity.c/h                # Unity testing framework
     |--- unity_internals.h        # Unity internals
-    |--- test_main.c              # Test runner (106 tests)
+    |--- test_main.c              # Test runner (111 tests)
     |--- test_grid_analysis.c     # Grid analysis tests (7 tests)
     |--- test_polyfit.c           # Polyfit module tests (21 tests)
     |--- test_savgol.c            # Savgol module tests (16 tests)
-    |--- test_tikhonov.c          # Tikhonov module tests (26 tests)
-    |--- test_butterworth.c       # Butterworth module tests (17 tests)
-    +--- test_timestamp.c         # Timestamp module tests (16 tests)
+    |--- test_tikhonov.c          # Tikhonov module tests (25 tests)
+    |--- test_butterworth.c       # Butterworth module tests (20 tests)
+    |--- test_timestamp.c         # Timestamp module tests (16 tests)
+    +--- test_parser.c            # Input parser tests (6 tests, end-to-end)
 ```
 
 ---
 
 ## Version History
 
-**v5.11.13 (current):** `-k N:M` works in `-T` (timestamp) mode (audit B15)
+**v5.11.38 (current):** Deep-audit fixes (S3 + T1)
+- S3: guard the Tikhonov `Data/Total ratio` output line against a degenerate functional (`-l 0` gives an exact fit, so `J = 0` and the ratios were printing `0/0 = nan`); the line is now skipped when `total_functional == 0`
+- T1: `find_lambda_lcurve` now uses an explicit `valid[]` flag instead of a `rss_vals[i] == 0.0` sentinel (`log(data_term)` can legitimately be 0.0); L-curve is only used for `n > 20000`
+- Full deep audit of all nine modules recorded in `doc/code-audit-v5.11.38.md`
+
+**v5.11.37:** Polyfit cleanup
+- Check `info` from the `dgelss` workspace query (was trusting a possibly-garbage workspace size)
+- Relabel the condition-number diagnostic as the *effective* condition number (after rcond truncation), drop a dead `s_min <= 0` branch
+- `polyfit.h` doc fixes (`poly_degree` range wording)
+
+**v5.11.36:** Savgol cleanup
+- Boundary-point coefficient/allocation failure now returns `NULL` (hard error) instead of silently substituting the raw input `y[i]` with a zero derivative — matches the central-point path
+- `savgol.h` doc fixes: example calls now pass `grid_info`; `poly_degree` range and alternative-method signatures corrected
+
+**v5.11.35:** Butterworth cleanup
+- Grid-uniformity CV check moved ahead of auto-cutoff estimation (a non-uniform grid is rejected before any trial filtfilts run)
+- Derivative comments corrected: the 5-point stencils are O(h⁴) only on a uniform grid and degrade toward first order as CV approaches the 0.15 cap
+
+**v5.11.34:** Unified Tikhonov discretization (**not backward compatible**)
+- The penalty now uses ONE integral-measure scheme for all grids: the Gram matrix $(D^2)^T W D^2$ with weights $w_k = (h_l + h_r)/2$
+- Removed the old AVERAGE branch, the CV = 0.15 method switch, and the `DiscretizationMethod` enum
+- On a uniform grid the matrix reduces to $[1,-4,6,-4,1]\cdot\lambda/h^3$, so $\lambda$ now scales as $\sim\lambda/h^3$ (units Length³); a given numeric `-l` value smooths differently than in ≤ v5.11.33
+
+**v5.11.33:** Tikhonov GCV cleanup
+- Removed an ad-hoc over-fitting penalty from the GCV score; `-l auto` now minimizes the textbook GCV criterion
+
+**v5.11.29:** Butterworth `-f` default flipped to `auto`
+- Without `-f`, the program now selects the cutoff via Morozov's discrepancy principle instead of a fixed `fc = 0.2`; numeric `-f <value>` still overrides
+
+**v5.11.28:** Input parser extracted to `parser.c` / `parser.h`
+- The ~290-line input parser (overflow detection, normal-mode and timestamp-mode tokenizers, timestamp-to-relative conversion) moved out of `main()` into its own module exposing `parse_input()` / `free_parse_result()`
+
+**v5.11.14–v5.11.27:** Audit series (v5.11.22 code audit)
+- Unified error-label capitalization, added const-correctness across method signatures, made `savgol_coefficients` and `estimate_cutoff_frequency` static, plus assorted goto-cleanup and dead-code fixes
+
+**v5.11.13:** `-k N:M` works in `-T` (timestamp) mode (audit B15)
 - Timestamp parser rewritten from `sscanf` to a whitespace tokenizer with a logical-column model
 - N selects the timestamp's logical column (default 1), M selects the y column (default 2)
 - Logical column abstracts that the timestamp spans 1 (T-separator) or 2 (space-separator) whitespace tokens
@@ -1507,8 +1550,8 @@ smooth/
 
 ---
 
-**Document revision:** 2026-04-25
-**Program version:** smooth v5.11.8
+**Document revision:** 2026-06-01
+**Program version:** smooth v5.11.38
 **Dependencies:** LAPACK, BLAS
 **Testing framework:** Unity (included in tests/)
 **License:** MIT License
