@@ -3,7 +3,19 @@
  *
  * Version History
  * ---------------
- * v5.11.35 (current): Butterworth cleanup. (1) Reordered the grid-uniformity
+ * v5.11.36 (current): Savgol cleanup. (1) Boundary-point handling now treats a
+ *           coefficient or allocation failure as a hard error — it frees and
+ *           returns NULL instead of silently substituting the raw input y[i]
+ *           with a zero derivative. This matches the central-point path and the
+ *           "reject loudly" rule (the silent path could only trigger on OOM or
+ *           an ill-conditioned boundary solve, but the asymmetry was wrong).
+ *           (2) savgol.h doc fixes: example usage now passes grid_info (the old
+ *           snippets dropped the argument and would not compile); poly_degree
+ *           range corrected to 0..12 with the >6 instability warning noted; the
+ *           tikhonov_smooth / find_optimal_lambda_gcv signatures in the
+ *           non-uniform-grid recommendations updated to include grid_info. No
+ *           behaviour change on valid uniform-grid input; 111 tests pass.
+ * v5.11.35: Butterworth cleanup. (1) Reordered the grid-uniformity
  *           CV check ahead of auto-cutoff estimation so a non-uniform grid is
  *           rejected immediately instead of after running several trial
  *           filtfilts and emitting stdout diagnostics. (2) Corrected the
@@ -204,5 +216,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.35"
-#define REVDATE "2026-05-31"
+#define VERSION "5.11.36"
+#define REVDATE "2026-06-01"

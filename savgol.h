@@ -1,5 +1,7 @@
 /*  Savitzky-Golay filter for data smoothing
  *  Header file
+ *  V2.5/2026-06-01/ Doc fixes: example calls pass grid_info; poly_degree range
+ *                   and alternative-method signatures corrected to match code.
  *  V2.4/2025-11-28/ FIXED: Allow deriv_order > poly_degree (returns zero coefficients)
  *  V2.3/2025-11-28/ savgol_coefficients now returns error code
  *  V2.1/2025-10-04/ Added uniform grid requirement documentation
@@ -32,7 +34,8 @@ typedef struct {
  *   y            - Array of y-values to be smoothed
  *   n            - Number of data points
  *   window_size  - Size of sliding window (must be odd, >= 3)
- *   poly_degree  - Degree of approximating polynomial (0 to 6)
+ *   poly_degree  - Degree of approximating polynomial (0 to 12; values above 6
+ *                  trigger a numerical-instability warning)
  *   grid_info    - Grid analysis results (used for uniformity check)
  * 
  * Returns:
@@ -67,12 +70,14 @@ typedef struct {
  *   // This will work (uniform grid):
  *   double x[] = {0.0, 1.0, 2.0, 3.0, 4.0, 5.0};
  *   double y[] = {1.0, 2.1, 2.9, 4.2, 5.1, 6.0};
- *   SavgolResult *result = savgol_smooth(x, y, 6, 5, 2);
- * 
+ *   GridAnalysis *grid = analyze_grid(x, 6, 0);
+ *   SavgolResult *result = savgol_smooth(x, y, 6, 5, 2, grid);
+ *
  *   // This will FAIL (non-uniform grid):
  *   double x[] = {0.0, 1.0, 1.5, 4.0, 5.0, 10.0};
  *   double y[] = {1.0, 2.1, 2.9, 4.2, 5.1, 6.0};
- *   SavgolResult *result = savgol_smooth(x, y, 6, 5, 2);
+ *   GridAnalysis *grid = analyze_grid(x, 6, 0);
+ *   SavgolResult *result = savgol_smooth(x, y, 6, 5, 2, grid);
  *   // Returns NULL with error message suggesting Tikhonov method
  */
 SavgolResult* savgol_smooth(const double *x, const double *y, int n, int window_size, int poly_degree,
@@ -90,10 +95,10 @@ void free_savgol_result(SavgolResult *result);
  * If savgol_smooth() rejects your data due to non-uniform spacing, consider:
  * 
  * 1. TIKHONOV METHOD (best for non-uniform grids):
- *    TikhonovResult *result = tikhonov_smooth(x, y, n, lambda);
+ *    TikhonovResult *result = tikhonov_smooth(x, y, n, lambda, grid_info);
  *    - Works correctly with any spacing
  *    - Global optimization approach
- *    - Use automatic lambda: find_optimal_lambda_gcv()
+ *    - Use automatic lambda: find_optimal_lambda_gcv(x, y, n, grid_info)
  * 
  * 2. POLYFIT METHOD (local fitting):
  *    PolyfitResult *result = polyfit_smooth(x, y, n, window_size, poly_degree);

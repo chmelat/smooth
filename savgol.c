@@ -1,5 +1,7 @@
 /*  Savitzky-Golay filter for data smoothing
  *  OPTIMIZED Implementation with pre-computed coefficients
+ *  V2.5/2026-06-01/ FIXED: boundary coefficient/alloc failure now returns NULL
+ *                   (was silently substituting raw y[i]), matching central path.
  *  V2.4/2025-11-28/ FIXED: Allow deriv_order > poly_degree (returns zero coefficients)
  *  V2.3/2025-11-28/ FIXED: savgol_coefficients returns error code, output zeroed on error
  *  V2.2/2025-10-14/ FIXED: Pre-compute coefficients once, massive speedup!
@@ -346,42 +348,36 @@ SavgolResult* savgol_smooth(const double *x, const double *y, int n, int window_
         c_bound_func = (double *)calloc(n_coeff, sizeof(double));
         c_bound_deriv = (double *)calloc(n_coeff, sizeof(double));
 
-        if (c_bound_func && c_bound_deriv) {
-            int coef_ok = 1;
-
-            if (savgol_coefficients(left_pts, right_pts, poly_degree, 0, c_bound_func) != 0) {
-                coef_ok = 0;
-            }
-            if (coef_ok && savgol_coefficients(left_pts, right_pts, poly_degree, 1, c_bound_deriv) != 0) {
-                coef_ok = 0;
-            }
-
-            if (coef_ok) {
-                double val = 0.0;
-                double deriv = 0.0;
-
-                for (k = 0; k < n_coeff; k++) {
-                    int idx = i - left_pts + k;
-                    val += c_bound_func[k] * y[idx];
-                    deriv += c_bound_deriv[k] * y[idx];
-                }
-
-                result->y_smooth[i] = val;
-                result->y_deriv[i] = deriv / h_avg;
-            } else {
-                /* Coefficient computation failed - use original value */
-                result->y_smooth[i] = y[i];
-                result->y_deriv[i] = 0.0;
-            }
-        } else {
-            result->y_smooth[i] = y[i];
-            result->y_deriv[i] = 0.0;
+        /* Allocation or coefficient failure is a hard error: propagate NULL
+         * rather than silently substituting raw data (matches central path). */
+        if (c_bound_func == NULL || c_bound_deriv == NULL ||
+            savgol_coefficients(left_pts, right_pts, poly_degree, 0, c_bound_func) != 0 ||
+            savgol_coefficients(left_pts, right_pts, poly_degree, 1, c_bound_deriv) != 0) {
+            fprintf(stderr, "ERROR: Failed to compute left-boundary coefficients\n");
+            free(c_bound_func);
+            free(c_bound_deriv);
+            free(c_func);
+            free(c_deriv);
+            free_savgol_result(result);
+            return NULL;
         }
-        
+
+        double val = 0.0;
+        double deriv = 0.0;
+
+        for (k = 0; k < n_coeff; k++) {
+            int idx = i - left_pts + k;
+            val += c_bound_func[k] * y[idx];
+            deriv += c_bound_deriv[k] * y[idx];
+        }
+
+        result->y_smooth[i] = val;
+        result->y_deriv[i] = deriv / h_avg;
+
         free(c_bound_func);
         free(c_bound_deriv);
     }
-    
+
     /* Right boundary */
     for (i = n - offset; i < n; i++) {
         int right_pts = n - 1 - i;
@@ -393,42 +389,36 @@ SavgolResult* savgol_smooth(const double *x, const double *y, int n, int window_
         c_bound_func = (double *)calloc(n_coeff, sizeof(double));
         c_bound_deriv = (double *)calloc(n_coeff, sizeof(double));
 
-        if (c_bound_func && c_bound_deriv) {
-            int coef_ok = 1;
-
-            if (savgol_coefficients(left_pts, right_pts, poly_degree, 0, c_bound_func) != 0) {
-                coef_ok = 0;
-            }
-            if (coef_ok && savgol_coefficients(left_pts, right_pts, poly_degree, 1, c_bound_deriv) != 0) {
-                coef_ok = 0;
-            }
-
-            if (coef_ok) {
-                double val = 0.0;
-                double deriv = 0.0;
-
-                for (k = 0; k < n_coeff; k++) {
-                    int idx = i - left_pts + k;
-                    val += c_bound_func[k] * y[idx];
-                    deriv += c_bound_deriv[k] * y[idx];
-                }
-
-                result->y_smooth[i] = val;
-                result->y_deriv[i] = deriv / h_avg;
-            } else {
-                /* Coefficient computation failed - use original value */
-                result->y_smooth[i] = y[i];
-                result->y_deriv[i] = 0.0;
-            }
-        } else {
-            result->y_smooth[i] = y[i];
-            result->y_deriv[i] = 0.0;
+        /* Allocation or coefficient failure is a hard error: propagate NULL
+         * rather than silently substituting raw data (matches central path). */
+        if (c_bound_func == NULL || c_bound_deriv == NULL ||
+            savgol_coefficients(left_pts, right_pts, poly_degree, 0, c_bound_func) != 0 ||
+            savgol_coefficients(left_pts, right_pts, poly_degree, 1, c_bound_deriv) != 0) {
+            fprintf(stderr, "ERROR: Failed to compute right-boundary coefficients\n");
+            free(c_bound_func);
+            free(c_bound_deriv);
+            free(c_func);
+            free(c_deriv);
+            free_savgol_result(result);
+            return NULL;
         }
-        
+
+        double val = 0.0;
+        double deriv = 0.0;
+
+        for (k = 0; k < n_coeff; k++) {
+            int idx = i - left_pts + k;
+            val += c_bound_func[k] * y[idx];
+            deriv += c_bound_deriv[k] * y[idx];
+        }
+
+        result->y_smooth[i] = val;
+        result->y_deriv[i] = deriv / h_avg;
+
         free(c_bound_func);
         free(c_bound_deriv);
     }
-    
+
     /* Clean up pre-computed coefficients */
     free(c_func);
     free(c_deriv);
