@@ -1,5 +1,7 @@
 /* Tikhonov regularization for data smoothing
  * Second derivative penalty via (D²)ᵀ W D² (pentadiagonal Gram matrix)
+ * V5.2/2026-06-01/ L-curve: use explicit valid[] flag instead of a 0.0 sentinel
+ *                  (log(data_term) can legitimately be 0.0)
  * V5.1/2026-05-30/ A1: single integral-measure discretization (removed AVERAGE/LOCAL branch + CV=0.15 switch)
  * V5.0/2026-02-07/ Corrected penalty from 1st to 2nd order: (D²)ᵀWD² pentadiagonal matrix
  * V4.7/2025-11-28/ Fixed boundary condition asymmetry in Local Spacing Method
@@ -340,13 +342,15 @@ static double find_lambda_lcurve(const double *x, const double *y, int n, const 
     double *rss_vals = NULL;
     double *reg_vals = NULL;
     double *curv_vals = NULL;
+    int *valid = NULL;
     double best_lambda = 0.01;
 
     rss_vals = (double *)malloc(n_lambda * sizeof(double));
     reg_vals = (double *)malloc(n_lambda * sizeof(double));
     curv_vals = (double *)malloc(n_lambda * sizeof(double));
-    
-    if (!rss_vals || !reg_vals || !curv_vals) {
+    valid = (int *)malloc(n_lambda * sizeof(int));
+
+    if (!rss_vals || !reg_vals || !curv_vals || !valid) {
         goto lcurve_cleanup;
     }
     
@@ -367,11 +371,14 @@ static double find_lambda_lcurve(const double *x, const double *y, int n, const 
             double rt = (seminorm > 1e-300) ? seminorm : 1e-300;
             rss_vals[i] = log(dt);
             reg_vals[i] = log(rt);
+            valid[i] = 1;
             free_tikhonov_result(result);
         } else {
-            /* Mark invalid points */
+            /* Mark invalid points (log values may legitimately be 0.0, so a
+             * separate flag is used instead of a sentinel value) */
             rss_vals[i] = 0.0;
             reg_vals[i] = 0.0;
+            valid[i] = 0;
         }
     }
     
@@ -381,7 +388,7 @@ static double find_lambda_lcurve(const double *x, const double *y, int n, const 
     
     for (int i = 1; i < n_lambda - 1; i++) {
         /* Skip invalid points */
-        if (rss_vals[i-1] == 0.0 || rss_vals[i] == 0.0 || rss_vals[i+1] == 0.0) {
+        if (!valid[i-1] || !valid[i] || !valid[i+1]) {
             continue;
         }
         
@@ -413,7 +420,8 @@ lcurve_cleanup:
     if (rss_vals) free(rss_vals);
     if (reg_vals) free(reg_vals);
     if (curv_vals) free(curv_vals);
-    
+    if (valid) free(valid);
+
     return best_lambda;
 }
 

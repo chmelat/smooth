@@ -3,7 +3,18 @@
  *
  * Version History
  * ---------------
- * v5.11.37 (current): Polyfit cleanup. (1) The dgelss workspace-query call now
+ * v5.11.38 (current): Deep-audit fixes (S3 + T1). (S3) smooth.c guarded the
+ *           Tikhonov "Data/Total ratio ... Regularization/Total ratio" line
+ *           against a degenerate functional: with lambda=0 the fit is exact, so
+ *           data_term=reg_term=total_functional=0 and the ratios printed as
+ *           0/0 = nan. The line is now skipped when total_functional==0.
+ *           (T1) tikhonov.c find_lambda_lcurve used rss_vals[i]==0.0 as an
+ *           "invalid point" sentinel, but rss_vals[i]=log(data_term) is
+ *           legitimately 0.0 when data_term==1.0 — a valid L-curve point could
+ *           be discarded. Replaced with an explicit valid[] flag (freed in
+ *           lcurve_cleanup). L-curve is only used for n>20000. No behaviour
+ *           change on typical input; 111 tests pass, zero valgrind leaks.
+ * v5.11.37: Polyfit cleanup. (1) The dgelss workspace-query call now
  *           checks its info return and bails to cleanup_error instead of
  *           trusting a possibly-garbage work_query (the per-window solves
  *           already checked info; the query did not). (2) The "Worst Vandermonde
@@ -228,5 +239,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.37"
+#define VERSION "5.11.38"
 #define REVDATE "2026-06-01"

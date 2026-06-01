@@ -1,5 +1,6 @@
 /*  Balance of table points by polynom p-th degree at sliding window size
  *  n points. Least square principe.
+ *  V5.6/2026-06-01/ Guard Tikhonov ratio output against J=0 (lambda=0) -> nan
  *  V5.5/2025-11-03/ Added Butterworth filtfilt method
  *  V5.2/2025-10-13/ Added -g option for detailed grid uniformity analysis
  *  V5.1/2025-10-04/ Simplified Tikhonov method (removed adaptive_weights option)
@@ -270,9 +271,13 @@ int main(int argc, char **argv)
         printf("# Data smooth - Tikhonov regularization with lambda = %.6lG\n", lambda);
         printf("# Functional J = %.6lG (Data: %.6lG + Regularization: %.6lG)\n",
                result->total_functional, result->data_term, result->regularization_term);
-        printf("# Data/Total ratio = %.3f, Regularization/Total ratio = %.3f\n",
-               result->data_term / result->total_functional,
-               result->regularization_term / result->total_functional);
+        /* Ratios are undefined for a degenerate functional (J=0, e.g. lambda=0
+         * gives an exact fit: data_term=reg_term=0). Guard against 0/0 -> nan. */
+        if (result->total_functional > 0.0) {
+          printf("# Data/Total ratio = %.3f, Regularization/Total ratio = %.3f\n",
+                 result->data_term / result->total_functional,
+                 result->regularization_term / result->total_functional);
+        }
 
         print_result(x, ts_ctx, result->y_smooth, result->y_deriv, n,
                      show_derivative, timestamp_mode);
