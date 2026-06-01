@@ -3,7 +3,19 @@
  *
  * Version History
  * ---------------
- * v5.11.36 (current): Savgol cleanup. (1) Boundary-point handling now treats a
+ * v5.11.37 (current): Polyfit cleanup. (1) The dgelss workspace-query call now
+ *           checks its info return and bails to cleanup_error instead of
+ *           trusting a possibly-garbage work_query (the per-window solves
+ *           already checked info; the query did not). (2) The "Worst Vandermonde
+ *           condition number" note is relabelled "Worst effective condition
+ *           number (after rcond truncation)" — it reports s_max/s_min over the
+ *           RETAINED singular values, bounded by 1/rcond, not the raw Vandermonde
+ *           conditioning. The dead s_min<=0 fallback (1e16) is dropped since the
+ *           smallest retained s.v. is always positive. (3) polyfit.h poly_degree
+ *           range reworded ("0 to DPMAX, which is 12"). (4) Stale test comment
+ *           in test_polyfit.c corrected (the NULL there is from window_size>n,
+ *           not an over-maximum degree). No behaviour change; 111 tests pass.
+ * v5.11.36: Savgol cleanup. (1) Boundary-point handling now treats a
  *           coefficient or allocation failure as a hard error — it frees and
  *           returns NULL instead of silently substituting the raw input y[i]
  *           with a zero derivative. This matches the central-point path and the
@@ -216,5 +228,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.36"
+#define VERSION "5.11.37"
 #define REVDATE "2026-06-01"

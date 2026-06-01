@@ -501,7 +501,7 @@ void test_polyfit_edge_case_invalid_sizes(void) {
   result = polyfit_smooth(x, y, N_TEST, 5, -1);
   TEST_ASSERT_NULL(result);
 
-  /* ACT & ASSERT - P > 6 (nad maximum) */
+  /* ACT & ASSERT - window_size (11) > n (10): nedostatek bodů */
   result = polyfit_smooth(x, y, N_TEST, 11, 10);
   TEST_ASSERT_NULL(result);
 

@@ -1,5 +1,6 @@
 /*  Polynomial fitting for data smoothing
  *  Header file for least squares polynomial approximation
+ *  V2.2/2026-06-01/ Doc fix: poly_degree range wording (DPMAX is the max, 12)
  *  V2.1/2025-11-28/ Updated documentation for V3.1 SVD implementation
  *  V2.0/2025-11-28/ Updated documentation for V3.0 implementation
  *  V1.1/2025-11-28/ Removed unused coeffs field
@@ -28,7 +29,7 @@ typedef struct {
  *   y            - Array of y-values to be smoothed
  *   n            - Number of data points
  *   window_size  - Size of sliding window (must be odd, >= 3)
- *   poly_degree  - Degree of approximating polynomial (0 to DPMAX, default 12)
+ *   poly_degree  - Degree of approximating polynomial (0 to DPMAX, which is 12)
  * 
  * Returns:
  *   Pointer to PolyfitResult structure containing smoothed values and derivatives

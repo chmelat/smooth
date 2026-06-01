@@ -1,5 +1,8 @@
 /* Polynomial fitting for data smoothing
  * Implementation of least squares polynomial approximation
+ * V3.2/2026-06-01/ Check dgelss workspace-query info; clarify that the reported
+ *                  condition number is the effective (post-rcond) one and drop
+ *                  the dead s_min<=0 branch.
  * V3.1/2025-11-28/ SVD solver instead of QR for maximum robustness
  * V3.0/2025-11-28/ Major: QR decomposition instead of normal equations, condition check
  * V2.3/2025-11-28/ Removed unused coeffs field
@@ -242,7 +245,12 @@ PolyfitResult* polyfit_smooth(const double *x, const double *y, int n, int windo
     lwork = -1;
     dgelss_(&window_size, &matrix_cols, &nrhs, V, &window_size, rhs, &rhs_size,
             sing_vals, &rcond, &effective_rank, &work_query, &lwork, &info);
-    
+
+    if (info != 0) {
+        fprintf(stderr, "ERROR: dgelss workspace query failed (info = %d)\n", info);
+        goto cleanup_error;
+    }
+
     lwork = (int)work_query + 1;
     work = (double *)malloc(lwork * sizeof(double));
     
@@ -281,8 +289,9 @@ PolyfitResult* polyfit_smooth(const double *x, const double *y, int n, int windo
         /* Track conditioning across all windows (audit C2) */
         {
             double s_max = sing_vals[0];
-            double s_min = sing_vals[effective_rank - 1];
-            double cond = (s_min > 0) ? (s_max / s_min) : 1e16;
+            double s_min = sing_vals[effective_rank - 1];  /* smallest RETAINED s.v. (>0) */
+            /* Effective conditioning after rcond truncation; bounded by 1/rcond. */
+            double cond = s_max / s_min;
             if (cond > worst_cond) worst_cond = cond;
             if (effective_rank < matrix_cols) rank_deficient_count++;
         }
@@ -330,7 +339,7 @@ PolyfitResult* polyfit_smooth(const double *x, const double *y, int n, int windo
 
     /* Report worst conditioning and rank-deficiency frequency across all windows */
     if (worst_cond > CONDITION_WARNING_THRESHOLD) {
-        fprintf(stderr, "Note: Worst Vandermonde condition number = %.2e\n", worst_cond);
+        fprintf(stderr, "Note: Worst effective condition number = %.2e (after rcond truncation)\n", worst_cond);
     }
     if (rank_deficient_count > 0) {
         int total_interior = n - 2 * offset;
