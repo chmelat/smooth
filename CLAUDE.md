@@ -111,7 +111,7 @@ that):
 
 Uses the **Unity** framework (vendored in `tests/`).
 
-- 111 tests total: grid_analysis (7), polyfit (21), savgol (16), tikhonov (23),
+- 111 tests total: grid_analysis (7), polyfit (21), savgol (16), tikhonov (25),
   butterworth (20), timestamp (16), parser (6). Source of truth is `tests/test_main.c`.
 - Zero leaks. `make test-valgrind` exits 1 on any definite/indirect leak or
   memory error — keep it that way.
