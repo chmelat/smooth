@@ -3,7 +3,18 @@
  *
  * Version History
  * ---------------
- * v5.11.38 (current): Deep-audit fixes (S3 + T1). (S3) smooth.c guarded the
+ * v5.11.39 (current): Tikhonov GCV fixes. (1) compute_gcv_score_robust used a
+ *           "fast" trace approximation n/(1+sqrt(lambda/h^3)) for n>5000, but
+ *           its large-lambda asymptotic exponent is wrong (~s^-1/2 instead of
+ *           the correct ~s^-1/4 from the eigenvalue integral), underestimating
+ *           tr(H) by a growing factor and biasing GCV toward undersmoothing on
+ *           large datasets. The O(n) analytical eigenvalue sum — same order as
+ *           the band solve itself — is now used for every n. (2) Lambda is
+ *           dimensional (scales with h^3 and y amplitude), so the fixed search
+ *           range [1e-8, 1] cannot fit every data scale; find_optimal_lambda_gcv
+ *           now warns when the selected lambda is pinned to the range edge and
+ *           suggests setting -l manually. README size-tier table updated.
+ * v5.11.38: Deep-audit fixes (S3 + T1). (S3) smooth.c guarded the
  *           Tikhonov "Data/Total ratio ... Regularization/Total ratio" line
  *           against a degenerate functional: with lambda=0 the fit is exact, so
  *           data_term=reg_term=total_functional=0 and the ratios printed as
@@ -239,5 +250,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.38"
-#define REVDATE "2026-06-01"
+#define VERSION "5.11.39"
+#define REVDATE "2026-06-10"

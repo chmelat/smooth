@@ -1,5 +1,8 @@
 /* Tikhonov regularization for data smoothing
  * Second derivative penalty via (D²)ᵀ W D² (pentadiagonal Gram matrix)
+ * V5.3/2026-06-10/ GCV: analytical trace for all n (removed n>5000 shortcut with
+ *                  wrong asymptotic exponent); warn when optimal lambda is pinned
+ *                  to the search-range edge
  * V5.2/2026-06-01/ L-curve: use explicit valid[] flag instead of a 0.0 sentinel
  *                  (log(data_term) can legitimately be 0.0)
  * V5.1/2026-05-30/ A1: single integral-measure discretization (removed AVERAGE/LOCAL branch + CV=0.15 switch)
@@ -289,31 +292,23 @@ static double compute_gcv_score_robust(const double *x, const double *y, int n, 
     double ratio = grid_info->ratio_max_min;
     double h_avg = grid_info->h_avg;
 
-    if (n <= 5000) {
-        /* Analytical trace - exact for uniform grids, approximate otherwise.
-         * Penalty matrix K = sum_k w_k d_k^T d_k uses the integral measure, so on
-         * a uniform grid its eigenvalues are h_avg * (4 sin^2(theta/2)/h^2)^2.
-         * Null space of D2 is 2-dimensional (constants + linear), so trace starts at 2.0 */
-        trace_H = 2.0;
-        for (int k = 1; k <= n-2; k++) {
-            double theta = M_PI * k / n;
-            double sin_half = sin(theta / 2.0);
-            double ev1 = 4.0 * sin_half * sin_half / (h_avg * h_avg);
-            double eigenval = ev1 * ev1 * h_avg;
-            trace_H += 1.0 / (1.0 + lambda * eigenval);
-        }
-        
-        if (ratio > 2.0 && verbose) {
-            printf("# Note: Trace(H) approximation less accurate for non-uniform grid (ratio=%.2f)\n", ratio);
-        }
-    } else {
-        /* Fast approximation for large datasets (integral measure: penalty
-         * eigenvalue scale ~ lambda / h_avg^3) */
-        double h3 = h_avg * h_avg * h_avg;
-        double scale = lambda / h3;
-        trace_H = (double)n / (1.0 + sqrt(scale));
-        if (trace_H < 2.0) trace_H = 2.0;
-        if (trace_H > n-2) trace_H = n-2;
+    /* Analytical trace from the uniform-grid eigenvalue model of the penalty
+     * (approximate for non-uniform grids). Penalty matrix K = sum_k w_k d_k^T d_k
+     * uses the integral measure, so on a uniform grid its eigenvalues are
+     * h_avg * (4 sin^2(theta/2)/h^2)^2. Null space of D2 is 2-dimensional
+     * (constants + linear), so trace starts at 2.0. The O(n) sum is the same
+     * order as the band solve, so it is used for every n. */
+    trace_H = 2.0;
+    for (int k = 1; k <= n-2; k++) {
+        double theta = M_PI * k / n;
+        double sin_half = sin(theta / 2.0);
+        double ev1 = 4.0 * sin_half * sin_half / (h_avg * h_avg);
+        double eigenval = ev1 * ev1 * h_avg;
+        trace_H += 1.0 / (1.0 + lambda * eigenval);
+    }
+
+    if (ratio > 2.0 && verbose) {
+        printf("# Note: Trace(H) approximation less accurate for non-uniform grid (ratio=%.2f)\n", ratio);
     }
     
     /* Standard GCV */
@@ -430,6 +425,10 @@ double find_optimal_lambda_gcv(const double *x, const double *y, int n, const Gr
 {
     double best_lambda = 0.01;
     double best_gcv = 1e20;
+    /* Search range shared by both branches (the large-n lambda list below
+     * spans the same interval) */
+    const double lambda_min = 1e-8;
+    const double lambda_max = 1e0;
 
     if (grid_info == NULL) {
         fprintf(stderr, "ERROR: Grid info not available\n");
@@ -471,8 +470,6 @@ double find_optimal_lambda_gcv(const double *x, const double *y, int n, const Gr
         
     } else {
         /* Standard GCV search */
-        double lambda_min = 1e-8;
-        double lambda_max = 1e0;
         int n_points = 13;
         
         for (int i = 0; i < n_points; i++) {
@@ -505,6 +502,15 @@ double find_optimal_lambda_gcv(const double *x, const double *y, int n, const Gr
         }
     }
     
+    /* Lambda is dimensional (scales with h^3 and the y amplitude), so a fixed
+     * search range cannot fit every data scale. Flag a result pinned to the
+     * range edge instead of returning it silently as "optimal". */
+    if (best_lambda <= lambda_min * 1.01 || best_lambda >= lambda_max * 0.99) {
+        printf("# WARNING: optimal λ = %.3e lies at the edge of the search range [%.0e, %.0e].\n",
+               best_lambda, lambda_min, lambda_max);
+        printf("#          The true optimum may lie outside this range; consider setting λ manually (-l <value>).\n");
+    }
+
     printf("# Optimal λ: %.6e (GCV=%.3e)\n", best_lambda, best_gcv);
     return best_lambda;
 }

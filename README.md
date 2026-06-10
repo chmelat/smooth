@@ -1020,11 +1020,13 @@ The trace computation and lambda search switch between two regimes based on data
 
 | Size | Trace estimator | Lambda search |
 |------|-----------------|---------------|
-| $n \le 5000$ | Eigenvalue sum above (exact for uniform grids) | 13-point log scan over $[10^{-8}, 10^0]$ + 8-point refinement around the minimum |
-| $5000 < n \le 20000$ | Fast approximation $\text{tr}(H) \approx n / (1 + \sqrt{\lambda/h^3})$ | 13-point log scan only (no refinement) |
-| $n > 20000$ | Fast approximation (same as above) | 12-point conservative scan + L-curve backup (see below) |
+| $n \le 5000$ | Eigenvalue sum above | 13-point log scan over $[10^{-8}, 10^0]$ + 8-point refinement around the minimum |
+| $5000 < n \le 20000$ | Eigenvalue sum above | 13-point log scan only (no refinement) |
+| $n > 20000$ | Eigenvalue sum above | 12-point conservative scan + L-curve backup (see below) |
 
-The fast approximation for large $n$ avoids the $O(n)$ eigenvalue sum at every $\lambda$ candidate, trading accuracy for speed. The refinement step at $n \le 5000$ adds 8 extra $\lambda$ evaluations clustered around the coarse-scan minimum (factors $0.3 \ldots 1.7$). Datasets that straddle a threshold may therefore receive slightly different optimal $\lambda$ from otherwise-identical inputs.
+The eigenvalue sum is $O(n)$ per $\lambda$ candidate — the same order as the band solve itself — so it is used for all dataset sizes. The refinement step at $n \le 5000$ adds 8 extra $\lambda$ evaluations clustered around the coarse-scan minimum (factors $0.3 \ldots 1.7$). Datasets that straddle a threshold may therefore receive slightly different optimal $\lambda$ from otherwise-identical inputs.
+
+Because $\lambda$ is dimensional (it scales with $h^3$ and the squared amplitude of $y$), the fixed search range $[10^{-8}, 10^0]$ may not match the scale of every dataset. If the selected optimum lies at the edge of the range, a warning is printed and $\lambda$ should be set manually with `-l`.
 
 **L-curve backup (for n > 20000):**
 
