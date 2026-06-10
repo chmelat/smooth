@@ -1,10 +1,18 @@
 # Analýza implementace Butterworthova filtru
 
-**Datum auditu:** 2026-05-31 (aktualizováno)
-**Verze projektu:** smooth v5.11.35
+**Datum auditu:** 2026-06-10 (aktualizováno)
+**Verze projektu:** smooth v5.11.39
 **Auditované soubory:** `butterworth.c` (V1.4/2025-12-07), `butterworth.h`, volající část `smooth.c`
 
 **Historie změn dokumentu:**
+- 2026-06-10 (v5.11.39): nové kolo auditu (Fable 5). Jádro znovu ověřeno jako
+  korektní (bilineární koeficienty přepočteny ručně, IC vs. scipy `lfilter_zi`,
+  in-place aliasing v `apply_biquad`, krajní 5-bodové stencily, meze indexů
+  paddingu, orientace Morozovova výběru). Nové nálezy #15-#19: pevný padding
+  nepokrývá přechodový jev pro malá fc (#15, pohlcuje #12), Morozov fallback
+  jde špatným směrem (#16), konstanta `NOISE_MAD_NORMALIZATION` nesedí na
+  vlastní komentář (#17), mrtvý typ `ButterworthCoeffs` (#18), drobné
+  komentářové neshody (#19).
 - 2026-05-31 (v5.11.35): kritická re-analýza (Opus 4.8). #13 přesunut CV check
   uniformity gridu před auto-cutoff (odmítnutí neuniformního gridu bez 6 zbytečných
   zkušebních filtfiltů a stdout šumu). #14 opraveny zavádějící komentáře u derivace
@@ -256,13 +264,80 @@ iterovat přes extrémní kandidáty.
 
 **Priorita:** nízká.
 
-### 12. Padding length `3*(order+1)-1 = 14`
+### 12. Padding length `3*(order+1)-1 = 14` — POHLCENO nálezem #15
 
 `butterworth.c:54` — blízko scipy defaultu (15 pro monolitický 4. řád),
 ale pro biquad by bylo konzistentnější `3 * max(len(a), len(b)) = 9`.
 Rozdíl v praxi zanedbatelný.
 
-**Priorita:** velmi nízká.
+**Aktualizace 2026-06-10:** otázka 14 vs. 9 je bezpředmětná — pro malá `fc`
+jsou obě hodnoty řádově krátké (viz #15). Správný směr je opačný: padding má
+růst s klesajícím `fc`, ne se zmenšovat.
+
+### 15. Pevný padding nepokrývá přechodový jev filtru pro malá `fc`
+
+`calculate_pad_length` (`butterworth.c:66-73`) vrací konstantu 14 nezávisle
+na `fc`. Délka doznění filtru je ale ~`1/(1-r)`, kde `r` je poloměr
+nejpomalejšího pólu (biquad s `theta = pi/8`), a pro malá `fc` roste bez mezí:
+
+| `fc` | pólový poloměr `r` | doznění ~`1/(1-r)` | pad |
+|------|--------------------|--------------------|-----|
+| 0.05 | 0.930 | ~14 vzorků | 14 |
+| 0.02 | 0.971 | ~35 vzorků | 14 |
+| 0.01 | 0.986 | ~69 vzorků | 14 |
+| 1e-4 (povolené minimum) | 0.99986 | ~6900 vzorků | 14 |
+
+Kroková IC absorbuje přesně DC složku (důkaz u #3), takže buzení pochází jen
+z neshody sklonu/křivosti signálu na spoji s odd-reflection paddingem — to
+ale stále doznívá přes celou délku `1/(1-r)` a pro `fc < ~0.05` prosakuje za
+padding do výsledku jako okrajový artefakt. `FC_MIN_PRACTICAL = 1e-4` hlídá
+jen podmíněnost, ne délku transientu. scipy má stejně krátký default, ale
+umožňuje `padlen` zvýšit; zde to nejde a nic nevaruje.
+
+**Doporučení:** škálovat `pad_len ~ C/fc` s ořezem na `n-1` (a případně
+varovat, když ořez nastane), nebo alespoň vypsat `# WARNING`, když
+`1/(1-r_max)` výrazně přesahuje `pad_len`.
+
+**Priorita:** střední (jediný otevřený nález s praktickým dopadem — uživatelé
+s `fc < 0.05` dostávají nedokumentované okrajové artefakty).
+
+### 16. Morozov fallback jde špatným směrem
+
+`estimate_cutoff_frequency` (`butterworth.c:452-464`): když žádný kandidát
+nesplní discrepancy (residual > 1.1·σ̂ i při `fc = 0.5`, tj. signál má
+širokopásmový obsah, který i nejslabší filtr poškozuje), použije se fallback
+`AUTO_CUTOFF_FALLBACK = 0.2` — tedy **agresivnější vyhlazení** než nejslabší
+vyzkoušený kandidát. Logicky by se mělo padnout na největší kandidát (0.5),
+který signál poškozuje nejméně, a varovat.
+
+**Priorita:** nízká (jednořádková změna).
+
+### 17. Konstanta `NOISE_MAD_NORMALIZATION` nesedí na vlastní komentář
+
+`butterworth.c:42` — kód má `1.6528553` s komentářem `sqrt(6) * 0.6745`,
+ale `sqrt(6) * 0.6745 = 1.6521808` (rel. chyba 4.1e-4; vypadá to na překlep
+`sqrt(6) ~ 2.4505` místo 2.44949). Prakticky neškodné — discrepancy tolerance
+je stejně 1.1 — ale konstanta lže o svém původu.
+
+**Priorita:** kosmetická.
+
+### 18. Mrtvý veřejný typ `ButterworthCoeffs`
+
+`butterworth.h:30-32` — typedef definovaný v hlavičce, nikde v projektu
+nepoužitý (kód pracuje s polem `BiquadSection[NUM_BIQUADS]` přímo).
+
+**Priorita:** kosmetická.
+
+### 19. Drobné komentářové neshody
+
+- `calculate_pad_length` komentář říká „3 * filter_order" (= 12), formule
+  dává `3*(BUTTERWORTH_ORDER+1)-1` = 14 (`butterworth.c:65-68`).
+- `residual_std` komentář říká „sample standard deviation", ale dělí `n`
+  (populační, `butterworth.c:384-396`). Pro Morozov bez praktického dopadu.
+- Mřížka auto-cutoff kandidátů má skoky až 2.5x bez bisekce mezi sousedy —
+  vědomé zjednodušení, zmíněno pro úplnost.
+
+**Priorita:** kosmetická.
 
 ---
 
@@ -283,7 +358,12 @@ Rozdíl v praxi zanedbatelný.
 | 14 | Zavádějící komentář přesnosti derivace | nízká | **RESOLVED v5.11.35** (oprava komentářů) |
 | 3 | Cascade IC spoléhá na skrytou invariantu | nízká | otevřeno (důkaz doplněn, kód-komentář zbývá) |
 | 8 | Tichý fallback v `compute_biquad_ic` | nízká | otevřeno |
-| 12 | Padding length 14 vs. 9 | velmi nízká | otevřeno |
+| 12 | Padding length 14 vs. 9 | velmi nízká | pohlceno #15 |
+| 15 | Pevný padding vs. transient pro malá `fc` | **střední** | otevřeno |
+| 16 | Morozov fallback agresivnější než nejslabší kandidát | nízká | otevřeno |
+| 17 | `NOISE_MAD_NORMALIZATION` nesedí na komentář | kosmetická | otevřeno |
+| 18 | Mrtvý typ `ButterworthCoeffs` | kosmetická | otevřeno |
+| 19 | Komentářové neshody (pad délka, residual_std) | kosmetická | otevřeno |
 
 ---
 
@@ -322,13 +402,24 @@ Od původního auditu (v5.11.1) bylo postupně vyřešeno 8 problémů:
    invariantu `buf[0]` a shody se `scipy.sosfilt_zi`. Žádná změna chování na
    uniformním gridu; 111 testů.
 
-**Žádný vysoce prioritní problém už nezbyl.** Zbývající otevřené položky
-(#3, #8, #12) jsou dokumentační/kosmetické a neovlivňují typické použití
-na uniformním gridu.
+8. **v5.11.39 (audit 2026-06-10, Fable 5)** — jádro znovu ověřeno jako korektní:
+   bilineární koeficienty přepočteny ručně (A0/a1/a2 i čitatel `Wc²(1,2,1)`,
+   DC zisk přesně 1), IC shodná se scipy `lfilter_zi`, in-place aliasing
+   v `apply_biquad` bezpečný, všechny 5-bodové stencily sedí na standardní
+   vzorce, padding indexace v mezích, Morozovův výběr správně orientovaný.
+   Nové nálezy #15-#19 (zatím neopravené).
+
+**Po kole 2026-06-10 zbývá jeden nález s praktickým dopadem: #15** — pevný
+padding 14 vzorků nepokrývá přechodový jev filtru pro `fc < ~0.05` (při
+povoleném minimu `fc = 1e-4` je doznění ~6900 vzorků), takže malá `fc` dávají
+nedokumentované okrajové artefakty. Ostatní otevřené položky (#3, #8, #16-#19)
+jsou nízké až kosmetické a neovlivňují typické použití (`fc` 0.05-0.5 na
+uniformním gridu).
 
 Matematická stránka (bilineární transformace s prewarpingem, TDF-II biquad,
 odd-reflection padding, IC přes Cramerovo pravidlo, Morozov auto-fc,
 5-point stencil derivatives) je implementovaná **korektně**. Re-analýza v5.11.35
-ověřila návrh filtru, IC i filtfilt řádek po řádku proti scipy referenci —
-jádro je matematicky správné; jediný reálný dluh byla přesnost derivace na
-neuniformním gridu (nyní pravdivě zdokumentovaná).
+ověřila návrh filtru, IC i filtfilt řádek po řádku proti scipy referenci a
+kolo 2026-06-10 to nezávislým přepočtem potvrdilo — jádro je matematicky
+správné. Otevřený dluh: chování na okrajích při malém `fc` (#15) a přesnost
+derivace na neuniformním gridu (pravdivě zdokumentovaná od v5.11.35).
