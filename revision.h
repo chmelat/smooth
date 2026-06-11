@@ -3,7 +3,24 @@
  *
  * Version History
  * ---------------
- * v5.11.40 (current): Butterworth audit round 2026-06-10 simple fixes
+ * v5.11.41 (current): Butterworth audit #15 — fc-adaptive filtfilt padding.
+ *           calculate_pad_length previously returned a fixed 14 samples
+ *           regardless of fc, but the filter transient decays as r^k with r the
+ *           slowest pole radius, so its length ~1/(1-r) grows without bound as
+ *           fc shrinks (~35 samples at fc=0.02, ~6900 at fc=1e-4). For fc<~0.05
+ *           the transient leaked past the padding as an undocumented edge
+ *           artifact. Padding is now sized to PAD_DECAY_FACTOR/(1-r_max)
+ *           (5 time constants, ~0.7% residual), floored at the old 14 and
+ *           capped at n-1; when the cap engages a "# WARNING ... too short to
+ *           absorb the filter transient" line is printed. The pole-radius math
+ *           is factored into biquad_pole_radius()/max_pole_radius() (shared with
+ *           check_pole_stability); design + pole check now run before
+ *           allocation. run_filtfilt_trial (auto-cutoff trials) gets the same
+ *           fc-aware padding. New tests: small_cutoff_preserves_edges (ramp,
+ *           fc=0.02, n=600 — boundaries within 0.05; old padding left ~0.6) and
+ *           small_cutoff_short_data_clamps (clamp path stays finite). 113 tests
+ *           pass, zero valgrind leaks. Closes #15 and #12.
+ * v5.11.40: Butterworth audit round 2026-06-10 simple fixes
  *           (#8, #16, #17, #18, #19, #3-comment). (#8) compute_biquad_ic no
  *           longer silently zeroes the IC on a singular system — it warns to
  *           stderr so an edge transient is not emitted unannounced. (#16)
@@ -264,5 +281,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.40"
+#define VERSION "5.11.41"
 #define REVDATE "2026-06-11"

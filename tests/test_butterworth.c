@@ -334,6 +334,59 @@ void test_butterworth_edge_points_no_excessive_oscillation(void) {
     free(grid);
 }
 
+/* Regression for audit finding #15: a small cutoff makes the filter transient
+ * long (~1/(1-r) samples; ~35 at fc=0.02), far beyond the old fixed 14-sample
+ * padding, so the boundaries used to carry a large edge artifact (~0.6 here).
+ * With fc-adaptive padding a pure ramp must be reproduced at the edges. */
+void test_butterworth_small_cutoff_preserves_edges(void) {
+    const int n = 600;
+    double x[n], y[n];
+    create_uniform_grid(x, n, 0.0, 0.1);
+
+    for (int i = 0; i < n; i++) {
+        y[i] = 2.0 * x[i] + 3.0;   // linear: ideal output equals input
+    }
+
+    GridAnalysis *grid = analyze_grid(x, n, 0);
+
+    ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.02, 0, grid);
+    TEST_ASSERT_NOT_NULL(result);
+
+    // Boundaries must track the input ramp (old padding left ~0.6 error here;
+    // adaptive padding keeps it below ~0.01).
+    for (int i = 0; i < 5; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(0.05, y[i], result->y_smooth[i]);
+        TEST_ASSERT_DOUBLE_WITHIN(0.05, y[n-1-i], result->y_smooth[n-1-i]);
+    }
+
+    free_butterworth_result(result);
+    free(grid);
+}
+
+/* Audit #15 clamp path: when the data is too short to hold the transient for a
+ * very small fc, padding is capped at n-1 and the filter still returns a valid
+ * finite result (the # WARNING about residual edge artifacts goes to stdout). */
+void test_butterworth_small_cutoff_short_data_clamps(void) {
+    const int n = 30;
+    double x[n], y[n];
+    create_uniform_grid(x, n, 0.0, 0.1);
+    for (int i = 0; i < n; i++) {
+        y[i] = sin(0.3 * x[i]);
+    }
+
+    GridAnalysis *grid = analyze_grid(x, n, 0);
+
+    // fc=0.001: transient ~hundreds of samples >> n, so pad clamps to n-1.
+    ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.001, 0, grid);
+    TEST_ASSERT_NOT_NULL(result);
+    for (int i = 0; i < n; i++) {
+        TEST_ASSERT_TRUE(isfinite(result->y_smooth[i]));
+    }
+
+    free_butterworth_result(result);
+    free(grid);
+}
+
 /* ============================================================================
  * GRID UNIFORMITY TESTS
  * ============================================================================ */

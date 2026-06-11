@@ -105,14 +105,17 @@ that):
 - **Butterworth:** 4th-order low-pass split into a biquad cascade for numerical
   stability. Filtfilt (forward-backward) gives zero phase. Per-biquad analytical
   IC via Cramer's rule avoids LAPACK and `complex.h`. Auto-cutoff via Morozov's
-  discrepancy principle (v5.11.3).
+  discrepancy principle (v5.11.3). Padding length is fc-adaptive
+  (`PAD_DECAY_FACTOR/(1-r_max)`, floored at 14, capped at n-1) so the transient
+  is absorbed even for small fc (v5.11.41); a `# WARNING` is emitted when the cap
+  engages.
 
 ## Testing
 
 Uses the **Unity** framework (vendored in `tests/`).
 
-- 111 tests total: grid_analysis (7), polyfit (21), savgol (16), tikhonov (25),
-  butterworth (20), timestamp (16), parser (6). Source of truth is `tests/test_main.c`.
+- 113 tests total: grid_analysis (7), polyfit (21), savgol (16), tikhonov (25),
+  butterworth (22), timestamp (16), parser (6). Source of truth is `tests/test_main.c`.
 - Zero leaks. `make test-valgrind` exits 1 on any definite/indirect leak or
   memory error — keep it that way.
 

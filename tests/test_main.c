@@ -136,6 +136,8 @@ void test_butterworth_zero_phase_no_delay(void);
 
 // Testy pro butterworth.c - Edge behavior
 void test_butterworth_edge_points_no_excessive_oscillation(void);
+void test_butterworth_small_cutoff_preserves_edges(void);
+void test_butterworth_small_cutoff_short_data_clamps(void);
 
 // Testy pro butterworth.c - Grid uniformity
 void test_butterworth_works_on_uniform_grid(void);
@@ -365,6 +367,8 @@ int main(void) {
 
     printf("\n--- Edge behavior tests ---\n");
     RUN_TEST(test_butterworth_edge_points_no_excessive_oscillation);
+    RUN_TEST(test_butterworth_small_cutoff_preserves_edges);
+    RUN_TEST(test_butterworth_small_cutoff_short_data_clamps);
 
     printf("\n--- Grid uniformity tests ---\n");
     RUN_TEST(test_butterworth_works_on_uniform_grid);

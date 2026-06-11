@@ -1,10 +1,15 @@
 # Analýza implementace Butterworthova filtru
 
 **Datum auditu:** 2026-06-10 (aktualizováno)
-**Verze projektu:** smooth v5.11.39
+**Verze projektu:** smooth v5.11.41
 **Auditované soubory:** `butterworth.c` (V1.4/2025-12-07), `butterworth.h`, volající část `smooth.c`
 
 **Historie změn dokumentu:**
+- 2026-06-11 (v5.11.41): RESOLVED #15 (a tím #12) — fc-adaptivní padding
+  `max(14, ceil(5/(1-r_max)))` s ořezem na `n-1` a `# WARNING` při ořezu.
+  Pól-math vytknuta do `biquad_pole_radius`/`max_pole_radius`; design + pole
+  check přesunuty před alokaci. 2 nové testy (113 celkem), nula valgrind leaků.
+  Po tomto kole jsou všechny nálezy auditu vyřešené.
 - 2026-06-11 (v5.11.40): jednoduché opravy nálezů z kola 2026-06-10. RESOLVED
   #3 (důkaz invariantu v kód-komentáři), #8 (varování na stderr místo tichého
   nulování IC), #16 (Morozov fallback na největší/nejslabší kandidát + warning),
@@ -272,7 +277,7 @@ iterovat přes extrémní kandidáty.
 **Stav:** RESOLVED v5.11.40 — degenerate větev nyní vypisuje
 `Warning: biquad initial-condition system is singular (det=...)` na stderr.
 
-### 12. Padding length `3*(order+1)-1 = 14` — POHLCENO nálezem #15
+### [RESOLVED v5.11.41] 12. Padding length `3*(order+1)-1 = 14` — POHLCENO nálezem #15
 
 `butterworth.c:54` — blízko scipy defaultu (15 pro monolitický 4. řád),
 ale pro biquad by bylo konzistentnější `3 * max(len(a), len(b)) = 9`.
@@ -282,7 +287,7 @@ Rozdíl v praxi zanedbatelný.
 jsou obě hodnoty řádově krátké (viz #15). Správný směr je opačný: padding má
 růst s klesajícím `fc`, ne se zmenšovat.
 
-### 15. Pevný padding nepokrývá přechodový jev filtru pro malá `fc`
+### [RESOLVED v5.11.41] 15. Pevný padding nepokrývá přechodový jev filtru pro malá `fc`
 
 `calculate_pad_length` (`butterworth.c:66-73`) vrací konstantu 14 nezávisle
 na `fc`. Délka doznění filtru je ale ~`1/(1-r)`, kde `r` je poloměr
@@ -306,8 +311,16 @@ umožňuje `padlen` zvýšit; zde to nejde a nic nevaruje.
 varovat, když ořez nastane), nebo alespoň vypsat `# WARNING`, když
 `1/(1-r_max)` výrazně přesahuje `pad_len`.
 
-**Priorita:** střední (jediný otevřený nález s praktickým dopadem — uživatelé
-s `fc < 0.05` dostávají nedokumentované okrajové artefakty).
+**Stav:** RESOLVED v5.11.41 — `calculate_pad_length` je nyní fc-adaptivní:
+`pad_len = max(14, ceil(PAD_DECAY_FACTOR/(1-r_max)))` s ořezem na `n-1`, kde
+`r_max` je poloměr nejpomalejšího pólu (sdílený helper `max_pole_radius`).
+`PAD_DECAY_FACTOR = 5` (~0.7 % zbytkového transientu). Když ořez nastane (data
+kratší než transient), vypíše se `# WARNING ... too short to absorb the filter
+transient (... capped at n-1)`. Auto-cutoff trialy (`run_filtfilt_trial`)
+dostaly stejný padding závislý na kandidátní `fc`. Empiricky: rampa s `fc=0.02`
+na `n=600` měla se starým paddingem okrajovou chybu ~0.6, nově ~7e-3
+(regresní test `small_cutoff_preserves_edges`). Tím je pohlcena i otázka #12
+(14 vs. 9) — správný směr je padding růst s klesající `fc`.
 
 ### [RESOLVED v5.11.40] 16. Morozov fallback jde špatným směrem
 
@@ -371,8 +384,8 @@ nepoužitý (kód pracuje s polem `BiquadSection[NUM_BIQUADS]` přímo).
 | 14 | Zavádějící komentář přesnosti derivace | nízká | **RESOLVED v5.11.35** (oprava komentářů) |
 | 3 | Cascade IC spoléhá na skrytou invariantu | nízká | **RESOLVED v5.11.40** (důkaz v kód-komentáři) |
 | 8 | Tichý fallback v `compute_biquad_ic` | nízká | **RESOLVED v5.11.40** (varování na stderr) |
-| 12 | Padding length 14 vs. 9 | velmi nízká | pohlceno #15 |
-| 15 | Pevný padding vs. transient pro malá `fc` | **střední** | otevřeno |
+| 12 | Padding length 14 vs. 9 | velmi nízká | **RESOLVED v5.11.41** (pohlceno #15) |
+| 15 | Pevný padding vs. transient pro malá `fc` | **střední** | **RESOLVED v5.11.41** (fc-adaptivní padding) |
 | 16 | Morozov fallback agresivnější než nejslabší kandidát | nízká | **RESOLVED v5.11.40** (fallback na největší kandidát) |
 | 17 | `NOISE_MAD_NORMALIZATION` nesedí na komentář | kosmetická | **RESOLVED v5.11.40** (1.6521808) |
 | 18 | Mrtvý typ `ButterworthCoeffs` | kosmetická | **RESOLVED v5.11.40** (odstraněn) |
@@ -382,7 +395,7 @@ nepoužitý (kód pracuje s polem `BiquadSection[NUM_BIQUADS]` přímo).
 
 ## Závěr
 
-Od původního auditu (v5.11.1) bylo postupně vyřešeno 8 problémů:
+Od původního auditu (v5.11.1) byly postupně vyřešeny **všechny** nálezy:
 
 1. **v5.11.2** — `check_pole_stability()` jako runtime pojistka proti numerické
    nestabilitě (warn při radius > 0.99, error při radius ≥ 1.0).
@@ -420,14 +433,23 @@ Od původního auditu (v5.11.1) bylo postupně vyřešeno 8 problémů:
    DC zisk přesně 1), IC shodná se scipy `lfilter_zi`, in-place aliasing
    v `apply_biquad` bezpečný, všechny 5-bodové stencily sedí na standardní
    vzorce, padding indexace v mezích, Morozovův výběr správně orientovaný.
-   Nové nálezy #15-#19 (zatím neopravené).
+   Nové nálezy #15-#19.
 
-**Po opravách v5.11.40 zbývá jediný otevřený nález: #15** — pevný
-padding 14 vzorků nepokrývá přechodový jev filtru pro `fc < ~0.05` (při
-povoleném minimu `fc = 1e-4` je doznění ~6900 vzorků), takže malá `fc` dávají
-nedokumentované okrajové artefakty. Je střední priority a vyžaduje větší zásah
-(škálování `pad_len ~ C/fc` s ořezem). Nízké/kosmetické nálezy #3, #8, #16-#19
-byly vyřešeny v v5.11.40.
+9. **v5.11.40** — jednoduché opravy: #8 (varování místo tichého nulování IC),
+   #16 (Morozov fallback na nejslabší kandidát), #17 (`NOISE_MAD_NORMALIZATION`
+   = 1.6521808), #18 (odstraněn mrtvý typ `ButterworthCoeffs`), #19 (komentáře),
+   #3 (důkaz invariantu v kód-komentáři).
+
+10. **v5.11.41** — #15 (a #12): fc-adaptivní padding
+    `max(14, ceil(5/(1-r_max)))` s ořezem na `n-1` a `# WARNING` při ořezu;
+    pól-math vytknuta do sdílených helperů, design + pole check před alokací.
+    2 nové regresní testy (113 celkem).
+
+**Po opravách v5.11.41 jsou všechny nálezy auditu vyřešené.** Poslední otevřený
+#15 (pevný padding nepokrýval přechodový jev pro malá `fc`) byl vyřešen
+fc-adaptivním paddingem `max(14, ceil(5/(1-r_max)))` s ořezem na `n-1` a
+varováním při ořezu; tím odpadla i otázka #12. Nízké/kosmetické nálezy #3, #8,
+#16-#19 byly vyřešeny v v5.11.40.
 
 Matematická stránka (bilineární transformace s prewarpingem, TDF-II biquad,
 odd-reflection padding, IC přes Cramerovo pravidlo, Morozov auto-fc,

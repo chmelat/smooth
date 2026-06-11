@@ -37,6 +37,9 @@
 #define CUTOFF_FREQ_INEFFECTIVE_WARN 0.95
 #define POLE_RADIUS_WARN   0.99   /* warn when poles approach unit circle */
 #define POLE_RADIUS_ERROR  1.0    /* filter marginally stable / unstable */
+/* Padding time constants: the filtfilt transient decays as r^k, so
+ * PAD_DECAY_FACTOR/(1-r) samples leave a residual ~e^-PAD_DECAY_FACTOR. */
+#define PAD_DECAY_FACTOR   5.0
 
 /* Auto cutoff selection (Morozov's discrepancy principle) */
 #define NOISE_MAD_NORMALIZATION  1.6521808  /* sqrt(6) * 0.6745 */
@@ -46,6 +49,8 @@
 
 /* Internal function prototypes */
 static void design_biquad_sections(double fc, BiquadSection *sections);
+static double biquad_pole_radius(const BiquadSection *bq);
+static double max_pole_radius(const BiquadSection *sections);
 static int  check_pole_stability(const BiquadSection *sections);
 static void compute_biquad_ic(const BiquadSection *bq, double *zi_base);
 static void apply_biquad(const BiquadSection *bq, const double *x, double *y,
@@ -62,11 +67,26 @@ static double estimate_noise_sigma(const double *y, int n);
 static double residual_std(const double *y, const double *y_smooth, int n);
 static int    run_filtfilt_trial(const double *y, double *out, int n, double fc);
 
-/* Calculate padding length (3*(order+1)-1, scipy's filtfilt default for a
- * 4th-order filter = 14) */
-static inline int calculate_pad_length(int n)
+/* Calculate padding length sized to absorb the filtfilt transient.
+ * The slowest pole has radius r; PAD_DECAY_FACTOR/(1-r) samples leave a
+ * residual ~e^-PAD_DECAY_FACTOR. Floored at the scipy-like default
+ * 3*(order+1)-1 = 14 (good for large fc, where the transient is short) and
+ * capped at n-1. If desired_out is non-NULL it receives the pre-cap length so
+ * the caller can warn when the data is too short to cover the transient. */
+static int calculate_pad_length(int n, const BiquadSection *sections,
+                                int *desired_out)
 {
-    int pad_len = 3 * (BUTTERWORTH_ORDER + 1) - 1;
+    int pad_len = 3 * (BUTTERWORTH_ORDER + 1) - 1;  /* floor, = 14 */
+    double r = max_pole_radius(sections);
+    if (r < 1.0) {
+        int want = (int)ceil(PAD_DECAY_FACTOR / (1.0 - r));
+        if (want > pad_len) {
+            pad_len = want;
+        }
+    }
+    if (desired_out) {
+        *desired_out = pad_len;
+    }
     if (pad_len >= n) {
         pad_len = n - 1;
     }
@@ -124,12 +144,40 @@ static void design_biquad_sections(double fc, BiquadSection *sections)
     }
 }
 
+/* Radius of the poles of one biquad section.
+ * For denominator 1 + a1·z^-1 + a2·z^-2, poles are roots of z^2 + a1·z + a2 = 0.
+ */
+static double biquad_pole_radius(const BiquadSection *bq)
+{
+    double a1 = bq->a[1];
+    double a2 = bq->a[2];
+    double disc = a1 * a1 - 4.0 * a2;
+
+    if (disc < 0.0) {
+        /* Complex conjugate poles: |z| = sqrt(a2) */
+        return sqrt(fabs(a2));
+    }
+    /* Real poles (shouldn't happen for Butterworth, handle defensively) */
+    double sq = sqrt(disc);
+    double r1 = fabs((-a1 + sq) * 0.5);
+    double r2 = fabs((-a1 - sq) * 0.5);
+    return (r1 > r2) ? r1 : r2;
+}
+
+/* Largest pole radius across all sections (slowest-decaying mode). */
+static double max_pole_radius(const BiquadSection *sections)
+{
+    double m = 0.0;
+    for (int i = 0; i < NUM_BIQUADS; i++) {
+        double r = biquad_pole_radius(&sections[i]);
+        if (r > m) m = r;
+    }
+    return m;
+}
+
 /* Check that filter poles lie safely inside the unit circle.
  * Returns 0 on success, -1 if any pole is on or outside the unit circle.
  * Prints a warning to stderr if any pole exceeds POLE_RADIUS_WARN.
- *
- * For biquad denominator 1 + a1·z^-1 + a2·z^-2, poles are roots of
- * z^2 + a1·z + a2 = 0.
  */
 static int check_pole_stability(const BiquadSection *sections)
 {
@@ -137,21 +185,7 @@ static int check_pole_stability(const BiquadSection *sections)
     int worst_section = 0;
 
     for (int i = 0; i < NUM_BIQUADS; i++) {
-        double a1 = sections[i].a[1];
-        double a2 = sections[i].a[2];
-        double disc = a1 * a1 - 4.0 * a2;
-        double radius;
-
-        if (disc < 0.0) {
-            /* Complex conjugate poles: |z| = sqrt(a2) */
-            radius = sqrt(fabs(a2));
-        } else {
-            /* Real poles (shouldn't happen for Butterworth, handle defensively) */
-            double sq = sqrt(disc);
-            double r1 = fabs((-a1 + sq) * 0.5);
-            double r2 = fabs((-a1 - sq) * 0.5);
-            radius = (r1 > r2) ? r1 : r2;
-        }
+        double radius = biquad_pole_radius(&sections[i]);
 
         if (radius > max_radius) {
             max_radius = radius;
@@ -425,7 +459,7 @@ static int run_filtfilt_trial(const double *y, double *out, int n, double fc)
         compute_biquad_ic(&sections[i], zi_base[i]);
     }
 
-    int pad_len = calculate_pad_length(n);
+    int pad_len = calculate_pad_length(n, sections, NULL);
     size_t padded_len;
     double *buf = pad_signal(y, n, pad_len, &padded_len);
     if (buf == NULL) return -1;
@@ -532,21 +566,6 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
         return NULL;
     }
 
-    /* Calculate padding and memory estimate */
-    int pad_len = calculate_pad_length(n);
-    size_t mem_estimate = estimate_memory_usage(n, pad_len);
-
-    if (n > BUTTERWORTH_MAX_POINTS_WARNING) {
-        double mb = (double)mem_estimate / (1024.0 * 1024.0);
-        if (mb >= 1024.0) {
-            fprintf(stderr, "Warning: Large dataset (%d points) requires ~%.1f GB RAM\n",
-                    n, mb / 1024.0);
-        } else {
-            fprintf(stderr, "Warning: Large dataset (%d points) requires ~%.0f MB RAM\n",
-                    n, mb);
-        }
-    }
-
     /* Check grid uniformity before any filtering work (auto-cutoff runs
      * several trial filtfilts, so reject a non-uniform grid first). */
     if (grid_info->cv > UNIFORMITY_CV_THRESHOLD) {
@@ -592,6 +611,38 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
                "consider a smaller fc for meaningful smoothing.\n", fc);
     }
 
+    /* Design filter and verify pole stability before allocating anything */
+    BiquadSection sections[NUM_BIQUADS];
+    design_biquad_sections(fc, sections);
+    if (check_pole_stability(sections) != 0) {
+        return NULL;
+    }
+
+    /* Padding sized to absorb the filter transient for this fc (grows as the
+     * slowest pole approaches the unit circle, i.e. for small fc). Warn if the
+     * data is too short to cover it. */
+    int desired_pad;
+    int pad_len = calculate_pad_length(n, sections, &desired_pad);
+    if (desired_pad > pad_len) {
+        printf("# WARNING: Data length (n=%d) too short to absorb the filter "
+               "transient for fc=%.4f (needs ~%d padding samples, capped at %d). "
+               "Edge artifacts may remain; use a larger fc, more data, or a "
+               "different method.\n", n, fc, desired_pad, pad_len);
+    }
+
+    /* Memory estimate */
+    size_t mem_estimate = estimate_memory_usage(n, pad_len);
+    if (n > BUTTERWORTH_MAX_POINTS_WARNING) {
+        double mb = (double)mem_estimate / (1024.0 * 1024.0);
+        if (mb >= 1024.0) {
+            fprintf(stderr, "Warning: Large dataset (%d points) requires ~%.1f GB RAM\n",
+                    n, mb / 1024.0);
+        } else {
+            fprintf(stderr, "Warning: Large dataset (%d points) requires ~%.0f MB RAM\n",
+                    n, mb);
+        }
+    }
+
     double sample_rate = 1.0 / grid_info->h_avg;
 
     /* --- ALLOCATIONS --- */
@@ -620,15 +671,6 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
     result->order = BUTTERWORTH_ORDER;
     result->cutoff_freq = fc;
     result->sample_rate = sample_rate;
-
-    /* Design filter (2 biquad sections) */
-    BiquadSection sections[NUM_BIQUADS];
-    design_biquad_sections(fc, sections);
-
-    /* Verify pole stability (warn if close to unit circle, error if outside) */
-    if (check_pole_stability(sections) != 0) {
-        goto error;
-    }
 
     /* Compute initial conditions for each biquad */
     double zi_base[NUM_BIQUADS][2];
