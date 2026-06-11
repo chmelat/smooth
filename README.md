@@ -1,6 +1,6 @@
 # smooth - Experimental Data Smoothing
 
-**Version 5.11.38** | June 1, 2026
+**Version 5.11.41** | June 11, 2026
 
 A command-line tool for smoothing noisy experimental data and computing derivatives. Implements four methods: polynomial fitting, Savitzky-Golay filtering, Tikhonov regularization, and Butterworth low-pass filtering. Reads two-column ASCII data, outputs smoothed results. Works as a Unix filter.
 
@@ -50,7 +50,7 @@ make                                    # Compile
 ```bash
 make                  # Standard compilation (clang, -O2)
 make debug            # Debug build (-g -O0)
-make test             # Build and run 111 unit tests
+make test             # Build and run 113 unit tests
 make test-valgrind    # Run tests with memory leak detection
 make clean            # Clean build artifacts
 make install-user     # Install to ~/bin
@@ -1130,7 +1130,7 @@ This approach provides better numerical stability than direct 4th-order implemen
 The **filtfilt** (forward-backward filtering) eliminates phase distortion:
 
 **Algorithm:**
-1. **Pad signal:** Reflect signal at boundaries (3x order length)
+1. **Pad signal:** Reflect signal at boundaries; the padding length is sized to absorb the filter transient ($\sim 5/(1 - r_{\max})$, where $r_{\max}$ is the slowest pole radius, floored at 14 and capped at $n-1$), so it grows automatically as $f_c$ shrinks
 2. **Forward filter:** Apply H(z) from left to right → y_fwd
 3. **Reverse:** y_rev = reverse(y_fwd)
 4. **Backward filter:** Apply H(z) to y_rev → y_bwd
@@ -1414,12 +1414,12 @@ smooth/
 +--- tests/             # Unit testing framework (Unity)
     |--- unity.c/h                # Unity testing framework
     |--- unity_internals.h        # Unity internals
-    |--- test_main.c              # Test runner (111 tests)
+    |--- test_main.c              # Test runner (113 tests)
     |--- test_grid_analysis.c     # Grid analysis tests (7 tests)
     |--- test_polyfit.c           # Polyfit module tests (21 tests)
     |--- test_savgol.c            # Savgol module tests (16 tests)
     |--- test_tikhonov.c          # Tikhonov module tests (25 tests)
-    |--- test_butterworth.c       # Butterworth module tests (20 tests)
+    |--- test_butterworth.c       # Butterworth module tests (22 tests)
     |--- test_timestamp.c         # Timestamp module tests (16 tests)
     +--- test_parser.c            # Input parser tests (6 tests, end-to-end)
 ```
@@ -1428,7 +1428,20 @@ smooth/
 
 ## Version History
 
-**v5.11.38 (current):** Deep-audit fixes (S3 + T1)
+**v5.11.41 (current):** Butterworth fc-adaptive filtfilt padding (audit #15)
+- Padding length is now sized to the filter transient ($\sim 5/(1 - r_{\max})$, $r_{\max}$ = slowest pole radius), floored at 14 and capped at $n-1$, instead of a fixed 14 samples; it grows automatically as $f_c$ shrinks so small cutoffs (`fc < ~0.05`) no longer leak an edge artifact past the padding (a ramp at `fc = 0.02` on `n = 600` went from ~0.6 boundary error to ~7e-3)
+- A `# WARNING` is printed when the data is too short to absorb the transient (padding capped at `n-1`)
+- Pole-radius math factored into shared helpers; auto-cutoff trials use the same fc-aware padding. 113 tests (2 new); all Butterworth audit findings now resolved (`doc/butterworth-audit.md`)
+
+**v5.11.40:** Butterworth audit cleanups (#3, #8, #16-#19)
+- `compute_biquad_ic` warns on a singular initial-condition system instead of silently zeroing it; auto-cutoff (`-f auto`) now falls back to the largest (weakest) candidate when no candidate satisfies the discrepancy principle, and warns
+- Corrected `NOISE_MAD_NORMALIZATION` constant, removed the dead `ButterworthCoeffs` type, and fixed several stale comments
+
+**v5.11.39:** Tikhonov GCV fixes
+- `-l auto` now uses the O(n) analytical eigenvalue trace for every `n` (the old `n > 5000` fast approximation had the wrong large-$\lambda$ asymptotic and biased toward undersmoothing on large datasets)
+- Warns when the selected $\lambda$ is pinned to the search-range edge (`[1e-8, 1]` cannot fit every data scale) and suggests setting `-l` manually
+
+**v5.11.38:** Deep-audit fixes (S3 + T1)
 - S3: guard the Tikhonov `Data/Total ratio` output line against a degenerate functional (`-l 0` gives an exact fit, so `J = 0` and the ratios were printing `0/0 = nan`); the line is now skipped when `total_functional == 0`
 - T1: `find_lambda_lcurve` now uses an explicit `valid[]` flag instead of a `rss_vals[i] == 0.0` sentinel (`log(data_term)` can legitimately be 0.0); L-curve is only used for `n > 20000`
 - Full deep audit of all nine modules recorded in `doc/code-audit-v5.11.38.md`
@@ -1552,8 +1565,8 @@ smooth/
 
 ---
 
-**Document revision:** 2026-06-01
-**Program version:** smooth v5.11.38
+**Document revision:** 2026-06-11
+**Program version:** smooth v5.11.41
 **Dependencies:** LAPACK, BLAS
 **Testing framework:** Unity (included in tests/)
 **License:** MIT License
