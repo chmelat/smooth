@@ -26,11 +26,6 @@ typedef struct {
     double a[3];  /* Denominator coefficients: [a0=1, a1, a2] */
 } BiquadSection;
 
-/* Structure for complete filter (2 cascaded biquads for 4th order) */
-typedef struct {
-    BiquadSection sections[NUM_BIQUADS];
-} ButterworthCoeffs;
-
 /* Structure for Butterworth filter results */
 typedef struct {
     double *y_smooth;     /* Smoothed values */

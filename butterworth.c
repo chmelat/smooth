@@ -39,7 +39,7 @@
 #define POLE_RADIUS_ERROR  1.0    /* filter marginally stable / unstable */
 
 /* Auto cutoff selection (Morozov's discrepancy principle) */
-#define NOISE_MAD_NORMALIZATION  1.6528553  /* sqrt(6) * 0.6745 */
+#define NOISE_MAD_NORMALIZATION  1.6521808  /* sqrt(6) * 0.6745 */
 #define DISCREPANCY_TOLERANCE    1.1
 #define AUTO_CUTOFF_FALLBACK     0.2
 #define N_AUTO_CANDIDATES        6
@@ -62,7 +62,8 @@ static double estimate_noise_sigma(const double *y, int n);
 static double residual_std(const double *y, const double *y_smooth, int n);
 static int    run_filtfilt_trial(const double *y, double *out, int n, double fc);
 
-/* Calculate padding length (3 * filter_order for biquad cascade) */
+/* Calculate padding length (3*(order+1)-1, scipy's filtfilt default for a
+ * 4th-order filter = 14) */
 static inline int calculate_pad_length(int n)
 {
     int pad_len = 3 * (BUTTERWORTH_ORDER + 1) - 1;
@@ -201,7 +202,11 @@ static void compute_biquad_ic(const BiquadSection *bq, double *zi_base)
         zi_base[0] = (B0 + B1) / det;
         zi_base[1] = (-a2 * B0 + (1.0 + a1) * B1) / det;
     } else {
-        /* Fallback for degenerate case (should not happen with valid fc) */
+        /* Degenerate case (det = 1+a1+a2 ~ 0). Should not happen with valid fc,
+         * but warn rather than silently emit a transient-laden result. */
+        fprintf(stderr, "Warning: biquad initial-condition system is singular "
+                "(det=%.3e); using zero IC, output may show an edge transient\n",
+                det);
         zi_base[0] = 0.0;
         zi_base[1] = 0.0;
     }
@@ -235,6 +240,16 @@ static void apply_biquad(const BiquadSection *bq, const double *x, double *y,
  * Used by both forward and backward passes of filtfilt.
  * Each biquad's IC is scaled to match the step amplitude seen at its input
  * (output of previous biquad), relying on unity DC gain of each section.
+ *
+ * Why first_val = buf[0] is the correct per-section scale: with the step IC
+ * zi[0] = zi_base[0]*x[0], the first output sample is
+ *   y[0] = b0*x[0] + zi[0] = (b0 + zi_base[0])*x[0].
+ * Since zi_base[0] = (B0+B1)/det with B0=b1-a1*b0, B1=b2-a2*b0, det=1+a1+a2,
+ *   b0 + zi_base[0] = (b0+b1+b2)/(1+a1+a2) = Sum(b)/Sum(a) = DC gain = 1,
+ * so y[0] = x[0] exactly, independent of the rest of the signal. The first
+ * sample is therefore invariant across sections, and scaling each section's IC
+ * by its own input's first sample equals scaling by buf[0] throughout — which
+ * matches scipy.signal.sosfilt_zi (unity DC gain per section keeps scale=1).
  */
 static void apply_cascade(const BiquadSection *sections,
                           const double zi_base[][2],
@@ -381,7 +396,9 @@ static double estimate_noise_sigma(const double *y, int n)
     return mad / NOISE_MAD_NORMALIZATION;
 }
 
-/* Compute sample standard deviation of residuals r = y - y_smooth */
+/* Compute population standard deviation (divides by n) of residuals
+ * r = y - y_smooth. The n-vs-(n-1) distinction is immaterial for the
+ * discrepancy comparison against DISCREPANCY_TOLERANCE * sigma_hat. */
 static double residual_std(const double *y, const double *y_smooth, int n)
 {
     double sum = 0.0, sum_sq = 0.0;
@@ -449,7 +466,11 @@ static double estimate_cutoff_frequency(const double *y, int n)
         return AUTO_CUTOFF_FALLBACK;
     }
 
-    double selected = AUTO_CUTOFF_FALLBACK;
+    /* If no candidate satisfies the discrepancy (broadband signal that even
+     * the weakest filter distorts), fall back to the largest candidate — it
+     * smooths least and so damages the signal least, not AUTO_CUTOFF_FALLBACK
+     * which would smooth more aggressively. */
+    double selected = fc_candidates[N_AUTO_CANDIDATES - 1];
     double selected_res = -1.0;
 
     for (int k = 0; k < N_AUTO_CANDIDATES; k++) {
@@ -470,7 +491,9 @@ static double estimate_cutoff_frequency(const double *y, int n)
         printf("# Auto cutoff: selected fc = %.4f (residual std = %.4e)\n",
                selected, selected_res);
     } else {
-        printf("# Auto cutoff: selected fc = %.4f (fallback, no candidate satisfied discrepancy)\n",
+        printf("# WARNING: Auto cutoff: no candidate satisfied the discrepancy "
+               "principle; falling back to the largest (weakest) fc = %.4f. "
+               "Signal may be broadband — consider setting fc manually.\n",
                selected);
     }
 

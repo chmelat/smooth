@@ -3,7 +3,21 @@
  *
  * Version History
  * ---------------
- * v5.11.39 (current): Tikhonov GCV fixes. (1) compute_gcv_score_robust used a
+ * v5.11.40 (current): Butterworth audit round 2026-06-10 simple fixes
+ *           (#8, #16, #17, #18, #19, #3-comment). (#8) compute_biquad_ic no
+ *           longer silently zeroes the IC on a singular system — it warns to
+ *           stderr so an edge transient is not emitted unannounced. (#16)
+ *           estimate_cutoff_frequency now falls back to the largest (weakest)
+ *           fc candidate when no candidate satisfies the discrepancy principle,
+ *           instead of the more aggressive AUTO_CUTOFF_FALLBACK=0.2, and warns.
+ *           (#17) NOISE_MAD_NORMALIZATION corrected 1.6528553 -> 1.6521808 to
+ *           actually equal sqrt(6)*0.6745. (#18) removed the dead public type
+ *           ButterworthCoeffs. (#19) corrected calculate_pad_length and
+ *           residual_std comments to match the code. (#3) inlined the buf[0]
+ *           DC-gain invariant proof into apply_cascade. No behaviour change on
+ *           valid input except the #16 fallback path; 111 tests pass, zero
+ *           valgrind leaks.
+ * v5.11.39: Tikhonov GCV fixes. (1) compute_gcv_score_robust used a
  *           "fast" trace approximation n/(1+sqrt(lambda/h^3)) for n>5000, but
  *           its large-lambda asymptotic exponent is wrong (~s^-1/2 instead of
  *           the correct ~s^-1/4 from the eigenvalue integral), underestimating
@@ -250,5 +264,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.39"
-#define REVDATE "2026-06-10"
+#define VERSION "5.11.40"
+#define REVDATE "2026-06-11"

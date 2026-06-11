@@ -5,6 +5,13 @@
 **Auditované soubory:** `butterworth.c` (V1.4/2025-12-07), `butterworth.h`, volající část `smooth.c`
 
 **Historie změn dokumentu:**
+- 2026-06-11 (v5.11.40): jednoduché opravy nálezů z kola 2026-06-10. RESOLVED
+  #3 (důkaz invariantu v kód-komentáři), #8 (varování na stderr místo tichého
+  nulování IC), #16 (Morozov fallback na největší/nejslabší kandidát + warning),
+  #17 (`NOISE_MAD_NORMALIZATION` = 1.6521808), #18 (odstraněn mrtvý typ
+  `ButterworthCoeffs`), #19 (komentáře pad-délky a `residual_std`). Otevřený
+  zůstává jen #15 (pevný padding vs. transient pro malá `fc`, střední priorita).
+  111 testů, nula valgrind leaků.
 - 2026-06-10 (v5.11.39): nové kolo auditu (Fable 5). Jádro znovu ověřeno jako
   korektní (bilineární koeficienty přepočteny ručně, IC vs. scipy `lfilter_zi`,
   in-place aliasing v `apply_biquad`, krajní 5-bodové stencily, meze indexů
@@ -209,7 +216,7 @@ zásah a pro frekvenční smoother, který už uniformitu předpokládá, není 
 
 ## Nadále otevřené problémy
 
-### 3. Kaskádovaná iniciační podmínka se spoléhá na skrytou invariantu
+### [RESOLVED v5.11.40] 3. Kaskádovaná iniciační podmínka se spoléhá na skrytou invariantu
 
 `butterworth.c:225-238` (funkce `apply_cascade`):
 ```c
@@ -249,10 +256,10 @@ matematicky identické se škálováním všech sekcí prvním vzorkem — což 
 to, co dělá `scipy.signal.sosfilt_zi` (jednotkový DC zisk každé sekce → `scale`
 zůstává 1.0). Implementace je tedy korektní a shoduje se se scipy referencí.
 
-**Priorita:** nízká (dokumentační, kód je správně). Zbývá už jen případně
-přenést tento důkaz do code-komentáře.
+**Stav:** RESOLVED v5.11.40 — důkaz invariantu `buf[0]` (DC zisk = 1, tedy
+`y[0] = x[0]` přesně) přenesen do code-komentáře nad `apply_cascade`.
 
-### 8. `compute_biquad_ic` tiše nuluje při degenerate case
+### [RESOLVED v5.11.40] 8. `compute_biquad_ic` tiše nuluje při degenerate case
 
 `butterworth.c:186-193` — komentář říká „should not happen with valid fc",
 ale pokud `|det| ≤ 1e-10` nastane, uživatel dostane transient-zatížený výstup
@@ -262,7 +269,8 @@ bez varování.
 Varování je obzvlášť důležité ve světle nového Morozov-selektoru, který může
 iterovat přes extrémní kandidáty.
 
-**Priorita:** nízká.
+**Stav:** RESOLVED v5.11.40 — degenerate větev nyní vypisuje
+`Warning: biquad initial-condition system is singular (det=...)` na stderr.
 
 ### 12. Padding length `3*(order+1)-1 = 14` — POHLCENO nálezem #15
 
@@ -301,7 +309,7 @@ varovat, když ořez nastane), nebo alespoň vypsat `# WARNING`, když
 **Priorita:** střední (jediný otevřený nález s praktickým dopadem — uživatelé
 s `fc < 0.05` dostávají nedokumentované okrajové artefakty).
 
-### 16. Morozov fallback jde špatným směrem
+### [RESOLVED v5.11.40] 16. Morozov fallback jde špatným směrem
 
 `estimate_cutoff_frequency` (`butterworth.c:452-464`): když žádný kandidát
 nesplní discrepancy (residual > 1.1·σ̂ i při `fc = 0.5`, tj. signál má
@@ -310,25 +318,28 @@ nesplní discrepancy (residual > 1.1·σ̂ i při `fc = 0.5`, tj. signál má
 vyzkoušený kandidát. Logicky by se mělo padnout na největší kandidát (0.5),
 který signál poškozuje nejméně, a varovat.
 
-**Priorita:** nízká (jednořádková změna).
+**Stav:** RESOLVED v5.11.40 — fallback nyní padá na největšího kandidáta
+(`fc_candidates[N_AUTO_CANDIDATES-1] = 0.5`) a vypisuje `# WARNING` s návrhem
+nastavit `fc` ručně. `AUTO_CUTOFF_FALLBACK = 0.2` zůstává pro selhání odhadu
+šumu / alokace, kde žádné filtrování neproběhlo.
 
-### 17. Konstanta `NOISE_MAD_NORMALIZATION` nesedí na vlastní komentář
+### [RESOLVED v5.11.40] 17. Konstanta `NOISE_MAD_NORMALIZATION` nesedí na vlastní komentář
 
 `butterworth.c:42` — kód má `1.6528553` s komentářem `sqrt(6) * 0.6745`,
 ale `sqrt(6) * 0.6745 = 1.6521808` (rel. chyba 4.1e-4; vypadá to na překlep
 `sqrt(6) ~ 2.4505` místo 2.44949). Prakticky neškodné — discrepancy tolerance
 je stejně 1.1 — ale konstanta lže o svém původu.
 
-**Priorita:** kosmetická.
+**Stav:** RESOLVED v5.11.40 — hodnota opravena na `1.6521808` (= sqrt(6)*0.6745).
 
-### 18. Mrtvý veřejný typ `ButterworthCoeffs`
+### [RESOLVED v5.11.40] 18. Mrtvý veřejný typ `ButterworthCoeffs`
 
 `butterworth.h:30-32` — typedef definovaný v hlavičce, nikde v projektu
 nepoužitý (kód pracuje s polem `BiquadSection[NUM_BIQUADS]` přímo).
 
-**Priorita:** kosmetická.
+**Stav:** RESOLVED v5.11.40 — typedef odstraněn z `butterworth.h`.
 
-### 19. Drobné komentářové neshody
+### [RESOLVED v5.11.40] 19. Drobné komentářové neshody
 
 - `calculate_pad_length` komentář říká „3 * filter_order" (= 12), formule
   dává `3*(BUTTERWORTH_ORDER+1)-1` = 14 (`butterworth.c:65-68`).
@@ -337,7 +348,9 @@ nepoužitý (kód pracuje s polem `BiquadSection[NUM_BIQUADS]` přímo).
 - Mřížka auto-cutoff kandidátů má skoky až 2.5x bez bisekce mezi sousedy —
   vědomé zjednodušení, zmíněno pro úplnost.
 
-**Priorita:** kosmetická.
+**Stav:** RESOLVED v5.11.40 — komentář `calculate_pad_length` opraven na
+`3*(order+1)-1 = 14` a `residual_std` na „population standard deviation
+(divides by n)". Mřížka kandidátů ponechána (vědomé zjednodušení).
 
 ---
 
@@ -356,14 +369,14 @@ nepoužitý (kód pracuje s polem `BiquadSection[NUM_BIQUADS]` přímo).
 | 1 | Chybí `y_deriv` | **vysoká** | **RESOLVED v5.11.7** (5-bodové stencily O(h⁴)) |
 | 13 | Auto-cutoff běží před CV checkem | nízká | **RESOLVED v5.11.35** (přesun CV checku) |
 | 14 | Zavádějící komentář přesnosti derivace | nízká | **RESOLVED v5.11.35** (oprava komentářů) |
-| 3 | Cascade IC spoléhá na skrytou invariantu | nízká | otevřeno (důkaz doplněn, kód-komentář zbývá) |
-| 8 | Tichý fallback v `compute_biquad_ic` | nízká | otevřeno |
+| 3 | Cascade IC spoléhá na skrytou invariantu | nízká | **RESOLVED v5.11.40** (důkaz v kód-komentáři) |
+| 8 | Tichý fallback v `compute_biquad_ic` | nízká | **RESOLVED v5.11.40** (varování na stderr) |
 | 12 | Padding length 14 vs. 9 | velmi nízká | pohlceno #15 |
 | 15 | Pevný padding vs. transient pro malá `fc` | **střední** | otevřeno |
-| 16 | Morozov fallback agresivnější než nejslabší kandidát | nízká | otevřeno |
-| 17 | `NOISE_MAD_NORMALIZATION` nesedí na komentář | kosmetická | otevřeno |
-| 18 | Mrtvý typ `ButterworthCoeffs` | kosmetická | otevřeno |
-| 19 | Komentářové neshody (pad délka, residual_std) | kosmetická | otevřeno |
+| 16 | Morozov fallback agresivnější než nejslabší kandidát | nízká | **RESOLVED v5.11.40** (fallback na největší kandidát) |
+| 17 | `NOISE_MAD_NORMALIZATION` nesedí na komentář | kosmetická | **RESOLVED v5.11.40** (1.6521808) |
+| 18 | Mrtvý typ `ButterworthCoeffs` | kosmetická | **RESOLVED v5.11.40** (odstraněn) |
+| 19 | Komentářové neshody (pad délka, residual_std) | kosmetická | **RESOLVED v5.11.40** (komentáře opraveny) |
 
 ---
 
@@ -409,12 +422,12 @@ Od původního auditu (v5.11.1) bylo postupně vyřešeno 8 problémů:
    vzorce, padding indexace v mezích, Morozovův výběr správně orientovaný.
    Nové nálezy #15-#19 (zatím neopravené).
 
-**Po kole 2026-06-10 zbývá jeden nález s praktickým dopadem: #15** — pevný
+**Po opravách v5.11.40 zbývá jediný otevřený nález: #15** — pevný
 padding 14 vzorků nepokrývá přechodový jev filtru pro `fc < ~0.05` (při
 povoleném minimu `fc = 1e-4` je doznění ~6900 vzorků), takže malá `fc` dávají
-nedokumentované okrajové artefakty. Ostatní otevřené položky (#3, #8, #16-#19)
-jsou nízké až kosmetické a neovlivňují typické použití (`fc` 0.05-0.5 na
-uniformním gridu).
+nedokumentované okrajové artefakty. Je střední priority a vyžaduje větší zásah
+(škálování `pad_len ~ C/fc` s ořezem). Nízké/kosmetické nálezy #3, #8, #16-#19
+byly vyřešeny v v5.11.40.
 
 Matematická stránka (bilineární transformace s prewarpingem, TDF-II biquad,
 odd-reflection padding, IC přes Cramerovo pravidlo, Morozov auto-fc,
