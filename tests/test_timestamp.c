@@ -83,6 +83,20 @@ void test_parse_timestamp_invalid_date(void) {
     TEST_ASSERT_EQUAL(-1, parse_timestamp("2025-09-25 25:06:06", &epoch));
 }
 
+/* Test: parse_timestamp rejects calendar-impossible dates (audit A2) */
+void test_parse_timestamp_nonexistent_date(void) {
+    double epoch;
+
+    /* Days that pass the 1-31 range check but do not exist; timegm() would
+     * silently normalize these forward without the post-conversion check. */
+    TEST_ASSERT_EQUAL(-1, parse_timestamp("2025-02-31 00:00:00", &epoch));
+    TEST_ASSERT_EQUAL(-1, parse_timestamp("2025-04-31 00:00:00", &epoch));
+    TEST_ASSERT_EQUAL(-1, parse_timestamp("2025-02-29 00:00:00", &epoch));  /* 2025 not leap */
+
+    /* Valid leap day must still be accepted (regression guard) */
+    TEST_ASSERT_EQUAL(0, parse_timestamp("2024-02-29 00:00:00", &epoch));   /* 2024 is leap */
+}
+
 /* Test: parse_timestamp rejects NULL inputs */
 void test_parse_timestamp_null_inputs(void) {
     double epoch;
@@ -111,7 +125,7 @@ void test_convert_timestamps_basic(void) {
     double *x_out = NULL;
     int first_error = -1;
 
-    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, &x_out, &first_error);
+    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, &x_out, &first_error);
 
     TEST_ASSERT_NOT_NULL(ctx);
     TEST_ASSERT_NOT_NULL(x_out);
@@ -150,7 +164,7 @@ void test_convert_timestamps_with_errors(void) {
     double *x_out = NULL;
     int first_error = -1;
 
-    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, &x_out, &first_error);
+    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, &x_out, &first_error);
 
     TEST_ASSERT_NOT_NULL(ctx);
     TEST_ASSERT_NOT_NULL(x_out);
@@ -167,6 +181,34 @@ void test_convert_timestamps_with_errors(void) {
     free_timestamp_context(ctx);
 }
 
+/* Test: parallel y array is compacted in lockstep with x (audit A1) */
+void test_convert_compacts_parallel_y(void) {
+    char *timestamps[] = {
+        "2025-09-25 14:06:06.000",
+        "invalid timestamp",           /* dropped (index 1) */
+        "2025-09-25 14:06:08.000",
+        "also invalid",                /* dropped (index 3) */
+        "2025-09-25 14:06:10.000"
+    };
+    int n = 5;
+    double y[] = {10.0, 20.0, 30.0, 40.0, 50.0};
+    double *x_out = NULL;
+    int first_error = -1;
+
+    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, y, &x_out, &first_error);
+
+    TEST_ASSERT_NOT_NULL(ctx);
+    TEST_ASSERT_EQUAL(3, ctx->n);
+
+    /* y for the surviving rows (indices 0, 2, 4) must move to 0, 1, 2 */
+    TEST_ASSERT_DOUBLE_WITHIN(0.001, 10.0, y[0]);
+    TEST_ASSERT_DOUBLE_WITHIN(0.001, 30.0, y[1]);
+    TEST_ASSERT_DOUBLE_WITHIN(0.001, 50.0, y[2]);
+
+    free(x_out);
+    free_timestamp_context(ctx);
+}
+
 /* Test: convert_timestamps_to_relative with all invalid */
 void test_convert_timestamps_all_invalid(void) {
     char *timestamps[] = {
@@ -178,7 +220,7 @@ void test_convert_timestamps_all_invalid(void) {
     double *x_out = NULL;
     int first_error = -1;
 
-    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, &x_out, &first_error);
+    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, &x_out, &first_error);
 
     TEST_ASSERT_NULL(ctx);  /* Should return NULL when no valid timestamps */
     TEST_ASSERT_EQUAL(1, first_error);  /* First error on line 1 */
@@ -195,7 +237,7 @@ void test_convert_timestamps_preserves_format(void) {
     double *x_out = NULL;
     int first_error = -1;
 
-    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, &x_out, &first_error);
+    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, &x_out, &first_error);
 
     TEST_ASSERT_NOT_NULL(ctx);
 
@@ -214,10 +256,10 @@ void test_convert_timestamps_null_inputs(void) {
     double *x_out = NULL;
     int first_error = -1;
 
-    TEST_ASSERT_NULL(convert_timestamps_to_relative(NULL, 1, &x_out, &first_error));
-    TEST_ASSERT_NULL(convert_timestamps_to_relative(timestamps, 0, &x_out, &first_error));
-    TEST_ASSERT_NULL(convert_timestamps_to_relative(timestamps, 1, NULL, &first_error));
-    TEST_ASSERT_NULL(convert_timestamps_to_relative(timestamps, 1, &x_out, NULL));
+    TEST_ASSERT_NULL(convert_timestamps_to_relative(NULL, 1, NULL, &x_out, &first_error));
+    TEST_ASSERT_NULL(convert_timestamps_to_relative(timestamps, 0, NULL, &x_out, &first_error));
+    TEST_ASSERT_NULL(convert_timestamps_to_relative(timestamps, 1, NULL, NULL, &first_error));
+    TEST_ASSERT_NULL(convert_timestamps_to_relative(timestamps, 1, NULL, &x_out, NULL));
 }
 
 /* Test: free_timestamp_context with NULL */
@@ -256,7 +298,7 @@ void test_convert_timestamps_subsecond_accuracy(void) {
     double *x_out = NULL;
     int first_error = -1;
 
-    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, &x_out, &first_error);
+    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, &x_out, &first_error);
 
     TEST_ASSERT_NOT_NULL(ctx);
     TEST_ASSERT_EQUAL(0, ctx->errors_encountered);

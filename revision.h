@@ -3,7 +3,30 @@
  *
  * Version History
  * ---------------
- * v5.11.41 (current): Butterworth audit #15 — fc-adaptive filtfilt padding.
+ * v5.11.43 (current): Code audit v5.11.41 fix A2 — parse_timestamp accepted
+ *           calendar-impossible dates. The field validation checked numeric
+ *           ranges only (day 1-31, month 1-12, ...), so dates like 2025-02-31 or
+ *           2025-04-31 passed and timegm() silently normalized them forward
+ *           (Feb 31 -> Mar 3), accepting a timestamp with a shifted date. After
+ *           timegm() (which normalizes the struct tm in place) the code now
+ *           verifies the normalized tm_year/tm_mon/tm_mday still match the
+ *           requested date and returns -1 otherwise — no custom leap-year/month
+ *           -length logic needed. Valid leap days (2024-02-29) still parse. New
+ *           test parse_timestamp_nonexistent_date. 115 tests pass, zero valgrind
+ *           leaks. See doc/code-audit-v5.11.41.md. Closes A2.
+ * v5.11.42: Code audit v5.11.41 fix A1 — timestamp-mode x/y
+ *           desynchronization. In -T mode parse_input fills timestamp_strings[]
+ *           and y[] in parallel by row, then convert_timestamps_to_relative
+ *           compacted only x[] (dropping invalid timestamps) while y[] kept its
+ *           original row order and was merely truncated. Any invalid timestamp
+ *           on a row with an otherwise-valid y therefore shifted y against x and
+ *           silently dropped trailing valid points (e.g. timestamp of row 3
+ *           paired with y of row 2). convert_timestamps_to_relative now takes an
+ *           optional double *y_inout and compacts it in lockstep with x (safe
+ *           in place: valid_count <= i). New test convert_compacts_parallel_y;
+ *           existing callers pass NULL. 114 tests pass, zero valgrind leaks. See
+ *           doc/code-audit-v5.11.41.md. Closes A1.
+ * v5.11.41: Butterworth audit #15 — fc-adaptive filtfilt padding.
  *           calculate_pad_length previously returned a fixed 14 samples
  *           regardless of fc, but the filter transient decays as r^k with r the
  *           slowest pole radius, so its length ~1/(1-r) grows without bound as
@@ -281,5 +304,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.41"
-#define REVDATE "2026-06-11"
+#define VERSION "5.11.43"
+#define REVDATE "2026-06-16"

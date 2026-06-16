@@ -83,6 +83,15 @@ int parse_timestamp(const char *str, double *epoch_seconds)
         return -1;  /* mktime failed (invalid date) */
     }
 
+    /* timegm() normalizes overflowed fields in place (e.g. Feb 31 -> Mar 3),
+     * so a calendar-impossible date would be silently accepted. Reject it by
+     * checking the normalized struct still matches the requested date. */
+    if (tm_time.tm_year != year - 1900 ||
+        tm_time.tm_mon  != month - 1 ||
+        tm_time.tm_mday != day) {
+        return -1;
+    }
+
     /* Combine integer seconds and subseconds */
     *epoch_seconds = (double)epoch + subseconds;
 
@@ -93,6 +102,7 @@ int parse_timestamp(const char *str, double *epoch_seconds)
 TimestampContext* convert_timestamps_to_relative(
     char **timestamp_strings,
     int n,
+    double *y_inout,
     double **x_out,
     int *first_error_line)
 {
@@ -166,6 +176,13 @@ TimestampContext* convert_timestamps_to_relative(
 
         /* Calculate relative time in seconds */
         x_temp[valid_count] = epoch - ctx->reference_epoch;
+
+        /* Compact the parallel value array in lockstep so y_inout[k] keeps
+         * matching x[k] after invalid timestamps are dropped. Safe in place:
+         * valid_count <= i, so this never overwrites an entry not yet read. */
+        if (y_inout) {
+            y_inout[valid_count] = y_inout[i];
+        }
         valid_count++;
     }
 

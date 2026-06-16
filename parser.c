@@ -270,7 +270,7 @@ int parse_input(FILE *fp,
     }
 
     int first_error_line = -1;
-    ts_ctx = convert_timestamps_to_relative(timestamp_strings, n, &x, &first_error_line);
+    ts_ctx = convert_timestamps_to_relative(timestamp_strings, n, y, &x, &first_error_line);
     if (ts_ctx == NULL) {
       fprintf(stderr, "ERROR: No valid timestamps found in input\n");
       if (first_error_line > 0) {

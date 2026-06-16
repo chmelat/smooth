@@ -169,10 +169,12 @@ void test_parse_timestamp_no_subseconds(void);
 void test_parse_timestamp_subsecond_precision(void);
 void test_parse_timestamp_invalid_separator(void);
 void test_parse_timestamp_invalid_date(void);
+void test_parse_timestamp_nonexistent_date(void);
 void test_parse_timestamp_null_inputs(void);
 void test_parse_timestamp_malformed(void);
 void test_convert_timestamps_basic(void);
 void test_convert_timestamps_with_errors(void);
+void test_convert_compacts_parallel_y(void);
 void test_convert_timestamps_all_invalid(void);
 void test_convert_timestamps_preserves_format(void);
 void test_convert_timestamps_null_inputs(void);
@@ -399,6 +401,7 @@ int main(void) {
     printf("\n--- Parsing error handling tests ---\n");
     RUN_TEST(test_parse_timestamp_invalid_separator);
     RUN_TEST(test_parse_timestamp_invalid_date);
+    RUN_TEST(test_parse_timestamp_nonexistent_date);
     RUN_TEST(test_parse_timestamp_null_inputs);
     RUN_TEST(test_parse_timestamp_malformed);
 
@@ -408,6 +411,7 @@ int main(void) {
     printf("\n--- Timestamp conversion tests ---\n");
     RUN_TEST(test_convert_timestamps_basic);
     RUN_TEST(test_convert_timestamps_with_errors);
+    RUN_TEST(test_convert_compacts_parallel_y);
     RUN_TEST(test_convert_timestamps_all_invalid);
     RUN_TEST(test_convert_timestamps_preserves_format);
     RUN_TEST(test_convert_timestamps_subsecond_accuracy);
