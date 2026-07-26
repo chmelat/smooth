@@ -50,7 +50,7 @@ make                                    # Compile
 ```bash
 make                  # Standard compilation (clang, -O2)
 make debug            # Debug build (-g -O0)
-make test             # Build and run 113 unit tests
+make test             # Build and run 116 unit tests
 make test-valgrind    # Run tests with memory leak detection
 make clean            # Clean build artifacts
 make install-user     # Install to ~/bin
@@ -91,6 +91,7 @@ gcc -o smooth smooth.c polyfit.c savgol.c tikhonov.c butterworth.c \
 | `-k M` or `-k N:M` | Column selection: `M` sets the y-data column (x defaults to column 1); `N:M` sets x at column N and y at column M. Default: `1:2`. Columns are 1-indexed; N and M must differ. In `-T` mode, N is the **timestamp** column (still column 1 by default), and the timestamp counts as a single logical column even when its space-separated form spans two whitespace tokens. |
 | `-d` | Include first derivative in output |
 | `-g` | Show detailed grid uniformity analysis |
+| `-h`, `-?` | Show help (options, methods, examples) and exit |
 
 **Notes:**
 - Polynomial degrees > 6 may generate numerical stability warnings.
@@ -467,19 +468,15 @@ The `-g` flag provides detailed grid uniformity statistics to help choose approp
 ### Example Output
 
 ```
-# ========================================
-# GRID UNIFORMITY ANALYSIS
-# ========================================
 # Grid uniformity analysis:
 #   n = 1000 points
 #   h_min = 9.500000e-03, h_max = 1.200000e-02, h_avg = 1.000000e-02
 #   CV = 0.052
 #   Grid type: NON-UNIFORM
-#   Uniformity score: 0.94
+#   Uniformity score: 0.90
 #   Standard deviation: 5.200000e-04
 #   Detected clusters: 0
 #   Recommendation: Grid is nearly uniform - standard methods work well
-# ========================================
 ```
 
 ### Uniformity Thresholds
@@ -768,9 +765,12 @@ At data boundaries where a full symmetric window cannot be used, the method empl
 - The window always retains `window_size` points (only its center shifts), and
   `poly_degree < window_size` is enforced up front, so boundaries always have
   enough points for the fit
-- If coefficient computation or allocation fails at a boundary point, the whole
-  call is a hard error (returns `NULL`) rather than silently substituting raw
-  data — matching the central-point path (v5.11.36)
+- Since an asymmetric window still spans `window_size` points, the boundary pass
+  reuses the coefficient buffers of the central pass instead of allocating per
+  point (v5.11.45)
+- If coefficient computation fails at a boundary point, the whole call is a hard
+  error (returns `NULL`) rather than silently substituting raw data — matching
+  the central-point path (v5.11.36)
 - Maintains polynomial exactness property at boundaries
 
 #### Characteristics
@@ -1278,11 +1278,6 @@ typedef struct {
     double a[3];  // Denominator coefficients: [a0=1, a1, a2]
 } BiquadSection;
 
-// Butterworth filter coefficients (cascade of 2 biquads)
-typedef struct {
-    BiquadSection sections[2];
-} ButterworthCoeffs;
-
 // Butterworth result
 typedef struct {
     double *y_smooth;     // Smoothed values
@@ -1314,13 +1309,11 @@ typedef struct {
     int n_clusters;         // Number of detected clusters
     int reliability_warning;// Reliability warning
     char warning_msg[512];  // Warning text
-    double *spacings;       // Array of spacings (optional)
     int n_points;           // Number of points
-    int n_intervals;        // Number of intervals (n-1)
 } GridAnalysis;
 
 // Grid analysis functions
-GridAnalysis* analyze_grid(const double *x, int n, int store_spacings);
+GridAnalysis* analyze_grid(const double *x, int n);
 const char* get_grid_recommendation(GridAnalysis *analysis);
 void print_grid_analysis(GridAnalysis *analysis, int verbose, const char *prefix);
 void free_grid_analysis(GridAnalysis *analysis);
@@ -1372,10 +1365,10 @@ result->y_deriv[i] = (poly_degree > 0) ? rhs[1] : 0.0;
 ```
 
 **Numerical diagnostics (POLYFIT):**
-- On first window, reports condition number: $\kappa = \sigma_{\max} / \sigma_{\min}$
-- If $\kappa > 10^8$, issues warning about potential numerical issues
-- Reports effective rank if matrix is rank-deficient
-- Fallback to original value if SVD fails
+- Tracks the effective condition number $\kappa = \sigma_{\max} / \sigma_{\min}$ (after `rcond` truncation) across every interior window and reports the worst one at the end of the run
+- The report is only issued if $\kappa > 10^8$, as a warning about potential numerical issues
+- Reports how many windows came out rank-deficient
+- Falls back to the original value with zero derivative if SVD fails, both at interior windows and at the boundary points that would have been extrapolated from them
 
 **SAVGOL coefficient solver:**
 
@@ -1402,14 +1395,14 @@ smooth/
 +--- tests/             # Unit testing framework (Unity)
     |--- unity.c/h                # Unity testing framework
     |--- unity_internals.h        # Unity internals
-    |--- test_main.c              # Test runner (113 tests)
+    |--- test_main.c              # Test runner (116 tests)
     |--- test_grid_analysis.c     # Grid analysis tests (7 tests)
     |--- test_polyfit.c           # Polyfit module tests (21 tests)
     |--- test_savgol.c            # Savgol module tests (16 tests)
     |--- test_tikhonov.c          # Tikhonov module tests (25 tests)
     |--- test_butterworth.c       # Butterworth module tests (22 tests)
-    |--- test_timestamp.c         # Timestamp module tests (16 tests)
-    +--- test_parser.c            # Input parser tests (6 tests, end-to-end)
+    |--- test_timestamp.c         # Timestamp module tests (18 tests)
+    +--- test_parser.c            # Input parser tests (7 tests, end-to-end)
 ```
 
 ---
