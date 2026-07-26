@@ -1,4 +1,5 @@
 *.[oad]
 *~
+*.swp
 /smooth
 /tests/test_runner
