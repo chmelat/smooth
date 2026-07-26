@@ -1416,162 +1416,21 @@ smooth/
 
 ## Version History
 
-**v5.11.46 (current):** Ponytail audit closed (`doc/ponytail-audit-v5.11.43.md`)
-- Tikhonov: the two BLAS `dcopy_` calls were plain array copies, replaced by `memcpy` (bit-identical; `-lblas` is still required, LAPACK pulls it in)
-- Makefile: dropped the `MEMCHECK` variable (a commented-out electric-fence hook that always expanded to nothing) and the `memcheck` target, which only echoed a valgrind command line for the user to retype — `make test-valgrind` runs it for real
-- One finding rejected on measurement: replacing savgol's `power()` with `pow()` would shift 906 of 16875 moment values by one ULP, and those moments build a Vandermonde normal-equations matrix
-- All 21 audit findings resolved: 18 applied across v5.11.44-46, 3 rejected
+The full, per-release version history lives in `revision.h` — the comment
+block at the top of the file, newest first. It is the single source of truth;
+it was duplicated here and the copy had already drifted out of date.
 
-**v5.11.45:** Ponytail audit — internal refactoring (`doc/ponytail-audit-v5.11.43.md`)
-- Behaviour-preserving throughout: nine program outputs (all four methods, `-g`, `-T`, `-h`) are byte-for-byte identical to v5.11.44
-- Duplicated code paths merged: the two Savitzky-Golay boundary blocks became one loop that reuses the central coefficient buffers instead of allocating per boundary point; the Butterworth main path now shares the filtfilt routine with the auto-cutoff trials; the two polyfit boundary fallbacks were replaced by the same raw-data substitution the inline fallback already used
-- Dead flexibility removed: `analyze_grid()` lost its never-used `store_spacings` parameter (and the struct its `spacings` / `n_intervals` fields), the grid report its never-reached `verbose >= 2` branch
-- Heap allocations across the test suite drop from 1148 to 911. 116 tests, zero valgrind leaks
+To read it:
 
-**v5.11.44:** Ponytail audit — dead code removed (`doc/ponytail-audit-v5.11.43.md`)
-- Tikhonov: the L-curve method and the `n > 20000` branch it was reachable from are gone; one 13-point log-spaced GCV scan over $[10^{-8}, 10^0]$ now serves every `n`. For `n > 20000` the selected $\lambda$ may differ by up to one grid step from previous versions; the search range and the `n <= 5000` refinement rule are unchanged
-- The `decomment` module and its temporary-file copy of the input are gone; `parser.c` strips `#` comments (full-line and inline) itself, so comment-only lines still never count as skipped data rows. Two side effects: parser errors now report the real input line number, and a data line whose truncation falls inside a trailing comment is parsed instead of rejected
-- Removed unused `free_parse_result()`, the savgol `factorial()` helper (`deriv_order` is now validated to 0 or 1), an unused test helper and an unused macro. 116 tests, zero valgrind leaks
-
-**v5.11.41:** Butterworth fc-adaptive filtfilt padding (audit #15)
-- Padding length is now sized to the filter transient ($\sim 5/(1 - r_{\max})$, $r_{\max}$ = slowest pole radius), floored at 14 and capped at $n-1$, instead of a fixed 14 samples; it grows automatically as $f_c$ shrinks so small cutoffs (`fc < ~0.05`) no longer leak an edge artifact past the padding (a ramp at `fc = 0.02` on `n = 600` went from ~0.6 boundary error to ~7e-3)
-- A `# WARNING` is printed when the data is too short to absorb the transient (padding capped at `n-1`)
-- Pole-radius math factored into shared helpers; auto-cutoff trials use the same fc-aware padding. 113 tests (2 new); all Butterworth audit findings now resolved (`doc/butterworth-audit.md`)
-
-**v5.11.40:** Butterworth audit cleanups (#3, #8, #16-#19)
-- `compute_biquad_ic` warns on a singular initial-condition system instead of silently zeroing it; auto-cutoff (`-f auto`) now falls back to the largest (weakest) candidate when no candidate satisfies the discrepancy principle, and warns
-- Corrected `NOISE_MAD_NORMALIZATION` constant, removed the dead `ButterworthCoeffs` type, and fixed several stale comments
-
-**v5.11.39:** Tikhonov GCV fixes
-- `-l auto` now uses the O(n) analytical eigenvalue trace for every `n` (the old `n > 5000` fast approximation had the wrong large-$\lambda$ asymptotic and biased toward undersmoothing on large datasets)
-- Warns when the selected $\lambda$ is pinned to the search-range edge (`[1e-8, 1]` cannot fit every data scale) and suggests setting `-l` manually
-
-**v5.11.38:** Deep-audit fixes (S3 + T1)
-- S3: guard the Tikhonov `Data/Total ratio` output line against a degenerate functional (`-l 0` gives an exact fit, so `J = 0` and the ratios were printing `0/0 = nan`); the line is now skipped when `total_functional == 0`
-- T1: `find_lambda_lcurve` now uses an explicit `valid[]` flag instead of a `rss_vals[i] == 0.0` sentinel (`log(data_term)` can legitimately be 0.0); L-curve is only used for `n > 20000`
-- Full deep audit of all nine modules recorded in `doc/code-audit-v5.11.38.md`
-
-**v5.11.37:** Polyfit cleanup
-- Check `info` from the `dgelss` workspace query (was trusting a possibly-garbage workspace size)
-- Relabel the condition-number diagnostic as the *effective* condition number (after rcond truncation), drop a dead `s_min <= 0` branch
-- `polyfit.h` doc fixes (`poly_degree` range wording)
-
-**v5.11.36:** Savgol cleanup
-- Boundary-point coefficient/allocation failure now returns `NULL` (hard error) instead of silently substituting the raw input `y[i]` with a zero derivative — matches the central-point path
-- `savgol.h` doc fixes: example calls now pass `grid_info`; `poly_degree` range and alternative-method signatures corrected
-
-**v5.11.35:** Butterworth cleanup
-- Grid-uniformity CV check moved ahead of auto-cutoff estimation (a non-uniform grid is rejected before any trial filtfilts run)
-- Derivative comments corrected: the 5-point stencils are O(h⁴) only on a uniform grid and degrade toward first order as CV approaches the 0.15 cap
-
-**v5.11.34:** Unified Tikhonov discretization (**not backward compatible**)
-- The penalty now uses ONE integral-measure scheme for all grids: the Gram matrix $(D^2)^T W D^2$ with weights $w_k = (h_l + h_r)/2$
-- Removed the old AVERAGE branch, the CV = 0.15 method switch, and the `DiscretizationMethod` enum
-- On a uniform grid the matrix reduces to $[1,-4,6,-4,1]\cdot\lambda/h^3$, so $\lambda$ now scales as $\sim\lambda/h^3$ (units Length³); a given numeric `-l` value smooths differently than in ≤ v5.11.33
-
-**v5.11.33:** Tikhonov GCV cleanup
-- Removed an ad-hoc over-fitting penalty from the GCV score; `-l auto` now minimizes the textbook GCV criterion
-
-**v5.11.29:** Butterworth `-f` default flipped to `auto`
-- Without `-f`, the program now selects the cutoff via Morozov's discrepancy principle instead of a fixed `fc = 0.2`; numeric `-f <value>` still overrides
-
-**v5.11.28:** Input parser extracted to `parser.c` / `parser.h`
-- The ~290-line input parser (overflow detection, normal-mode and timestamp-mode tokenizers, timestamp-to-relative conversion) moved out of `main()` into its own module exposing `parse_input()` / `free_parse_result()`
-
-**v5.11.14–v5.11.27:** Audit series (v5.11.22 code audit)
-- Unified error-label capitalization, added const-correctness across method signatures, made `savgol_coefficients` and `estimate_cutoff_frequency` static, plus assorted goto-cleanup and dead-code fixes
-
-**v5.11.13:** `-k N:M` works in `-T` (timestamp) mode (audit B15)
-- Timestamp parser rewritten from `sscanf` to a whitespace tokenizer with a logical-column model
-- N selects the timestamp's logical column (default 1), M selects the y column (default 2)
-- Logical column abstracts that the timestamp spans 1 (T-separator) or 2 (space-separator) whitespace tokens
-- Removes a hackish split-on-dot workaround in the previous `sscanf` parsing
-- Default `-T` without `-k` behaves identically to before
-
-**v5.11.12:** Uniform `decomment` for stdin and files (audit B10)
-- New `decomment_stream(FILE *, name)` strips `#` comments from any open stream; `decomment(name)` becomes a thin wrapper
-- stdin now goes through the same comment-stripping path as files (full-line and inline `#` comments)
-- The four `if (fp != stdin) fclose(fp)` guards collapse to plain `fclose(fp)` (`fp` is always a tmpfile now)
-
-**v5.11.11:** Audit B4 and B8 fixes
-- Extracted `print_result()` to consolidate output formatting (audit B4)
-- Replaced linear buffer growth (`abuf += BUF`) with geometric doubling (`abuf *= 2`) — amortized O(N) instead of O(N²) (audit B8)
-
-**v5.11.10:** Removed dead code (audit B6, B12)
-- Empty `if (argc == 1)` block, unreachable `left_pts + right_pts < poly_degree` check in savgol, and a defensive index-bounds check that was always true
-
-**v5.11.9:** Audit A1–A4 fixes
-- Correct exit code on parse errors (A1)
-- Header info corrections (A2)
-- Overflow guard in column-count comparisons (A3)
-- Removed bias in standard-deviation reporting (A4)
-
-**v5.11.8:** Extended `-k` flag with `N:M` syntax for selecting both x and y columns
-- `-k M` keeps existing behavior (y from column M, x from column 1)
-- `-k N:M` picks x from column N and y from column M (e.g. `-k 1:4`)
-- Validation: column numbers must be `>= 1` and N must differ from M
-- Hard error with line number if an input line has fewer columns than requested
-
-**v5.11.7:** Butterworth derivative support
-- `-d` flag now works with Butterworth (previously rejected)
-- First derivative computed via 5-point O(h⁴) stencils on the filtfilt output (central in the interior, forward/backward at boundaries)
-- Wider stencils are safe here because filtfilt output is already extremely smooth (effective 8th-order, zero-phase)
-- 106 unit tests total (3 new: constant, linear, sine derivative cases)
-
-**v5.11.6:** Butterworth cosmetic cleanups
-- Dropped unused `x` parameter from `estimate_cutoff_frequency()` (works on normalized frequencies only)
-- Sample-rate line now labeled `Effective sample rate: fs = ... (= 1/h_avg)` to clarify it is derived from average spacing
-- Adaptive MB/GB formatting in the large-dataset memory warning
-
-**v5.11.5:** Clarified Butterworth high-fc warning
-- Renamed `CUTOFF_FREQ_STABILITY_WARN` to `CUTOFF_FREQ_INEFFECTIVE_WARN` — the concern at high fc is weak attenuation, not pole stability (stability is covered by the v5.11.2 check)
-- Warning text and `-f` parameter docs updated accordingly
-
-**v5.11.4:** Butterworth minimum practical cutoff
-- Introduced `FC_MIN_PRACTICAL = 1e-4` to reject numerically ill-conditioned inputs before filter design
-- Below this threshold, biquad poles crowd the unit circle and precision degrades
-- Auto-selector is unaffected (smallest candidate is 0.02)
-
-**v5.11.3:** Butterworth automatic cutoff frequency selection via Morozov's discrepancy principle
-
-**Recent changes (v5.11.3):**
-- Implemented real `-f auto` (previously a stub returning a constant)
-- Noise σ estimated from MAD of second differences (Donoho-Johnstone)
-- Candidate grid {0.02, 0.05, 0.1, 0.2, 0.35, 0.5}; smallest fc satisfying `std(residual) ≤ 1.1·σ̂` selected
-- Internal refactor: extracted `apply_cascade()` helper used by both `filtfilt` passes and trial filtering
-- Fallback to fc=0.2 when noise estimation or discrepancy check cannot be satisfied
-
-**v5.11.2:** Butterworth pole-stability check — warns when filter poles approach the unit circle (numerical precision risk)
-- Added `check_pole_stability()` in `butterworth.c` that computes pole radii per biquad section
-- Warning emitted when `max |pole| > 0.99`, hard error at `>= 1.0`
-- Catches extreme `fc` values (both near 0 and near 1) that were previously silent numerical hazards
-
-**v5.11.1:** Fix DST corruption in timestamp parsing, use `timegm()` instead of `mktime()`, 103 tests
-- Fix DST corruption in timestamp parsing (use `timegm()` instead of `mktime()`)
-- 103 unit tests including 16 timestamp-specific tests
-
-**v5.11.0:** True 2nd-order Tikhonov penalty $(D^2)^T W D^2$, pentadiagonal matrix
-- Tikhonov regularization corrected to use true 2nd-order penalty (D²)ᵀWD²
-- Pentadiagonal Gram matrix (kd=2) replaces previous tridiagonal approximation
-- Natural boundary conditions now implicit (no boundary rows in D²)
-- GCV eigenvalues corrected: mu_k = (4sin²(theta/2)/h²)² with 2D null space
-- 26 Tikhonov-specific tests
-
-**Previous versions:**
-- v5.10.1: Butterworth biquad cascade rewrite, analytical IC
-- v5.7.1: Added polyfit unit tests, small bug fixes
-- v5.6: First unity tests added
-- v5.5: Butterworth filter added, Unix filter support, centralized grid analysis
-- v5.4: Tikhonov hybrid discretization, GCV improvements
-- v5.3: Savitzky-Golay grid uniformity enforcement
-- v5.2: Grid analysis module with `-g` flag
-- v5.1: Optional derivative output with `-d` flag
-- v5.0: Complete modularization
+```bash
+head -n 60 revision.h        # most recent releases
+./smooth -h | head -n 6      # version and date of the built binary
+```
 
 ---
 
-**Document revision:** 2026-06-11
-**Program version:** smooth v5.11.41
+**Document revision:** 2026-07-26
+**Program version:** see `revision.h` (or `./smooth -h`)
 **Dependencies:** LAPACK, BLAS
 **Testing framework:** Unity (included in tests/)
 **License:** MIT License
