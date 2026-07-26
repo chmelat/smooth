@@ -1416,7 +1416,13 @@ smooth/
 
 ## Version History
 
-**v5.11.44 (current):** Ponytail audit — dead code removed (`doc/ponytail-audit-v5.11.43.md`)
+**v5.11.45 (current):** Ponytail audit — internal refactoring (`doc/ponytail-audit-v5.11.43.md`)
+- Behaviour-preserving throughout: nine program outputs (all four methods, `-g`, `-T`, `-h`) are byte-for-byte identical to v5.11.44
+- Duplicated code paths merged: the two Savitzky-Golay boundary blocks became one loop that reuses the central coefficient buffers instead of allocating per boundary point; the Butterworth main path now shares the filtfilt routine with the auto-cutoff trials; the two polyfit boundary fallbacks were replaced by the same raw-data substitution the inline fallback already used
+- Dead flexibility removed: `analyze_grid()` lost its never-used `store_spacings` parameter (and the struct its `spacings` / `n_intervals` fields), the grid report its never-reached `verbose >= 2` branch
+- Heap allocations across the test suite drop from 1148 to 911. 116 tests, zero valgrind leaks
+
+**v5.11.44:** Ponytail audit — dead code removed (`doc/ponytail-audit-v5.11.43.md`)
 - Tikhonov: the L-curve method and the `n > 20000` branch it was reachable from are gone; one 13-point log-spaced GCV scan over $[10^{-8}, 10^0]$ now serves every `n`. For `n > 20000` the selected $\lambda$ may differ by up to one grid step from previous versions; the search range and the `n <= 5000` refinement rule are unchanged
 - The `decomment` module and its temporary-file copy of the input are gone; `parser.c` strips `#` comments (full-line and inline) itself, so comment-only lines still never count as skipped data rows. Two side effects: parser errors now report the real input line number, and a data line whose truncation falls inside a trailing comment is parsed instead of rejected
 - Removed unused `free_parse_result()`, the savgol `factorial()` helper (`deriv_order` is now validated to 0 or 1), an unused test helper and an unused macro. 116 tests, zero valgrind leaks
