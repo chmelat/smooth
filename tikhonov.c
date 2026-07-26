@@ -30,9 +30,6 @@
 extern void dpbsv_(char *uplo, int *n, int *kd, int *nrhs, 
                    double *ab, int *ldab, double *b, int *ldb, int *info);
 
-/* BLAS function declarations */
-extern void dcopy_(int *n, const double *x, int *incx, double *y, int *incy);
-
 /* Build band matrix: A = I + lambda * (D2)^T W D2 (pentadiagonal Gram matrix) */
 static void build_band_matrix(const double *x, int n, double lambda, double *AB, int ldab, int kd)
 {
@@ -222,8 +219,7 @@ TikhonovResult* tikhonov_smooth(const double *x, const double *y, int n, double 
     /* --- CALCULATION --- */
 
     /* Prepare RHS vector (copy y to b) */
-    int inc = 1;
-    dcopy_(&n, y, &inc, b, &inc);
+    memcpy(b, y, (size_t)n * sizeof(double));
 
     /* Build System Matrix */
     build_band_matrix(x, n, lambda, AB, ldab, kd);
@@ -246,7 +242,7 @@ TikhonovResult* tikhonov_smooth(const double *x, const double *y, int n, double 
     }
     
     /* Copy result back to struct */
-    dcopy_(&n, b, &inc, result->y_smooth, &inc);
+    memcpy(result->y_smooth, b, (size_t)n * sizeof(double));
     
     /* Post-processing */
     compute_derivatives(x, result->y_smooth, n, result->y_deriv);

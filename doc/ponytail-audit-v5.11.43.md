@@ -7,8 +7,9 @@ performance are explicitly out of scope — route those to a normal review pass.
 
 This report **lists** findings. **Status:** the seven `delete:` findings (1, 2, 3, 9, 12, 14, 20) were applied
 in **v5.11.44**; the `shrink:` and `yagni:` findings (4, 5, 6, 8, 10, 11, 13,
-17, 18) in **v5.11.45**. Findings 7 and 21 were reviewed and deliberately
-rejected. Still open: `stdlib:` 15 and 19, `native:` 16.
+17, 18) in **v5.11.45**; `stdlib:` 19 and `native:` 16 in **v5.11.46**. Findings 7, 15
+and 21 were reviewed and deliberately rejected — see the notes on those
+findings below. Nothing is left open.
 
 Tags: `delete:` dead code / speculative feature. `stdlib:` hand-rolled thing the
 standard library ships. `native:` code doing what the platform already does.
@@ -35,11 +36,11 @@ caller. `shrink:` same logic, fewer lines.
 | 12 | delete | parser.c:312-322, parser.h:46 | -13 | DONE v5.11.44 |
 | 13 | shrink | butterworth.c:97-101, 696-698, 720-731 | -12 | DONE v5.11.45 |
 | 14 | delete | savgol.c:46-54, 143 | -10 | DONE v5.11.44 |
-| 15 | stdlib | savgol.c:35-43 | -9 | open |
-| 16 | native | Makefile:31-33, 48, 67-69 | -8 | open |
+| 15 | stdlib | savgol.c:35-43 | -9 | zamítnuto (pow() není bitově shodné) |
+| 16 | native | Makefile:31-33, 48, 67-69 | -8 | DONE v5.11.46 |
 | 17 | yagni | smooth.c:415-421 | -7 | DONE v5.11.45 |
 | 18 | yagni | tikhonov.c:271-330 | -4 | DONE v5.11.45 |
-| 19 | stdlib | tikhonov.c:32, 224, 247 | -3 | open |
+| 19 | stdlib | tikhonov.c:32, 224, 247 | -3 | DONE v5.11.46 |
 | 20 | delete | butterworth.h:16 | -1 | DONE v5.11.44 |
 | 21 | yagni | tests/unity.c, unity.h, unity_internals.h | -4595 | zamítnuto (Unity zůstává) |
 
@@ -242,15 +243,31 @@ Both return 1.0.
 
 ---
 
-### 15. `stdlib:` Savgol `power()`
+### 15. `stdlib:` Savgol `power()` — REJECTED
 
-Hand-rolled integer power loop. `pow()` from `math.h` is already available and
-`-lm` is already linked. Exponents here are small non-negative integers, where
-`pow()` is exact on any IEEE-754 implementation.
+Hand-rolled integer power loop. `pow()` from `math.h` is available and `-lm` is
+already linked, so this looked like nine free lines.
 
-**Location:** `savgol.c:35-43`, call sites `savgol.c:133, 161`.
+**The audit's premise was wrong.** It claimed `pow()` is exact for these small
+non-negative integer exponents. Measured over the range savgol actually
+computes (moments `j^i` for `j` in the window, `i` up to `2*poly_degree`),
+**906 of 16875 values differ from the loop** in the last ULP:
 
----
+```
+  j=7 i=21  loop=5.5854586408328397e+17  pow=5.5854586408328403e+17
+  j=7 i=22  loop=3.9098210485829878e+18  pow=3.9098210485829883e+18
+```
+
+Those moments form the normal-equations matrix of a Vandermonde system — badly
+conditioned by construction — which `dposv` then factors. Last-ULP noise on the
+input shifts the coefficients, so the filter output would no longer be
+bit-identical.
+
+The differences only appear for `i >= 21` and `|j| >= 7`, i.e. polynomial
+degree 11+ in a wide window; ordinary `-p 2..4` is unaffected. But those
+extreme parameters are exactly the worst-conditioned ones.
+
+Nine lines of an exact integer loop are not worth trading for that. Keep it.
 
 ### 16. `native:` Makefile memcheck scaffolding
 

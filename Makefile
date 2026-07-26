@@ -28,11 +28,6 @@ OPT = -O2
 # Warning flags
 WFLAGS = -Wall -Wextra -pedantic
 
-# Memory checking tools
-# For memory leak detection (uncomment to use)
-# MEMCHECK = -lefence
-# Alternative: valgrind (used via 'make memcheck')
-
 # Library settings
 # Default library paths (can be overridden with environment variables)
 LIBDIR ?= $(HOME)/lib
@@ -45,10 +40,10 @@ SYS_BINDIR = $(PREFIX)/bin
 # Libraries
 LIBINCLUDE = -I$(INCDIR)
 LIBPATH = -L$(LIBDIR)
-LIB = -llapack -lblas $(MEMCHECK) -lm
+LIB = -llapack -lblas -lm
 
 # PHONY targets (not corresponding to files)
-.PHONY: all build debug memcheck install install-user uninstall uninstall-user clean dist check help test test-valgrind
+.PHONY: all build debug install install-user uninstall uninstall-user clean dist check help test test-valgrind
 
 # Default target
 all: build
@@ -61,10 +56,6 @@ build: $(PROGRAM)
 debug: CFLAGS = $(WFLAGS) -g -O0
 debug: clean $(PROGRAM)
 	@echo "Built with debug information"
-
-# Memory check build (for use with valgrind)
-memcheck: debug
-	@echo "Run with: valgrind --leak-check=full ./$(PROGRAM) [options]"
 
 # Install to system directories (requires root access)
 install: build
@@ -157,7 +148,6 @@ help:
 	@echo "  all           : Default target, same as 'build'"
 	@echo "  build         : Build the program with optimizations"
 	@echo "  debug         : Build with debug information"
-	@echo "  memcheck      : Build for memory checking with valgrind"
 	@echo "  install       : Install program to $(SYS_BINDIR) (may require root)"
 	@echo "  install-user  : Install program to $(BINDIR)"
 	@echo "  uninstall     : Remove program from $(SYS_BINDIR)"

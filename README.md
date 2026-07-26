@@ -1416,7 +1416,13 @@ smooth/
 
 ## Version History
 
-**v5.11.45 (current):** Ponytail audit — internal refactoring (`doc/ponytail-audit-v5.11.43.md`)
+**v5.11.46 (current):** Ponytail audit closed (`doc/ponytail-audit-v5.11.43.md`)
+- Tikhonov: the two BLAS `dcopy_` calls were plain array copies, replaced by `memcpy` (bit-identical; `-lblas` is still required, LAPACK pulls it in)
+- Makefile: dropped the `MEMCHECK` variable (a commented-out electric-fence hook that always expanded to nothing) and the `memcheck` target, which only echoed a valgrind command line for the user to retype — `make test-valgrind` runs it for real
+- One finding rejected on measurement: replacing savgol's `power()` with `pow()` would shift 906 of 16875 moment values by one ULP, and those moments build a Vandermonde normal-equations matrix
+- All 21 audit findings resolved: 18 applied across v5.11.44-46, 3 rejected
+
+**v5.11.45:** Ponytail audit — internal refactoring (`doc/ponytail-audit-v5.11.43.md`)
 - Behaviour-preserving throughout: nine program outputs (all four methods, `-g`, `-T`, `-h`) are byte-for-byte identical to v5.11.44
 - Duplicated code paths merged: the two Savitzky-Golay boundary blocks became one loop that reuses the central coefficient buffers instead of allocating per boundary point; the Butterworth main path now shares the filtfilt routine with the auto-cutoff trials; the two polyfit boundary fallbacks were replaced by the same raw-data substitution the inline fallback already used
 - Dead flexibility removed: `analyze_grid()` lost its never-used `store_spacings` parameter (and the struct its `spacings` / `n_intervals` fields), the grid report its never-reached `verbose >= 2` branch

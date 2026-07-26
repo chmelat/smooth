@@ -3,7 +3,33 @@
  *
  * Version History
  * ---------------
- * v5.11.45 (current): Ponytail audit v5.11.43 — the `shrink:` and `yagni:`
+ * v5.11.46 (current): Ponytail audit v5.11.43 — closes the report. Two
+ *           findings applied, one rejected on measurement.
+ *           (19) tikhonov: the two dcopy_ calls were plain array copies ->
+ *           memcpy; drops the extern BLAS declaration and the `inc` variable.
+ *           Bit-identical by construction (no arithmetic). Note this removes
+ *           the only pure-BLAS call in the tree but not the -lblas dependency:
+ *           LAPACK pulls BLAS in regardless.
+ *           (16) Makefile: removed the MEMCHECK variable (a commented-out
+ *           electric-fence hook that always expanded to nothing) and the
+ *           `memcheck` target, which built debug and then only echoed the
+ *           valgrind command line for the user to retype. `make test-valgrind`
+ *           already runs valgrind for real with --error-exitcode=1.
+ *           (15) REJECTED: replacing savgol's power() with pow(). The audit
+ *           assumed pow() is exact for these small integer exponents; measured
+ *           over the range savgol computes (j^i for j in the window, i up to
+ *           2*poly_degree), 906 of 16875 values differ in the last ULP. Those
+ *           moments build the normal-equations matrix of a Vandermonde system,
+ *           badly conditioned by construction, so the noise would propagate
+ *           into the coefficients. Only degree 11+ in a wide window is
+ *           affected, but that is the worst-conditioned case. The exact
+ *           integer loop stays.
+ *           All 21 audit findings are now resolved: 18 applied across
+ *           v5.11.44-46, 3 rejected (7 documented -g output, 15 above, 21
+ *           replacing Unity with assert.h).
+ *           Six program outputs re-verified byte-for-byte against v5.11.45.
+ *           116 tests pass, zero valgrind leaks.
+ * v5.11.45: Ponytail audit v5.11.43 — the `shrink:` and `yagni:`
  *           findings (4, 5, 6, 8, 10, 11, 13, 17, 18). Pure refactoring: every
  *           one of the nine is behaviour-preserving, verified by diffing nine
  *           program outputs (all four methods, -g, -T, -h) byte-for-byte
@@ -371,5 +397,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.45"
+#define VERSION "5.11.46"
 #define REVDATE "2026-07-26"
