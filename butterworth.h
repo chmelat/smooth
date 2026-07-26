@@ -13,7 +13,6 @@
 /* Filter parameters */
 #define BUTTERWORTH_ORDER      4
 #define NUM_BIQUADS            2   /* 4th order = 2 cascaded 2nd-order sections */
-#define BUTTERWORTH_NUM_COEFFS 3   /* Each biquad has 3 coefficients (b0,b1,b2 / a0,a1,a2) */
 
 /* Memory limits */
 #define BUTTERWORTH_MAX_POINTS_WARNING  (50 * 1000 * 1000)

@@ -44,7 +44,7 @@ smooth.c              # Main program, CLI parsing, I/O, output formatting
 ├─ butterworth.c/h    # Butterworth filter (frequency-domain)
 ├─ grid_analysis.c/h  # Grid uniformity analysis (shared utility)
 ├─ timestamp.c/h      # Timestamp parsing for `-T` mode (UTC via timegm())
-└─ decomment.c/h      # Input comment removal (full-line and inline `#`)
+└─ parser.c/h         # Input table parsing, `#` comment stripping, column selection
 ```
 
 ### Design principles
@@ -114,8 +114,8 @@ that):
 
 Uses the **Unity** framework (vendored in `tests/`).
 
-- 113 tests total: grid_analysis (7), polyfit (21), savgol (16), tikhonov (25),
-  butterworth (22), timestamp (16), parser (6). Source of truth is `tests/test_main.c`.
+- 116 tests total: grid_analysis (7), polyfit (21), savgol (16), tikhonov (25),
+  butterworth (22), timestamp (18), parser (7). Source of truth is `tests/test_main.c`.
 - Zero leaks. `make test-valgrind` exits 1 on any definite/indirect leak or
   memory error — keep it that way.
 

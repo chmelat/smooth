@@ -94,41 +94,6 @@ void create_and_analyze_grid(double *x, int n, double x_start, double h,
     }
 }
 
-double create_grid_with_cv(double *x, int n, double x_start, double h_avg,
-                           double target_cv, unsigned int seed) {
-    if (x == NULL || n <= 0) {
-        return 0.0;
-    }
-
-    srand(seed);
-    x[0] = x_start;
-
-    // Empirical relationship: perturbation_factor ≈ target_cv * 2.5
-    double perturbation_factor = target_cv * 2.5;
-
-    for (int i = 1; i < n; i++) {
-        double perturbation = h_avg * (rand() / (double)RAND_MAX - 0.5) * 2.0 * perturbation_factor;
-        double spacing = h_avg + perturbation;
-
-        // Ensure spacing is always positive
-        if (spacing < 0.1 * h_avg) {
-            spacing = 0.1 * h_avg;
-        }
-
-        x[i] = x[i-1] + spacing;
-    }
-
-    // Calculate actual CV achieved
-    GridAnalysis *analysis = analyze_grid(x, n, 0);
-    double cv = 0.0;
-    if (analysis) {
-        cv = analysis->cv;
-        free(analysis);
-    }
-
-    return cv;
-}
-
 void create_sin_squared_grid(double *x, int n, double x_start,
                              double base_spacing, double min_spacing) {
     if (x == NULL || n <= 0) {

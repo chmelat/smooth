@@ -42,7 +42,4 @@ int parse_input(FILE *fp,
                 int y_column,
                 ParseResult *result);
 
-/* Free the contents of `result` (does not free the struct itself). */
-void free_parse_result(ParseResult *result);
-
 #endif

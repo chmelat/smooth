@@ -29,7 +29,6 @@ extern void dposv_(char *uplo, int *n, int *nrhs, double *a, int *lda,
 
 /* Local function declarations */
 static double power(double x, int n);
-static double factorial(int n);
 
 /* Power function x^n */
 static double power(double x, int n)
@@ -40,17 +39,6 @@ static double power(double x, int n)
         p *= x;
     
     return p;
-}
-
-/* Calculate factorial */
-static double factorial(int n)
-{
-    double result = 1.0;
-    
-    for (int i = 2; i <= n; i++)
-        result *= i;
-    
-    return result;
 }
 
 /* Calculate Savitzky-Golay convolution coefficients.
@@ -95,8 +83,10 @@ static int savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order,
     /* Zero output array FIRST - ensures defined state even on error */
     memset(c, 0, n_coeff * sizeof(double));
 
-    /* Validate basic parameter constraints */
-    if (poly_degree < 0 || deriv_order < 0) {
+    /* Validate basic parameter constraints. deriv_order is capped at 1: the RHS
+     * below hardcodes deriv_order! = 1, which holds only for orders 0 and 1 —
+     * the only ones savgol_smooth() ever requests. */
+    if (poly_degree < 0 || deriv_order < 0 || deriv_order > 1) {
         fprintf(stderr, "ERROR: Invalid parameters for savgol_coefficients\n");
         return -1;
     }
@@ -140,7 +130,7 @@ static int savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order,
         }
         
         if (j == deriv_order)
-            B[j] = factorial(deriv_order);
+            B[j] = 1.0;  /* deriv_order! — 1 for both allowed orders (0 and 1) */
     }
     
     /* Solve the linear system using LAPACK */

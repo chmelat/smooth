@@ -161,6 +161,7 @@ void test_parser_partial_numeric_token_is_placeholder(void);
 void test_parser_nan_in_y_skips_row(void);
 void test_parser_inf_in_x_skips_row(void);
 void test_parser_label_outside_xy_is_harmless(void);
+void test_parser_comments_are_stripped(void);
 
 // Testy pro timestamp.c
 void test_parse_timestamp_space_separator(void);
@@ -431,6 +432,7 @@ int main(void) {
     RUN_TEST(test_parser_nan_in_y_skips_row);
     RUN_TEST(test_parser_inf_in_x_skips_row);
     RUN_TEST(test_parser_label_outside_xy_is_harmless);
+    RUN_TEST(test_parser_comments_are_stripped);
 
     /* UNITY_END() ukončí Unity framework a vrátí výsledek
      * Návratová hodnota:

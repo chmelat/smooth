@@ -3,7 +3,35 @@
  *
  * Version History
  * ---------------
- * v5.11.43 (current): Code audit v5.11.41 fix A2 — parse_timestamp accepted
+ * v5.11.44 (current): Ponytail audit v5.11.43 — all seven `delete:` findings
+ *           (dead code and duplicated layers; see doc/ponytail-audit-v5.11.43.md).
+ *           (1) Tikhonov: removed find_lambda_lcurve() and the n>20000 branch it
+ *           was reachable from. That branch duplicated the GCV sweep with a
+ *           hardcoded 12-lambda list, ran the L-curve on the same list, then
+ *           arbitrated between two answers. One log-spaced 13-point GCV sweep
+ *           over [1e-8, 1e0] now serves every n. BEHAVIOUR CHANGE: for
+ *           n > 20000 the selected lambda may differ by up to one grid step;
+ *           the search range and the n<=5000 refinement rule are unchanged.
+ *           (2) Removed the decomment module (decomment.c/h, 149 lines) and its
+ *           tmpfile() copy of the whole input. parse_input() now strips '#'
+ *           comments itself (strchr, one place, both modes) and its existing
+ *           blank-line checks drop comment-only lines, so they still never count
+ *           as skipped data rows. smooth.c opens the file (or uses stdin)
+ *           directly. Two improvements fall out: error messages now report the
+ *           real input line number instead of the post-decomment temp-file line,
+ *           and a data line whose truncation falls inside a trailing comment is
+ *           parsed instead of rejected. New test parser_comments_are_stripped.
+ *           (3) Deleted untracked scratch programs debug_test.c,
+ *           test_actual_results.c, test_debug_edge.c and its compiled binary.
+ *           (9) Deleted unused test helper create_grid_with_cv().
+ *           (12) Deleted unused free_parse_result().
+ *           (14) Deleted savgol factorial(): savgol_coefficients is static and
+ *           only ever called with deriv_order 0 or 1, both giving 1.0. The
+ *           parameter validation now rejects deriv_order > 1 so the hardcoded
+ *           RHS cannot silently go wrong later.
+ *           (20) Deleted unused macro BUTTERWORTH_NUM_COEFFS.
+ *           Net -476 lines, one module fewer. 116 tests pass, zero valgrind leaks.
+ * v5.11.43: Code audit v5.11.41 fix A2 — parse_timestamp accepted
  *           calendar-impossible dates. The field validation checked numeric
  *           ranges only (day 1-31, month 1-12, ...), so dates like 2025-02-31 or
  *           2025-04-31 passed and timegm() silently normalized them forward
@@ -304,5 +332,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.43"
-#define REVDATE "2026-06-16"
+#define VERSION "5.11.44"
+#define REVDATE "2026-07-26"

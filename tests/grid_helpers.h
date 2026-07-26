@@ -66,20 +66,6 @@ void create_and_analyze_grid(double *x, int n, double x_start, double h,
                               GridAnalysis *analysis);
 
 /**
- * Create grid with specific CV value
- * Uses trial-and-error to generate grid with target CV ± tolerance
- * @param x Output array (must be pre-allocated with size n)
- * @param n Number of points
- * @param x_start Starting x value
- * @param h_avg Average spacing
- * @param target_cv Target coefficient of variation
- * @param seed Random seed
- * @return Actual CV achieved (may differ slightly from target)
- */
-double create_grid_with_cv(double *x, int n, double x_start, double h_avg,
-                           double target_cv, unsigned int seed);
-
-/**
  * Create non-uniform grid using sin² pattern
  * Used in tikhonov and polyfit tests
  * Spacing: h[i] = base_spacing * sin²(i) + min_spacing

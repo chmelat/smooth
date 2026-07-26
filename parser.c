@@ -52,19 +52,39 @@ int parse_input(FILE *fp,
     line_number++;
 
     /* Detect line overflow: buffer filled without trailing newline AND
-     * stream still has data — line was truncated mid-content (audit B9). */
+     * stream still has data — line was truncated mid-content (audit B9).
+     * Must run before the comment strip below, which changes strlen(line). */
+    int truncated = 0;
     {
       size_t llen = strlen(line);
       if (llen == sizeof(line) - 1 && line[llen-1] != '\n') {
         int c = fgetc(fp);
         if (c != EOF) {
           ungetc(c, fp);
-          fprintf(stderr,
-                  "ERROR: Line %d exceeds %zu-byte read buffer (MAX_LINE). "
-                  "Increase MAX_LINE in parser.c or shorten the input line.\n",
-                  line_number, sizeof(line));
-          goto fail;
+          truncated = 1;
         }
+      }
+    }
+
+    /* Strip '#' comment (full-line or inline) through end of line. A line that
+     * is nothing but a comment becomes empty and is dropped by the blank-line
+     * checks below, so it never counts as a skipped data row. */
+    char *hash = strchr(line, '#');
+    if (hash) *hash = '\0';
+
+    if (truncated) {
+      if (hash) {
+        /* Truncation fell inside the comment — everything before '#' was read
+         * intact. Discard the rest of the physical line and parse what we have. */
+        int c;
+        while ((c = fgetc(fp)) != '\n' && c != EOF)
+          ;
+      } else {
+        fprintf(stderr,
+                "ERROR: Line %d exceeds %zu-byte read buffer (MAX_LINE). "
+                "Increase MAX_LINE in parser.c or shorten the input line.\n",
+                line_number, sizeof(line));
+        goto fail;
       }
     }
 
@@ -307,16 +327,4 @@ fail:
   free(y);
   if (ts_ctx) free_timestamp_context(ts_ctx);
   return 1;
-}
-
-void free_parse_result(ParseResult *result)
-{
-  if (!result) return;
-  free(result->x);
-  free(result->y);
-  if (result->ts_ctx) free_timestamp_context(result->ts_ctx);
-  result->x = NULL;
-  result->y = NULL;
-  result->n = 0;
-  result->ts_ctx = NULL;
 }

@@ -161,6 +161,29 @@ void test_parser_inf_in_x_skips_row(void) {
     remove(path);
 }
 
+/* '#' comments (full-line and inline) and blank lines are stripped by the
+ * parser itself. A comment must not be counted as a skipped data row. */
+void test_parser_comments_are_stripped(void) {
+    const char *path = "/tmp/test_parser_comments.dat";
+    write_fixture(path,
+        "# header comment\n"
+        "1 10\n"
+        "2 11   # inline note\n"
+        "\n"
+        "3 12\n"
+        "   # indented comment\n"
+        "4 13\n"
+        "5 14\n"
+        "6 15\n");
+    SmoothRun r = run_smooth("-m0 -n3 -p1", path);
+    TEST_ASSERT_EQUAL_INT(6, r.data_rows);
+    TEST_ASSERT_FALSE(r.has_skip_msg);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-9, 1.0, r.first_x);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-9, 6.0, r.last_x);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 10.0, r.first_y);
+    remove(path);
+}
+
 /* A non-numeric label in a column outside the selected x/y is harmless. */
 void test_parser_label_outside_xy_is_harmless(void) {
     const char *path = "/tmp/test_parser_label.dat";

@@ -10,10 +10,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <libgen.h>
 #include <unistd.h>
 
-#include "decomment.h"
 #include "revision.h"
 #include "tikhonov.h"
 #include "polyfit.h"
@@ -193,17 +193,21 @@ int main(int argc, char **argv)
     fprintf(stderr, "Warning: High polynomial degree (%d) may cause numerical instability\n", dp);
   }
 
-/* Argument - filename or stdin. Both paths go through decomment so '#'
- * comments and blank lines are stripped uniformly before parsing. */
+/* Argument - filename or stdin. parse_input() strips '#' comments and blank
+ * lines itself, so the stream is handed over as-is. */
   if (argv[optind] == NULL || strcmp(argv[optind], "-") == 0) {
     filename = "stdin";
-    fp = decomment_stream(stdin, "stdin");
+    fp = stdin;
   }
   else {
     filename = argv[optind];
-    fp = decomment(filename);
+    fp = fopen(filename, "r");
+    if (fp == NULL) {
+      fprintf(stderr, "Failed to open file '%s' (%d: %s)\n",
+              filename, errno, strerror(errno));
+      exit(EXIT_FAILURE);
+    }
   }
-  if (fp == NULL) exit(EXIT_FAILURE);
 
   /* Parse the input table. parse_input() prints `# Skipped ...` to stdout
    * and any `Warning: ...` for invalid timestamps to stderr; on hard errors
@@ -214,7 +218,7 @@ int main(int argc, char **argv)
     if (parse_input(fp, timestamp_mode, x_column, y_column, &pr) != 0) {
       goto cleanup;
     }
-    fclose(fp);
+    if (fp != stdin) fclose(fp);
     fp = NULL;
     x = pr.x;
     y = pr.y;
@@ -365,7 +369,7 @@ cleanup:
   free(y);
   if (ts_ctx) free_timestamp_context(ts_ctx);
   if (grid_info) free_grid_analysis(grid_info);
-  if (fp) fclose(fp);
+  if (fp && fp != stdin) fclose(fp);
 
   return exit_status;
 }

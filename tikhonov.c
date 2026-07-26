@@ -1,5 +1,7 @@
 /* Tikhonov regularization for data smoothing
  * Second derivative penalty via (D²)ᵀ W D² (pentadiagonal Gram matrix)
+ * V5.4/2026-07-26/ Removed the L-curve method and the n>20000 branch it was
+ *                  reachable from; one log-spaced GCV sweep for all n
  * V5.3/2026-06-10/ GCV: analytical trace for all n (removed n>5000 shortcut with
  *                  wrong asymptotic exponent); warn when optimal lambda is pinned
  *                  to the search-range edge
@@ -329,104 +331,12 @@ static double compute_gcv_score_robust(const double *x, const double *y, int n, 
     return gcv_score;
 }
 
-/* L-curve method: find corner of L-curve (RSS vs Regularization) */
-static double find_lambda_lcurve(const double *x, const double *y, int n, const double *lambda_range, int n_lambda,
-                                 const GridAnalysis *grid_info)
-{
-    /* Safe allocation with goto cleanup */
-    double *rss_vals = NULL;
-    double *reg_vals = NULL;
-    double *curv_vals = NULL;
-    int *valid = NULL;
-    double best_lambda = 0.01;
-
-    rss_vals = (double *)malloc(n_lambda * sizeof(double));
-    reg_vals = (double *)malloc(n_lambda * sizeof(double));
-    curv_vals = (double *)malloc(n_lambda * sizeof(double));
-    valid = (int *)malloc(n_lambda * sizeof(int));
-
-    if (!rss_vals || !reg_vals || !curv_vals || !valid) {
-        goto lcurve_cleanup;
-    }
-    
-    /* Compute L-curve points */
-    for (int i = 0; i < n_lambda; i++) {
-        /* FIX: Pass grid_info for consistent discretization */
-        TikhonovResult *result = tikhonov_smooth(x, y, n, lambda_range[i], grid_info);
-        if (result) {
-            /* L-curve uses the regularization seminorm ||D²u||² WITHOUT the λ
-             * factor. regularization_term already includes λ (see compute_functional),
-             * so divide it back out — keeping λ in would add a monotone log(λ) term
-             * along the curve and shift the detected corner. */
-            double seminorm = (lambda_range[i] > 0.0)
-                            ? result->regularization_term / lambda_range[i]
-                            : result->regularization_term;
-            /* FIX: Guard against log(0) - use small epsilon */
-            double dt = (result->data_term > 1e-300) ? result->data_term : 1e-300;
-            double rt = (seminorm > 1e-300) ? seminorm : 1e-300;
-            rss_vals[i] = log(dt);
-            reg_vals[i] = log(rt);
-            valid[i] = 1;
-            free_tikhonov_result(result);
-        } else {
-            /* Mark invalid points (log values may legitimately be 0.0, so a
-             * separate flag is used instead of a sentinel value) */
-            rss_vals[i] = 0.0;
-            reg_vals[i] = 0.0;
-            valid[i] = 0;
-        }
-    }
-    
-    /* Compute curvature */
-    double max_curv = -1e20;
-    int best_idx = n_lambda / 2;
-    
-    for (int i = 1; i < n_lambda - 1; i++) {
-        /* Skip invalid points */
-        if (!valid[i-1] || !valid[i] || !valid[i+1]) {
-            continue;
-        }
-        
-        double dx1 = rss_vals[i] - rss_vals[i-1];
-        double dx2 = rss_vals[i+1] - rss_vals[i];
-        double dy1 = reg_vals[i] - reg_vals[i-1];
-        double dy2 = reg_vals[i+1] - reg_vals[i];
-        
-        double dx = (dx1 + dx2) / 2.0;
-        double dy = (dy1 + dy2) / 2.0;
-        double ddx = dx2 - dx1;
-        double ddy = dy2 - dy1;
-        
-        double numer = fabs(dx * ddy - dy * ddx);
-        double denom = pow(dx*dx + dy*dy, 1.5);
-        
-        if (denom > 1e-10) {
-            curv_vals[i] = numer / denom;
-            if (curv_vals[i] > max_curv) {
-                max_curv = curv_vals[i];
-                best_idx = i;
-            }
-        }
-    }
-    
-    best_lambda = lambda_range[best_idx];
-
-lcurve_cleanup:
-    if (rss_vals) free(rss_vals);
-    if (reg_vals) free(reg_vals);
-    if (curv_vals) free(curv_vals);
-    if (valid) free(valid);
-
-    return best_lambda;
-}
-
 /* Enhanced lambda selection with multiple methods */
 double find_optimal_lambda_gcv(const double *x, const double *y, int n, const GridAnalysis *grid_info)
 {
     double best_lambda = 0.01;
     double best_gcv = 1e20;
-    /* Search range shared by both branches (the large-n lambda list below
-     * spans the same interval) */
+    /* Search range of the log-spaced GCV sweep */
     const double lambda_min = 1e-8;
     const double lambda_max = 1e0;
 
@@ -447,61 +357,40 @@ double find_optimal_lambda_gcv(const double *x, const double *y, int n, const Gr
         printf("# WARNING: Highly non-uniform grid detected. Trace approximation less accurate.\n");
     }
     
-    if (n > 20000) {
-        /* Large dataset: conservative range + robust GCV */
-        double lambdas[] = {1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 5e-2, 1e-1, 2e-1, 5e-1, 1e0};
-        int n_lambdas = sizeof(lambdas) / sizeof(lambdas[0]);
-        
-        for (int i = 0; i < n_lambdas; i++) {
-            double gcv = compute_gcv_score_robust(x, y, n, lambdas[i], grid_info, 1);
-            if (gcv < best_gcv) {
-                best_gcv = gcv;
-                best_lambda = lambdas[i];
-            }
+    /* Log-spaced GCV search over [lambda_min, lambda_max] */
+    int n_points = 13;
+
+    for (int i = 0; i < n_points; i++) {
+        double log_lambda = log10(lambda_min) + (log10(lambda_max) - log10(lambda_min)) * i / (n_points - 1);
+        double lambda_test = pow(10.0, log_lambda);
+
+        double gcv = compute_gcv_score_robust(x, y, n, lambda_test, grid_info, 1);
+
+        if (gcv < best_gcv) {
+            best_gcv = gcv;
+            best_lambda = lambda_test;
         }
-        
-        double lambda_lcurve = find_lambda_lcurve(x, y, n, lambdas, n_lambdas, grid_info);
-        printf("# L-curve suggests λ = %.6e\n", lambda_lcurve);
-        
-        if (fabs(log10(lambda_lcurve) - log10(best_lambda)) > 0.5) {
-            printf("# GCV and L-curve disagree - using more conservative choice\n");
-            best_lambda = (lambda_lcurve > best_lambda) ? lambda_lcurve : best_lambda;
-        }
-        
-    } else {
-        /* Standard GCV search */
-        int n_points = 13;
-        
-        for (int i = 0; i < n_points; i++) {
-            double log_lambda = log10(lambda_min) + (log10(lambda_max) - log10(lambda_min)) * i / (n_points - 1);
-            double lambda_test = pow(10.0, log_lambda);
-            
-            double gcv = compute_gcv_score_robust(x, y, n, lambda_test, grid_info, 1);
-            
-            if (gcv < best_gcv) {
-                best_gcv = gcv;
-                best_lambda = lambda_test;
-            }
-        }
-        
-        /* Refinement around best_lambda */
-        if (n <= 5000) {
-            printf("# Refinement around λ=%.6e\n", best_lambda);
-            for (int i = 0; i < 8; i++) {
-                double factor = 0.3 + 1.4 * i / 7.0;
-                double lambda_test = best_lambda * factor;
-                
-                if (lambda_test > lambda_min && lambda_test < lambda_max) {
-                    double gcv = compute_gcv_score_robust(x, y, n, lambda_test, grid_info, 1);
-                    if (gcv < best_gcv) {
-                        best_gcv = gcv;
-                        best_lambda = lambda_test;
-                    }
+    }
+
+    /* Refinement around best_lambda (skipped for large n: each score is a full
+     * O(n) solve, so the extra 8 evaluations are not worth the sub-grid gain) */
+    if (n <= 5000) {
+        printf("# Refinement around λ=%.6e\n", best_lambda);
+        for (int i = 0; i < 8; i++) {
+            double factor = 0.3 + 1.4 * i / 7.0;
+            double lambda_test = best_lambda * factor;
+
+            if (lambda_test > lambda_min && lambda_test < lambda_max) {
+                double gcv = compute_gcv_score_robust(x, y, n, lambda_test, grid_info, 1);
+                if (gcv < best_gcv) {
+                    best_gcv = gcv;
+                    best_lambda = lambda_test;
                 }
             }
         }
     }
-    
+
+
     /* Lambda is dimensional (scales with h^3 and the y amplitude), so a fixed
      * search range cannot fit every data scale. Flag a result pinned to the
      * range edge instead of returning it silently as "optimal". */

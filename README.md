@@ -62,7 +62,7 @@ make help             # Show all available targets
 
 ```bash
 gcc -o smooth smooth.c polyfit.c savgol.c tikhonov.c butterworth.c \
-    grid_analysis.c decomment.c timestamp.c parser.c -llapack -lblas -lm -O2
+    grid_analysis.c timestamp.c parser.c -llapack -lblas -lm -O2
 ```
 
 ---
@@ -1014,29 +1014,18 @@ The null space of $D^2$ is 2-dimensional (constants and linear functions), so tr
 
 **Note:** This approximation is exact for uniform grids but approximate for non-uniform grids. For highly non-uniform grids (CV > 0.2), the program issues a warning.
 
-**Size-dependent algorithm tiers:**
+**Size-dependent refinement:**
 
-The trace computation and lambda search switch between two regimes based on dataset size:
+One log-spaced GCV scan serves every dataset size; only the refinement step depends on $n$:
 
 | Size | Trace estimator | Lambda search |
 |------|-----------------|---------------|
 | $n \le 5000$ | Eigenvalue sum above | 13-point log scan over $[10^{-8}, 10^0]$ + 8-point refinement around the minimum |
-| $5000 < n \le 20000$ | Eigenvalue sum above | 13-point log scan only (no refinement) |
-| $n > 20000$ | Eigenvalue sum above | 12-point conservative scan + L-curve backup (see below) |
+| $n > 5000$ | Eigenvalue sum above | 13-point log scan only (no refinement) |
 
-The eigenvalue sum is $O(n)$ per $\lambda$ candidate — the same order as the band solve itself — so it is used for all dataset sizes. The refinement step at $n \le 5000$ adds 8 extra $\lambda$ evaluations clustered around the coarse-scan minimum (factors $0.3 \ldots 1.7$). Datasets that straddle a threshold may therefore receive slightly different optimal $\lambda$ from otherwise-identical inputs.
+The eigenvalue sum is $O(n)$ per $\lambda$ candidate — the same order as the band solve itself — so it is used for all dataset sizes. The refinement step at $n \le 5000$ adds 8 extra $\lambda$ evaluations clustered around the coarse-scan minimum (factors $0.3 \ldots 1.7$). Datasets that straddle the threshold may therefore receive slightly different optimal $\lambda$ from otherwise-identical inputs.
 
 Because $\lambda$ is dimensional (it scales with $h^3$ and the squared amplitude of $y$), the fixed search range $[10^{-8}, 10^0]$ may not match the scale of every dataset. If the selected optimum lies at the edge of the range, a warning is printed and $\lambda$ should be set manually with `-l`.
-
-**L-curve backup (for n > 20000):**
-
-For very large datasets, GCV trace approximation may be inaccurate. The program also computes the L-curve (plot of $\|D^2 \mathbf{u}\|^2$ vs $\|\mathbf{y} - \mathbf{u}\|^2$) and finds the corner point with maximum curvature:
-
-$$\kappa = \frac{|x' y'' - y' x''|}{(x'^2 + y'^2)^{3/2}}$$
-
-where $x = \log\|\mathbf{y} - \mathbf{u}\|^2$ and $y = \log\|D^2 \mathbf{u}\|^2$.
-
-If GCV and L-curve disagree significantly, the program uses the more conservative (larger) $\lambda$.
 
 #### Characteristics
 
@@ -1405,9 +1394,8 @@ smooth/
 |--- tikhonov.c/h       # Tikhonov regularization module
 |--- butterworth.c/h    # Butterworth filter module
 |--- grid_analysis.c/h  # Grid analysis module
-|--- decomment.c/h      # Comment removal utility
 |--- timestamp.c/h      # Timestamp parsing module
-|--- parser.c/h         # Input parser (tokenizing, column/timestamp model)
+|--- parser.c/h         # Input parser (tokenizing, `#` comments, column/timestamp model)
 |--- revision.h         # Program version
 |--- Makefile           # Build system with test targets
 |--- README.md          # This documentation
@@ -1428,7 +1416,12 @@ smooth/
 
 ## Version History
 
-**v5.11.41 (current):** Butterworth fc-adaptive filtfilt padding (audit #15)
+**v5.11.44 (current):** Ponytail audit — dead code removed (`doc/ponytail-audit-v5.11.43.md`)
+- Tikhonov: the L-curve method and the `n > 20000` branch it was reachable from are gone; one 13-point log-spaced GCV scan over $[10^{-8}, 10^0]$ now serves every `n`. For `n > 20000` the selected $\lambda$ may differ by up to one grid step from previous versions; the search range and the `n <= 5000` refinement rule are unchanged
+- The `decomment` module and its temporary-file copy of the input are gone; `parser.c` strips `#` comments (full-line and inline) itself, so comment-only lines still never count as skipped data rows. Two side effects: parser errors now report the real input line number, and a data line whose truncation falls inside a trailing comment is parsed instead of rejected
+- Removed unused `free_parse_result()`, the savgol `factorial()` helper (`deriv_order` is now validated to 0 or 1), an unused test helper and an unused macro. 116 tests, zero valgrind leaks
+
+**v5.11.41:** Butterworth fc-adaptive filtfilt padding (audit #15)
 - Padding length is now sized to the filter transient ($\sim 5/(1 - r_{\max})$, $r_{\max}$ = slowest pole radius), floored at 14 and capped at $n-1$, instead of a fixed 14 samples; it grows automatically as $f_c$ shrinks so small cutoffs (`fc < ~0.05`) no longer leak an edge artifact past the padding (a ramp at `fc = 0.02` on `n = 600` went from ~0.6 boundary error to ~7e-3)
 - A `# WARNING` is printed when the data is too short to absorb the transient (padding capped at `n-1`)
 - Pole-radius math factored into shared helpers; auto-cutoff trials use the same fc-aware padding. 113 tests (2 new); all Butterworth audit findings now resolved (`doc/butterworth-audit.md`)
