@@ -95,54 +95,6 @@ static void build_vandermonde(const double *x, int x_start, int x_end,
 }
 
 /* ============================================================================
- * Helper function: Fill boundary points with fallback values
- * ============================================================================
- */
-static void fill_boundary_fallback_left(const double *x, const double *y, int n, int offset,
-                                        double *y_smooth, double *y_deriv)
-{
-    int i0 = offset;
-    int i1 = offset + 1;
-    
-    if (i1 < n - offset) {
-        double slope = (y_smooth[i1] - y_smooth[i0]) / (x[i1] - x[i0]);
-        
-        for (int k = 0; k < offset; k++) {
-            y_smooth[k] = y_smooth[i0] + slope * (x[k] - x[i0]);
-            y_deriv[k] = slope;
-        }
-    } else {
-        for (int k = 0; k < offset; k++) {
-            y_smooth[k] = y[k];
-            y_deriv[k] = 0.0;
-        }
-    }
-}
-
-static void fill_boundary_fallback_right(const double *x, const double *y, int n, int offset,
-                                         double *y_smooth, double *y_deriv)
-{
-    int i0 = n - offset - 1;
-    int i1 = n - offset - 2;
-    
-    if (i1 >= offset) {
-        double slope = (y_smooth[i0] - y_smooth[i1]) / (x[i0] - x[i1]);
-        
-        for (int k = 0; k < offset; k++) {
-            int idx = n - offset + k;
-            y_smooth[idx] = y_smooth[i0] + slope * (x[idx] - x[i0]);
-            y_deriv[idx] = slope;
-        }
-    } else {
-        for (int k = 0; k < offset; k++) {
-            int idx = n - offset + k;
-            y_smooth[idx] = y[idx];
-            y_deriv[idx] = 0.0;
-        }
-    }
-}
-
-/* ============================================================================
  * Main polynomial fitting function
  * 
  * V3.1 changes:
@@ -350,15 +302,23 @@ PolyfitResult* polyfit_smooth(const double *x, const double *y, int n, int windo
                 rank_deficient_count, total_interior, pct);
     }
 
-    /* Handle case where boundaries were not processed */
+    /* Boundary points are extrapolated from the first/last interior window's
+     * polynomial. If that window's SVD failed, no polynomial exists — fall back
+     * to raw y with zero derivative, same as the inline fallback above. */
     if (!left_boundary_done && offset > 0) {
-        fprintf(stderr, "Warning: Left boundary filled with fallback\n");
-        fill_boundary_fallback_left(x, y, n, offset, result->y_smooth, result->y_deriv);
+        fprintf(stderr, "Warning: Left boundary filled with raw data (SVD failed at first window)\n");
+        for (k = 0; k < offset; k++) {
+            result->y_smooth[k] = y[k];
+            result->y_deriv[k] = 0.0;
+        }
     }
-    
+
     if (!right_boundary_done && offset > 0) {
-        fprintf(stderr, "Warning: Right boundary filled with fallback\n");
-        fill_boundary_fallback_right(x, y, n, offset, result->y_smooth, result->y_deriv);
+        fprintf(stderr, "Warning: Right boundary filled with raw data (SVD failed at last window)\n");
+        for (k = n - offset; k < n; k++) {
+            result->y_smooth[k] = y[k];
+            result->y_deriv[k] = 0.0;
+        }
     }
     
     /* Successful cleanup */

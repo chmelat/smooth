@@ -54,7 +54,7 @@ void test_tikhonov_constant_function(void) {
         y[i] = constant;
     }
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
     double lambda = 0.01;
 
     /* ACT */
@@ -97,7 +97,7 @@ void test_tikhonov_linear_function(void) {
         y[i] = a + b * x[i];
     }
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
     double lambda = 0.01;
 
     /* ACT */
@@ -140,7 +140,7 @@ void test_tikhonov_quadratic_function(void) {
         y[i] = a + b * x[i] + c * x[i] * x[i];
     }
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
     double lambda = 0.01;
 
     /* ACT */
@@ -179,7 +179,7 @@ void test_tikhonov_sine_function(void) {
         y[i] = sin(x[i]);
     }
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
 
     /* Test různých hodnot lambda */
     double lambdas[] = {0.001, 0.01, 0.1};
@@ -232,7 +232,7 @@ void test_tikhonov_with_noise_constant(void) {
     }
     add_noise(y, y_noisy, N, noise_amplitude, 12345);
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
     double lambda = 0.1;
 
     /* ACT */
@@ -281,7 +281,7 @@ void test_tikhonov_with_noise_linear(void) {
     }
     add_noise(y, y_noisy, N, noise_amplitude, 23456);
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
     double lambda = 0.05;
 
     /* ACT */
@@ -329,7 +329,7 @@ void test_tikhonov_lambda_effect(void) {
     }
     add_noise(y, y_noisy, N, 0.3, 34567);
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
 
     /* Test sweep přes lambda hodnoty */
     double lambdas[] = {1e-6, 1e-3, 1e-1, 1.0};
@@ -402,7 +402,7 @@ void test_tikhonov_nonuniform_grid_local_method(void) {
         y[i] = 10.0 * exp(-(x[i] - center) * (x[i] - center) / sigma_sq_times_2);
     }
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
 
     /* ACT */
     /* Použij malé lambda aby nedošlo k over-smoothingu Gaussiánu */
@@ -493,7 +493,7 @@ void test_gcv_optimal_lambda_constant_with_noise(void) {
     }
     add_noise(y, y_noisy, N, 0.5, 45678);
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
 
     /* ACT */
     double optimal_lambda = find_optimal_lambda_gcv(x, y_noisy, N, grid);
@@ -533,7 +533,7 @@ void test_gcv_optimal_lambda_quadratic_with_noise(void) {
     }
     add_noise(y, y_noisy, N, 0.4, 56789);
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
 
     /* ACT */
     double optimal_lambda = find_optimal_lambda_gcv(x, y_noisy, N, grid);
@@ -570,7 +570,7 @@ void test_gcv_trace_penalty_overfitting(void) {
     }
     add_noise(y, y_noisy, N, 2.0, 67890);  // Vysoký šum
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
 
     /* ACT */
     double optimal_lambda = find_optimal_lambda_gcv(x, y_noisy, N, grid);
@@ -598,7 +598,7 @@ void test_tikhonov_minimum_points_n3(void) {
     double y[] = {1.0, 2.0, 3.0};
     int n = 3;
 
-    GridAnalysis *grid = analyze_grid(x, n, 0);
+    GridAnalysis *grid = analyze_grid(x, n);
 
     /* ACT */
     TikhonovResult *result = tikhonov_smooth(x, y, n, 0.01, grid);
@@ -624,7 +624,7 @@ void test_tikhonov_minimum_points_n2(void) {
     double y[] = {2.0, 3.0};
     int n = 2;
 
-    GridAnalysis *grid = analyze_grid(x, n, 0);
+    GridAnalysis *grid = analyze_grid(x, n);
 
     /* ACT */
     TikhonovResult *result = tikhonov_smooth(x, y, n, 0.01, grid);
@@ -653,7 +653,7 @@ void test_tikhonov_lambda_zero(void) {
     }
     add_noise(y, y_noisy, N, 0.2, 78901);
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
 
     /* ACT */
     TikhonovResult *result = tikhonov_smooth(x, y_noisy, N, 0.0, grid);
@@ -689,7 +689,7 @@ void test_tikhonov_lambda_very_large(void) {
         y[i] = 1.0 + 0.5 * x[i] + 0.3 * x[i] * x[i];  // Parabola
     }
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
 
     /* ACT - použij velkou lambda pro demonstraci over-smoothing */
     TikhonovResult *result = tikhonov_smooth(x, y, N, 10.0, grid);
@@ -768,7 +768,7 @@ void test_tikhonov_large_dataset(void) {
         y[i] = 3.0 + 0.1 * x[i];
     }
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
 
     /* ACT */
     TikhonovResult *result = tikhonov_smooth(x, y, N, 0.01, grid);
@@ -807,7 +807,7 @@ void test_tikhonov_functional_computation_consistency(void) {
         y[i] = 2.0 + 0.3 * x[i] * x[i];
     }
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
     double lambda = 0.1;
 
     /* ACT */
@@ -857,8 +857,8 @@ void test_tikhonov_functional_discretization_consistency(void) {
         y[i] = 5.0;  // Konstanta
     }
 
-    GridAnalysis *grid_uniform = analyze_grid(x_uniform, N, 0);
-    GridAnalysis *grid_nonuniform = analyze_grid(x_nonuniform, N, 0);
+    GridAnalysis *grid_uniform = analyze_grid(x_uniform, N);
+    GridAnalysis *grid_nonuniform = analyze_grid(x_nonuniform, N);
 
     double lambda = 0.1;
 
@@ -910,7 +910,7 @@ void test_tikhonov_boundary_conditions_natural(void) {
         y[i] = x[i] * x[i];
     }
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
     double lambda = 0.01;
 
     /* ACT */
@@ -963,7 +963,7 @@ void test_tikhonov_memory_allocation_success(void) {
         y[i] = 3.0;
     }
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
 
     /* ACT */
     TikhonovResult *result = tikhonov_smooth(x, y, N, 0.1, grid);
@@ -1032,7 +1032,7 @@ void test_tikhonov_linear_exact_null_space(void) {
         y[i] = a + b * x[i];
     }
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
 
     /* Use extremely large lambda — linear function should still be preserved exactly */
     double lambda = 100.0;
@@ -1092,7 +1092,7 @@ void test_tikhonov_average_branch_integral_measure(void) {
         y[i] = c * x[i] * x[i];
     }
 
-    GridAnalysis *grid = analyze_grid(x, N, 0);
+    GridAnalysis *grid = analyze_grid(x, N);
     TEST_ASSERT_NOT_NULL(grid);
     /* Uniform grid -> AVERAGE branch */
     TEST_ASSERT_LESS_THAN_DOUBLE(0.15, grid->cv);

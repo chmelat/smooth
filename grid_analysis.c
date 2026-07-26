@@ -28,7 +28,7 @@ static void append_warning(char *buffer, size_t size, const char *msg) {
     }
 }
 
-GridAnalysis* analyze_grid(const double *x, int n, int store_spacings)
+GridAnalysis* analyze_grid(const double *x, int n)
 {
     GridAnalysis *analysis;
     int i;
@@ -47,8 +47,7 @@ GridAnalysis* analyze_grid(const double *x, int n, int store_spacings)
     }
     
     analysis->n_points = n;
-    analysis->n_intervals = n - 1;
-    
+
     /* Handle trivial cases */
     if (n < 2) {
         analysis->is_uniform = 1;
@@ -57,17 +56,7 @@ GridAnalysis* analyze_grid(const double *x, int n, int store_spacings)
         return analysis;
     }
     
-    /* Allocate spacings array if requested */
-    if (store_spacings) {
-        analysis->spacings = (double *)malloc((n-1) * sizeof(double));
-        if (analysis->spacings == NULL) {
-            fprintf(stderr, "ERROR: Memory allocation failed for spacings array\n");
-            free(analysis);
-            return NULL;
-        }
-    }
-    
-    /* * OPTIMIZATION: Calculate h_avg first (O(1)). 
+    /* * OPTIMIZATION: Calculate h_avg first (O(1)).
      * This allows us to calculate STD and everything else in a single pass.
      */
     analysis->h_avg = (x[n-1] - x[0]) / (n-1);
@@ -90,20 +79,15 @@ GridAnalysis* analyze_grid(const double *x, int n, int store_spacings)
             return NULL;
         }
 
-        /* 1. Store spacing if requested */
-        if (store_spacings) {
-            analysis->spacings[i] = h_curr;
-        }
-
-        /* 2. Min/Max updates */
+        /* 1. Min/Max updates */
         if (h_curr < analysis->h_min) analysis->h_min = h_curr;
         if (h_curr > analysis->h_max) analysis->h_max = h_curr;
 
-        /* 3. Standard Deviation accumulation */
+        /* 2. Standard Deviation accumulation */
         double dev = h_curr - analysis->h_avg;
         sum_sq_diff += dev * dev;
 
-        /* 4. Cluster Detection */
+        /* 3. Cluster Detection */
         /* Logic: A cluster boundary is a small gap followed by a large gap */
         if (i > 0) {
             if (h_prev < CLUSTER_RATIO_SMALL * analysis->h_avg && 
@@ -242,22 +226,10 @@ void print_grid_analysis(GridAnalysis *analysis, int verbose, const char *prefix
         printf("%s  Recommendation: %s\n", prefix, get_grid_recommendation(analysis));
     }
     
-    if (verbose >= 2 && analysis->spacings != NULL) {
-        /* Full report with spacing details */
-        printf("%s  Spacing details:\n", prefix);
-        for (int i = 0; i < analysis->n_intervals; i++) {
-            printf("%s    h[%d] = %.6e (%.1f%% of average)\n", 
-                   prefix, i, analysis->spacings[i], 
-                   100.0 * analysis->spacings[i] / analysis->h_avg);
-        }
-    }
 }
 
 /* Free allocated memory */
 void free_grid_analysis(GridAnalysis *analysis)
 {
-    if (analysis != NULL) {
-        free(analysis->spacings);
-        free(analysis);
-    }
+    free(analysis);
 }

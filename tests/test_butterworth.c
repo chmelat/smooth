@@ -20,7 +20,7 @@ void test_butterworth_returns_valid_result(void) {
         y[i] = sin(x[i]);
     }
 
-    GridAnalysis *grid = analyze_grid(x, 20, 0);
+    GridAnalysis *grid = analyze_grid(x, 20);
 
     ButterworthResult *result = butterworth_filtfilt(x, y, 20, 0.2, 0, grid);
 
@@ -45,7 +45,7 @@ void test_butterworth_smooths_noisy_signal(void) {
         y[i] = sin(x[i]) + 0.3 * sin(10 * x[i]);
     }
 
-    GridAnalysis *grid = analyze_grid(x, n, 0);
+    GridAnalysis *grid = analyze_grid(x, n);
 
     ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.15, 0, grid);
 
@@ -77,7 +77,7 @@ void test_butterworth_preserves_constant_signal(void) {
     }
 
     GridAnalysis *grid = NULL;
-    grid = analyze_grid(x, n, 0);
+    grid = analyze_grid(x, n);
 
     ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.1, 0, grid);
 
@@ -103,7 +103,7 @@ void test_butterworth_preserves_linear_trend(void) {
     }
 
     GridAnalysis *grid = NULL;
-    grid = analyze_grid(x, n, 0);
+    grid = analyze_grid(x, n);
 
     ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.3, 0, grid);
 
@@ -133,7 +133,7 @@ void test_butterworth_higher_cutoff_less_smoothing(void) {
     }
 
     GridAnalysis *grid = NULL;
-    grid = analyze_grid(x, n, 0);
+    grid = analyze_grid(x, n);
 
     // Low cutoff = more smoothing
     ButterworthResult *r_low = butterworth_filtfilt(x, y, n, 0.05, 0, grid);
@@ -162,7 +162,7 @@ void test_butterworth_invalid_cutoff_frequency(void) {
     }
 
     GridAnalysis *grid = NULL;
-    grid = analyze_grid(x, n, 0);
+    grid = analyze_grid(x, n);
 
     // fc <= 0 should fail
     ButterworthResult *r1 = butterworth_filtfilt(x, y, n, 0.0, 0, grid);
@@ -196,7 +196,7 @@ void test_butterworth_derivative_constant(void) {
     create_uniform_grid(x, n, 0.0, 0.1);
     for (int i = 0; i < n; i++) y[i] = 3.14;
 
-    GridAnalysis *grid = analyze_grid(x, n, 0);
+    GridAnalysis *grid = analyze_grid(x, n);
     ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.2, 0, grid);
 
     TEST_ASSERT_NOT_NULL(result);
@@ -219,7 +219,7 @@ void test_butterworth_derivative_linear(void) {
     create_uniform_grid(x, n, 0.0, 0.1);
     for (int i = 0; i < n; i++) y[i] = 1.0 + slope * x[i];
 
-    GridAnalysis *grid = analyze_grid(x, n, 0);
+    GridAnalysis *grid = analyze_grid(x, n);
     ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.3, 0, grid);
 
     TEST_ASSERT_NOT_NULL(result);
@@ -244,7 +244,7 @@ void test_butterworth_derivative_sine(void) {
     create_uniform_grid(x, n, 0.0, 0.05);
     for (int i = 0; i < n; i++) y[i] = sin(x[i]);
 
-    GridAnalysis *grid = analyze_grid(x, n, 0);
+    GridAnalysis *grid = analyze_grid(x, n);
     ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.3, 0, grid);
 
     TEST_ASSERT_NOT_NULL(result);
@@ -273,7 +273,7 @@ void test_butterworth_zero_phase_no_delay(void) {
     }
 
     GridAnalysis *grid = NULL;
-    grid = analyze_grid(x, n, 0);
+    grid = analyze_grid(x, n);
 
     ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.2, 0, grid);
 
@@ -313,7 +313,7 @@ void test_butterworth_edge_points_no_excessive_oscillation(void) {
     }
 
     GridAnalysis *grid = NULL;
-    grid = analyze_grid(x, n, 0);
+    grid = analyze_grid(x, n);
 
     ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.2, 0, grid);
 
@@ -347,7 +347,7 @@ void test_butterworth_small_cutoff_preserves_edges(void) {
         y[i] = 2.0 * x[i] + 3.0;   // linear: ideal output equals input
     }
 
-    GridAnalysis *grid = analyze_grid(x, n, 0);
+    GridAnalysis *grid = analyze_grid(x, n);
 
     ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.02, 0, grid);
     TEST_ASSERT_NOT_NULL(result);
@@ -374,7 +374,7 @@ void test_butterworth_small_cutoff_short_data_clamps(void) {
         y[i] = sin(0.3 * x[i]);
     }
 
-    GridAnalysis *grid = analyze_grid(x, n, 0);
+    GridAnalysis *grid = analyze_grid(x, n);
 
     // fc=0.001: transient ~hundreds of samples >> n, so pad clamps to n-1.
     ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.001, 0, grid);
@@ -467,7 +467,7 @@ void test_butterworth_minimum_points(void) {
     }
 
     GridAnalysis *grid = NULL;
-    grid = analyze_grid(x, n, 0);
+    grid = analyze_grid(x, n);
 
     ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.2, 0, grid);
 
@@ -489,7 +489,7 @@ void test_butterworth_too_few_points(void) {
     }
 
     GridAnalysis *grid = NULL;
-    grid = analyze_grid(x, n, 0);
+    grid = analyze_grid(x, n);
 
     ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.2, 0, grid);
 
@@ -508,7 +508,7 @@ void test_butterworth_null_inputs(void) {
     }
 
     GridAnalysis *grid = NULL;
-    grid = analyze_grid(x, n, 0);
+    grid = analyze_grid(x, n);
 
     // NULL x array
     TEST_ASSERT_NULL(butterworth_filtfilt(NULL, y, n, 0.2, 0, grid));
@@ -535,7 +535,7 @@ void test_butterworth_large_dataset(void) {
     }
 
     GridAnalysis *grid = NULL;
-    grid = analyze_grid(x, n, 0);
+    grid = analyze_grid(x, n);
 
     ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.02, 0, grid);  // Very low fc for strong smoothing
 
@@ -572,7 +572,7 @@ void test_butterworth_no_memory_leaks(void) {
     }
 
     GridAnalysis *grid = NULL;
-    grid = analyze_grid(x, n, 0);
+    grid = analyze_grid(x, n);
 
     // Run multiple times to check for leaks (use valgrind to verify)
     for (int j = 0; j < 10; j++) {

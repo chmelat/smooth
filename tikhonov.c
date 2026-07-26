@@ -271,7 +271,7 @@ error:
 
 /* Standard Generalized Cross Validation score for a single lambda */
 static double compute_gcv_score_robust(const double *x, const double *y, int n, double lambda,
-                                       const GridAnalysis *grid_info, int verbose)
+                                       const GridAnalysis *grid_info)
 {
     TikhonovResult *result;
     double rss = 0.0;
@@ -309,7 +309,7 @@ static double compute_gcv_score_robust(const double *x, const double *y, int n, 
         trace_H += 1.0 / (1.0 + lambda * eigenval);
     }
 
-    if (ratio > 2.0 && verbose) {
+    if (ratio > 2.0) {
         printf("# Note: Trace(H) approximation less accurate for non-uniform grid (ratio=%.2f)\n", ratio);
     }
     
@@ -321,12 +321,10 @@ static double compute_gcv_score_robust(const double *x, const double *y, int n, 
         gcv_score = 1e20;
     }
     
-    if (verbose) {
-        double trace_ratio = trace_H / n;
-        printf("# λ=%9.3e: J=%9.3e, RSS=%9.3e, tr(H)=%6.1f (%.2f), GCV=%9.3e\n",
-               lambda, result->total_functional, rss, trace_H, trace_ratio, gcv_score);
-    }
-    
+    printf("# λ=%9.3e: J=%9.3e, RSS=%9.3e, tr(H)=%6.1f (%.2f), GCV=%9.3e\n",
+           lambda, result->total_functional, rss, trace_H, trace_H / n, gcv_score);
+
+
     free_tikhonov_result(result);
     return gcv_score;
 }
@@ -364,7 +362,7 @@ double find_optimal_lambda_gcv(const double *x, const double *y, int n, const Gr
         double log_lambda = log10(lambda_min) + (log10(lambda_max) - log10(lambda_min)) * i / (n_points - 1);
         double lambda_test = pow(10.0, log_lambda);
 
-        double gcv = compute_gcv_score_robust(x, y, n, lambda_test, grid_info, 1);
+        double gcv = compute_gcv_score_robust(x, y, n, lambda_test, grid_info);
 
         if (gcv < best_gcv) {
             best_gcv = gcv;
@@ -381,7 +379,7 @@ double find_optimal_lambda_gcv(const double *x, const double *y, int n, const Gr
             double lambda_test = best_lambda * factor;
 
             if (lambda_test > lambda_min && lambda_test < lambda_max) {
-                double gcv = compute_gcv_score_robust(x, y, n, lambda_test, grid_info, 1);
+                double gcv = compute_gcv_score_robust(x, y, n, lambda_test, grid_info);
                 if (gcv < best_gcv) {
                     best_gcv = gcv;
                     best_lambda = lambda_test;

@@ -123,20 +123,16 @@ TimestampContext* convert_timestamps_to_relative(
     ctx->n = 0;
     ctx->errors_encountered = 0;
 
-    /* Allocate arrays for valid timestamps */
-    ctx->original_timestamps = malloc(n * sizeof(char*));
-    double *x_temp = malloc(n * sizeof(double));
+    /* Allocate arrays for valid timestamps. x is sized for n points and handed
+     * to the caller as-is; rows dropped for an invalid timestamp leave it
+     * over-allocated, which is harmless since only ctx->n entries are read.
+     * calloc: the NULL pointers it guarantees are what makes the cleanup path
+     * below safe from any failure point. */
+    ctx->original_timestamps = calloc(n, sizeof(char*));
+    double *x = malloc(n * sizeof(double));
 
-    if (!ctx->original_timestamps || !x_temp) {
-        free(ctx->original_timestamps);
-        free(x_temp);
-        free(ctx);
-        return NULL;
-    }
-
-    /* Initialize all pointers to NULL for safe cleanup */
-    for (int i = 0; i < n; i++) {
-        ctx->original_timestamps[i] = NULL;
+    if (!ctx->original_timestamps || !x) {
+        goto fail;
     }
 
     /* Parse timestamps and build arrays */
@@ -158,14 +154,7 @@ TimestampContext* convert_timestamps_to_relative(
         /* Valid timestamp - store it */
         ctx->original_timestamps[valid_count] = strdup(timestamp_strings[i]);
         if (!ctx->original_timestamps[valid_count]) {
-            /* Memory allocation failed - cleanup and abort */
-            for (int j = 0; j < valid_count; j++) {
-                free(ctx->original_timestamps[j]);
-            }
-            free(ctx->original_timestamps);
-            free(x_temp);
-            free(ctx);
-            return NULL;
+            goto fail;
         }
 
         /* Set reference epoch from first valid timestamp */
@@ -175,7 +164,7 @@ TimestampContext* convert_timestamps_to_relative(
         }
 
         /* Calculate relative time in seconds */
-        x_temp[valid_count] = epoch - ctx->reference_epoch;
+        x[valid_count] = epoch - ctx->reference_epoch;
 
         /* Compact the parallel value array in lockstep so y_inout[k] keeps
          * matching x[k] after invalid timestamps are dropped. Safe in place:
@@ -188,35 +177,25 @@ TimestampContext* convert_timestamps_to_relative(
 
     /* Check if we got any valid timestamps */
     if (valid_count == 0) {
+        goto fail;
+    }
+
+    ctx->n = valid_count;
+    *x_out = x;
+
+    return ctx;
+
+fail:
+    if (ctx->original_timestamps) {
+        /* Safe for every failure point: all n entries were NULLed up front. */
         for (int i = 0; i < n; i++) {
             free(ctx->original_timestamps[i]);
         }
         free(ctx->original_timestamps);
-        free(x_temp);
-        free(ctx);
-        return NULL;
     }
-
-    /* Store final count */
-    ctx->n = valid_count;
-
-    /* Allocate final output array */
-    *x_out = malloc(valid_count * sizeof(double));
-    if (!*x_out) {
-        for (int i = 0; i < valid_count; i++) {
-            free(ctx->original_timestamps[i]);
-        }
-        free(ctx->original_timestamps);
-        free(x_temp);
-        free(ctx);
-        return NULL;
-    }
-
-    /* Copy valid x values to output */
-    memcpy(*x_out, x_temp, valid_count * sizeof(double));
-    free(x_temp);
-
-    return ctx;
+    free(x);
+    free(ctx);
+    return NULL;
 }
 
 /* Free timestamp context */

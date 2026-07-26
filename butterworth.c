@@ -93,13 +93,6 @@ static int calculate_pad_length(int n, const BiquadSection *sections,
     return pad_len;
 }
 
-/* Estimate memory usage in bytes */
-static inline size_t estimate_memory_usage(int n, int pad_len)
-{
-    size_t padded_len = (size_t)n + 2 * (size_t)pad_len;
-    return (padded_len + (size_t)n) * sizeof(double) + sizeof(ButterworthResult);
-}
-
 /* Design 4th-order Butterworth as 2 cascaded biquad sections
  * Uses bilinear transform with prewarping
  */
@@ -177,33 +170,22 @@ static double max_pole_radius(const BiquadSection *sections)
 
 /* Check that filter poles lie safely inside the unit circle.
  * Returns 0 on success, -1 if any pole is on or outside the unit circle.
- * Prints a warning to stderr if any pole exceeds POLE_RADIUS_WARN.
+ * Prints a warning to stdout if any pole exceeds POLE_RADIUS_WARN.
  */
 static int check_pole_stability(const BiquadSection *sections)
 {
-    double max_radius = 0.0;
-    int worst_section = 0;
-
-    for (int i = 0; i < NUM_BIQUADS; i++) {
-        double radius = biquad_pole_radius(&sections[i]);
-
-        if (radius > max_radius) {
-            max_radius = radius;
-            worst_section = i;
-        }
-    }
+    double max_radius = max_pole_radius(sections);
 
     if (max_radius >= POLE_RADIUS_ERROR) {
-        fprintf(stderr, "ERROR: Filter is unstable: pole radius %.6f >= 1.0 "
-                "in biquad section %d\n", max_radius, worst_section);
+        fprintf(stderr, "ERROR: Filter is unstable: pole radius %.6f >= 1.0\n",
+                max_radius);
         return -1;
     }
 
     if (max_radius > POLE_RADIUS_WARN) {
         printf("# WARNING: Filter poles very close to unit circle "
-               "(max radius %.6f in biquad %d). Numerical precision may suffer. "
-               "Consider a less extreme cutoff frequency.\n",
-               max_radius, worst_section);
+               "(max radius %.6f). Numerical precision may suffer. "
+               "Consider a less extreme cutoff frequency.\n", max_radius);
     }
 
     return 0;
@@ -539,9 +521,8 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
                                         double cutoff_freq, int auto_cutoff,
                                         const GridAnalysis *grid_info)
 {
-    /* Initialize pointers for safe cleanup */
+    /* Initialize pointer for safe cleanup */
     ButterworthResult *result = NULL;
-    double *y_work = NULL;
 
     /* --- Input validation --- */
     if (x == NULL || y == NULL) {
@@ -630,10 +611,10 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
                "different method.\n", n, fc, desired_pad, pad_len);
     }
 
-    /* Memory estimate */
-    size_t mem_estimate = estimate_memory_usage(n, pad_len);
+    /* Memory estimate: padded work buffer + the two result arrays */
     if (n > BUTTERWORTH_MAX_POINTS_WARNING) {
-        double mb = (double)mem_estimate / (1024.0 * 1024.0);
+        size_t doubles = (size_t)n + 2 * (size_t)pad_len + 2 * (size_t)n;
+        double mb = (double)(doubles * sizeof(double)) / (1024.0 * 1024.0);
         if (mb >= 1024.0) {
             fprintf(stderr, "Warning: Large dataset (%d points) requires ~%.1f GB RAM\n",
                     n, mb / 1024.0);
@@ -672,29 +653,10 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
     result->cutoff_freq = fc;
     result->sample_rate = sample_rate;
 
-    /* Compute initial conditions for each biquad */
-    double zi_base[NUM_BIQUADS][2];
-    for (int i = 0; i < NUM_BIQUADS; i++) {
-        compute_biquad_ic(&sections[i], zi_base[i]);
-    }
-
-    /* Pad signal — use directly as work buffer */
-    size_t padded_len;
-    y_work = pad_signal(y, n, pad_len, &padded_len);
-    if (y_work == NULL) {
+    /* --- FORWARD + BACKWARD FILTERING (filtfilt) --- */
+    if (run_filtfilt_trial(y, result->y_smooth, n, fc) != 0) {
         fprintf(stderr, "ERROR: Signal padding failed\n");
         goto error;
-    }
-
-    /* --- FORWARD + BACKWARD FILTERING (filtfilt) --- */
-    apply_cascade(sections, zi_base, y_work, padded_len);
-    reverse_array_inplace(y_work, padded_len);
-    apply_cascade(sections, zi_base, y_work, padded_len);
-    reverse_array_inplace(y_work, padded_len);
-
-    /* --- EXTRACT RESULT --- */
-    for (int i = 0; i < n; i++) {
-        result->y_smooth[i] = y_work[pad_len + i];
     }
 
     /* Compute first derivatives via 5-point stencils. O(h^4) on a uniform
@@ -703,14 +665,10 @@ ButterworthResult* butterworth_filtfilt(const double *x, const double *y, int n,
     compute_derivatives_5pt(result->y_smooth, n, grid_info->h_avg,
                             result->y_deriv);
 
-    /* --- CLEANUP (Success) --- */
-    free(y_work);
-
     return result;
 
     /* --- ERROR HANDLER --- */
 error:
-    if (y_work) free(y_work);
     free_butterworth_result(result);
 
     return NULL;
@@ -720,12 +678,8 @@ error:
 void free_butterworth_result(ButterworthResult *result)
 {
     if (result != NULL) {
-        if (result->y_smooth != NULL) {
-            free(result->y_smooth);
-        }
-        if (result->y_deriv != NULL) {
-            free(result->y_deriv);
-        }
+        free(result->y_smooth);
+        free(result->y_deriv);
         free(result);
     }
 }

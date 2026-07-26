@@ -5,10 +5,10 @@
 **Focus:** over-engineering and complexity only. Correctness bugs, security and
 performance are explicitly out of scope — route those to a normal review pass.
 
-This report **lists** findings. **Status:** all seven `delete:` findings
-(1, 2, 3, 9, 12, 14, 20) were applied in **v5.11.44** — marked `DONE` in the
-table below. The `shrink:` / `yagni:` / `stdlib:` / `native:` findings are
-still open.
+This report **lists** findings. **Status:** the seven `delete:` findings (1, 2, 3, 9, 12, 14, 20) were applied
+in **v5.11.44**; the `shrink:` and `yagni:` findings (4, 5, 6, 8, 10, 11, 13,
+17, 18) in **v5.11.45**. Findings 7 and 21 were reviewed and deliberately
+rejected. Still open: `stdlib:` 15 and 19, `native:` 16.
 
 Tags: `delete:` dead code / speculative feature. `stdlib:` hand-rolled thing the
 standard library ships. `native:` code doing what the platform already does.
@@ -24,24 +24,24 @@ caller. `shrink:` same logic, fewer lines.
 | 1 | delete | tikhonov.c:333-421, 450-470 | -105 | DONE v5.11.44 |
 | 2 | delete | decomment.c, decomment.h, smooth.c:196-206 | -145 | DONE v5.11.44 |
 | 3 | delete | untracked scratch files in repo root | -178 | DONE v5.11.44 |
-| 4 | shrink | polyfit.c:101-143, 353-362 | -43 | open |
-| 5 | shrink | savgol.c:341-420 | -35 | open |
-| 6 | yagni | grid_analysis.c:61-68, 94-96, 245-253 | -25 | open |
-| 7 | yagni | grid_analysis.c:139-142, 190-213 | -25 | open |
-| 8 | shrink | timestamp.c:126-217 | -25 | open |
+| 4 | shrink | polyfit.c:101-143, 353-362 | -43 | DONE v5.11.45 |
+| 5 | shrink | savgol.c:341-420 | -35 | DONE v5.11.45 |
+| 6 | yagni | grid_analysis.c:61-68, 94-96, 245-253 | -25 | DONE v5.11.45 |
+| 7 | yagni | grid_analysis.c:139-142, 190-213 | -25 | zamítnuto (výstup -g zůstává) |
+| 8 | shrink | timestamp.c:126-217 | -25 | DONE v5.11.45 |
 | 9 | delete | tests/grid_helpers.c:97-124 | -24 | DONE v5.11.44 |
-| 10 | shrink | butterworth.c:182-210 | -15 | open |
-| 11 | shrink | butterworth.c:676-698 | -15 | open |
+| 10 | shrink | butterworth.c:182-210 | -15 | DONE v5.11.45 |
+| 11 | shrink | butterworth.c:676-698 | -15 | DONE v5.11.45 |
 | 12 | delete | parser.c:312-322, parser.h:46 | -13 | DONE v5.11.44 |
-| 13 | shrink | butterworth.c:97-101, 696-698, 720-731 | -12 | open |
+| 13 | shrink | butterworth.c:97-101, 696-698, 720-731 | -12 | DONE v5.11.45 |
 | 14 | delete | savgol.c:46-54, 143 | -10 | DONE v5.11.44 |
 | 15 | stdlib | savgol.c:35-43 | -9 | open |
 | 16 | native | Makefile:31-33, 48, 67-69 | -8 | open |
-| 17 | yagni | smooth.c:415-421 | -7 | open |
-| 18 | yagni | tikhonov.c:271-330 | -4 | open |
+| 17 | yagni | smooth.c:415-421 | -7 | DONE v5.11.45 |
+| 18 | yagni | tikhonov.c:271-330 | -4 | DONE v5.11.45 |
 | 19 | stdlib | tikhonov.c:32, 224, 247 | -3 | open |
 | 20 | delete | butterworth.h:16 | -1 | DONE v5.11.44 |
-| 21 | yagni | tests/unity.c, unity.h, unity_internals.h | -4595 | open |
+| 21 | yagni | tests/unity.c, unity.h, unity_internals.h | -4595 | zamítnuto (Unity zůstává) |
 
 **Pozn.:** řádky a čísla řádků v sekcích níže odpovídají stavu v5.11.43. Po
 provedení `delete:` nálezů se čísla řádků v `tikhonov.c`, `savgol.c`,

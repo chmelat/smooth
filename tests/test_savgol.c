@@ -38,7 +38,7 @@ void test_savgol_smooth_constant_data(void) {
   int W = 5; /* Window size */
 
   /* Analyzuj mřížku (nutné pro savgol) */
-  grid_info = analyze_grid(x, N, 0);
+  grid_info = analyze_grid(x, N);
   TEST_ASSERT_NOT_NULL(grid_info);
 
   for (P=0; P<3; P++) {
@@ -104,7 +104,7 @@ void test_savgol_smooth_linear_data(void) {
   int W = 5; /* Window size */
 
   /* Analyzuj mřížku */
-  grid_info = analyze_grid(x, N, 0);
+  grid_info = analyze_grid(x, N);
   TEST_ASSERT_NOT_NULL(grid_info);
 
   for (P=1; P<4; P++) {
@@ -162,7 +162,7 @@ void test_savgol_smooth_quadratic_data(void) {
   int W = 5; /* Window size */
 
   /* Analyzuj mřížku */
-  grid_info = analyze_grid(x, N, 0);
+  grid_info = analyze_grid(x, N);
   TEST_ASSERT_NOT_NULL(grid_info);
 
   for (P=2; P<5; P++) {
@@ -216,7 +216,7 @@ void test_savgol_edge_case_n_equals_w(void) {
   int W = N_MIN;  // Okno stejně velké jako počet bodů
   int P = 1;      // Lineární fit
 
-  grid_info = analyze_grid(x, N_MIN, 0);
+  grid_info = analyze_grid(x, N_MIN);
   TEST_ASSERT_NOT_NULL(grid_info);
 
   /* ACT */
@@ -254,7 +254,7 @@ void test_savgol_edge_case_n_less_than_w(void) {
   int W = 7;  // Okno větší než počet bodů
   int P = 0;
 
-  grid_info = analyze_grid(x, N_SMALL, 0);
+  grid_info = analyze_grid(x, N_SMALL);
   TEST_ASSERT_NOT_NULL(grid_info);
 
   /* ACT */
@@ -293,7 +293,7 @@ void test_savgol_edge_case_large_n(void) {
   int W = 11;
   int P = 1;
 
-  grid_info = analyze_grid(x, N_LARGE, 0);
+  grid_info = analyze_grid(x, N_LARGE);
   TEST_ASSERT_NOT_NULL(grid_info);
 
   /* ACT */
@@ -333,7 +333,7 @@ void test_savgol_edge_case_high_poly_degree(void) {
   int W = 15;  // Musí být > P
   int P = 6;   // Maximální povolený stupeň
 
-  grid_info = analyze_grid(x, N_TEST, 0);
+  grid_info = analyze_grid(x, N_TEST);
   TEST_ASSERT_NOT_NULL(grid_info);
 
   /* ACT */
@@ -371,7 +371,7 @@ void test_savgol_edge_case_large_window(void) {
   int W = 19;  // Velké okno (musí být liché, blízké N)
   int P = 2;
 
-  grid_info = analyze_grid(x, N_TEST, 0);
+  grid_info = analyze_grid(x, N_TEST);
   TEST_ASSERT_NOT_NULL(grid_info);
 
   /* ACT */
@@ -411,7 +411,7 @@ void test_savgol_edge_case_min_window(void) {
   int W = 3;   // Minimální povolené okno
   int P = 1;   // Lineární fit
 
-  grid_info = analyze_grid(x, N_TEST, 0);
+  grid_info = analyze_grid(x, N_TEST);
   TEST_ASSERT_NOT_NULL(grid_info);
 
   /* ACT */
@@ -444,7 +444,7 @@ void test_savgol_edge_case_null_pointers(void) {
     y[i] = i;
   }
 
-  grid_info = analyze_grid(x, N_TEST, 0);
+  grid_info = analyze_grid(x, N_TEST);
   TEST_ASSERT_NOT_NULL(grid_info);
 
   SavgolResult *result;
@@ -486,7 +486,7 @@ void test_savgol_edge_case_even_window(void) {
   int W = 6;  // Sudé číslo (nepovolené)
   int P = 1;
 
-  grid_info = analyze_grid(x, N_TEST, 0);
+  grid_info = analyze_grid(x, N_TEST);
   TEST_ASSERT_NOT_NULL(grid_info);
 
   /* ACT */
@@ -521,7 +521,7 @@ void test_savgol_edge_case_p_greater_or_equal_w(void) {
   int W = 5;
   int P = 5;  // P >= W (nedostatek bodů pro fit)
 
-  grid_info = analyze_grid(x, N_TEST, 0);
+  grid_info = analyze_grid(x, N_TEST);
   TEST_ASSERT_NOT_NULL(grid_info);
 
   /* ACT */
@@ -563,7 +563,7 @@ void test_savgol_constant_with_noise(void) {
   int W = 11;
   int P = 0;
 
-  grid_info = analyze_grid(x, N_NOISE, 0);
+  grid_info = analyze_grid(x, N_NOISE);
   TEST_ASSERT_NOT_NULL(grid_info);
 
   /* ACT */
@@ -622,7 +622,7 @@ void test_savgol_linear_with_noise(void) {
   int W = 11;
   int P = 1;
 
-  grid_info = analyze_grid(x, N_NOISE, 0);
+  grid_info = analyze_grid(x, N_NOISE);
   TEST_ASSERT_NOT_NULL(grid_info);
 
   /* ACT */
@@ -683,7 +683,7 @@ void test_savgol_quadratic_with_noise(void) {
   int W = 13;
   int P = 2;
 
-  grid_info = analyze_grid(x, N_NOISE, 0);
+  grid_info = analyze_grid(x, N_NOISE);
   TEST_ASSERT_NOT_NULL(grid_info);
 
   /* ACT */
@@ -740,7 +740,7 @@ void test_savgol_rejects_nonuniform_grid(void) {
   int W = 7;
   int P = 1;
 
-  grid_info = analyze_grid(x, N_NONUNIF, 0);
+  grid_info = analyze_grid(x, N_NONUNIF);
   TEST_ASSERT_NOT_NULL(grid_info);
 
   // Ověř že mřížka je opravdu neuniformní (CV > 0.05)

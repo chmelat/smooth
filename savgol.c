@@ -323,29 +323,26 @@ SavgolResult* savgol_smooth(const double *x, const double *y, int n, int window_
     }
     
     /* ========================================================================
-     * Boundary handling - compute coefficients for asymmetric windows
-     * (Only a few points, so per-point computation is acceptable)
+     * Boundary handling - asymmetric windows, coefficients per point.
+     * An asymmetric window still spans left_pts + right_pts + 1 == window_size
+     * points, and the central loop above is done with c_func/c_deriv, so those
+     * buffers are reused here as scratch instead of allocating per point.
      * ======================================================================== */
-    
-    /* Left boundary */
-    for (i = 0; i < offset; i++) {
-        int left_pts = i;
+
+    for (i = 0; i < n; i++) {
+        int left_pts;
+
+        if (i < offset)              left_pts = i;                    /* left edge */
+        else if (i >= n - offset)    left_pts = window_size - 1 - (n - 1 - i);
+        else                         continue;                        /* interior: done */
+
         int right_pts = window_size - 1 - left_pts;
-        double *c_bound_func, *c_bound_deriv;
-        int n_coeff;
 
-        n_coeff = left_pts + right_pts + 1;
-        c_bound_func = (double *)calloc(n_coeff, sizeof(double));
-        c_bound_deriv = (double *)calloc(n_coeff, sizeof(double));
-
-        /* Allocation or coefficient failure is a hard error: propagate NULL
-         * rather than silently substituting raw data (matches central path). */
-        if (c_bound_func == NULL || c_bound_deriv == NULL ||
-            savgol_coefficients(left_pts, right_pts, poly_degree, 0, c_bound_func) != 0 ||
-            savgol_coefficients(left_pts, right_pts, poly_degree, 1, c_bound_deriv) != 0) {
-            fprintf(stderr, "ERROR: Failed to compute left-boundary coefficients\n");
-            free(c_bound_func);
-            free(c_bound_deriv);
+        /* Coefficient failure is a hard error: propagate NULL rather than
+         * silently substituting raw data (matches central path). */
+        if (savgol_coefficients(left_pts, right_pts, poly_degree, 0, c_func) != 0 ||
+            savgol_coefficients(left_pts, right_pts, poly_degree, 1, c_deriv) != 0) {
+            fprintf(stderr, "ERROR: Failed to compute boundary coefficients at index %d\n", i);
             free(c_func);
             free(c_deriv);
             free_savgol_result(result);
@@ -355,61 +352,17 @@ SavgolResult* savgol_smooth(const double *x, const double *y, int n, int window_
         double val = 0.0;
         double deriv = 0.0;
 
-        for (k = 0; k < n_coeff; k++) {
+        for (k = 0; k < window_size; k++) {
             int idx = i - left_pts + k;
-            val += c_bound_func[k] * y[idx];
-            deriv += c_bound_deriv[k] * y[idx];
+            val += c_func[k] * y[idx];
+            deriv += c_deriv[k] * y[idx];
         }
 
         result->y_smooth[i] = val;
         result->y_deriv[i] = deriv / h_avg;
-
-        free(c_bound_func);
-        free(c_bound_deriv);
     }
 
-    /* Right boundary */
-    for (i = n - offset; i < n; i++) {
-        int right_pts = n - 1 - i;
-        int left_pts = window_size - 1 - right_pts;
-        double *c_bound_func, *c_bound_deriv;
-        int n_coeff;
-
-        n_coeff = left_pts + right_pts + 1;
-        c_bound_func = (double *)calloc(n_coeff, sizeof(double));
-        c_bound_deriv = (double *)calloc(n_coeff, sizeof(double));
-
-        /* Allocation or coefficient failure is a hard error: propagate NULL
-         * rather than silently substituting raw data (matches central path). */
-        if (c_bound_func == NULL || c_bound_deriv == NULL ||
-            savgol_coefficients(left_pts, right_pts, poly_degree, 0, c_bound_func) != 0 ||
-            savgol_coefficients(left_pts, right_pts, poly_degree, 1, c_bound_deriv) != 0) {
-            fprintf(stderr, "ERROR: Failed to compute right-boundary coefficients\n");
-            free(c_bound_func);
-            free(c_bound_deriv);
-            free(c_func);
-            free(c_deriv);
-            free_savgol_result(result);
-            return NULL;
-        }
-
-        double val = 0.0;
-        double deriv = 0.0;
-
-        for (k = 0; k < n_coeff; k++) {
-            int idx = i - left_pts + k;
-            val += c_bound_func[k] * y[idx];
-            deriv += c_bound_deriv[k] * y[idx];
-        }
-
-        result->y_smooth[i] = val;
-        result->y_deriv[i] = deriv / h_avg;
-
-        free(c_bound_func);
-        free(c_bound_deriv);
-    }
-
-    /* Clean up pre-computed coefficients */
+    /* Clean up coefficient buffers */
     free(c_func);
     free(c_deriv);
     

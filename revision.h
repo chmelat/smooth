@@ -3,7 +3,46 @@
  *
  * Version History
  * ---------------
- * v5.11.44 (current): Ponytail audit v5.11.43 — all seven `delete:` findings
+ * v5.11.45 (current): Ponytail audit v5.11.43 — the `shrink:` and `yagni:`
+ *           findings (4, 5, 6, 8, 10, 11, 13, 17, 18). Pure refactoring: every
+ *           one of the nine is behaviour-preserving, verified by diffing nine
+ *           program outputs (all four methods, -g, -T, -h) byte-for-byte
+ *           against v5.11.44 — all identical. Findings 7 (`-g` output fields)
+ *           and 21 (Unity) were deliberately left in place.
+ *           Butterworth: check_pole_stability() now calls max_pole_radius()
+ *           instead of repeating its scan (the biquad index is dropped from the
+ *           message); butterworth_filtfilt() calls run_filtfilt_trial() instead
+ *           of repeating the IC/pad/cascade/reverse sequence, which also
+ *           retires the y_work buffer; estimate_memory_usage() inlined and the
+ *           no-op NULL guards in free_butterworth_result() dropped.
+ *           Savgol: the two 39-line boundary blocks became one loop. An
+ *           asymmetric window still spans window_size points and the central
+ *           loop is finished by then, so c_func/c_deriv are reused as scratch —
+ *           two allocations per boundary point and a duplicated cleanup path
+ *           are gone.
+ *           Polyfit: fill_boundary_fallback_left/right deleted. They were
+ *           reachable only when dgelss fails at exactly the first or last
+ *           interior window; that case now uses raw y with zero derivative,
+ *           the same substitution the inline fallback already makes for every
+ *           other window (the boundary points cannot be left at their calloc'd
+ *           zeros, so the replacement is two short loops, not nothing).
+ *           Timestamp: convert_timestamps_to_relative() hands its working x
+ *           array straight to the caller instead of allocating a second one and
+ *           memcpy-ing into it (over-allocated by the dropped rows, harmless
+ *           since only ctx->n entries are read), and its three copy-pasted
+ *           cleanup blocks collapse into one `goto fail`. original_timestamps
+ *           switched to calloc so that path is safe from every failure point.
+ *           Grid analysis: analyze_grid() loses the store_spacings parameter
+ *           (never once passed 1), the struct loses `spacings` and
+ *           `n_intervals`, and print_grid_analysis() loses its verbose>=2
+ *           branch (never once reached). 73 call sites updated, nearly all in
+ *           tests. `-g` output is unchanged.
+ *           smooth.c: usage() folded into its only caller, help().
+ *           tikhonov.c: compute_gcv_score_robust() loses its `verbose`
+ *           parameter (both call sites passed 1).
+ *           Net -181 lines; heap allocations across the test suite drop from
+ *           1148 to 911. 116 tests pass, zero valgrind leaks.
+ * v5.11.44: Ponytail audit v5.11.43 — all seven `delete:` findings
  *           (dead code and duplicated layers; see doc/ponytail-audit-v5.11.43.md).
  *           (1) Tikhonov: removed find_lambda_lcurve() and the n>20000 branch it
  *           was reachable from. That branch duplicated the GCV sweep with a
@@ -332,5 +371,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.44"
+#define VERSION "5.11.45"
 #define REVDATE "2026-07-26"

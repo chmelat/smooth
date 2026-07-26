@@ -38,7 +38,6 @@
 #define METHOD_BUTTERWORTH 3
 
 /* Local declare functions */
-static void usage(void);
 static void help(void);
 static void print_result(const double *x,
                          const TimestampContext *ts_ctx,
@@ -232,7 +231,7 @@ int main(int argc, char **argv)
   }
 
   /* Perform grid uniformity analysis (always done before smoothing) */
-  grid_info = analyze_grid(x, n, 0);  /* store_spacings=0 - no histogram needed */
+  grid_info = analyze_grid(x, n);
   if (grid_info == NULL) {
     fprintf(stderr, "ERROR: Grid analysis failed\n");
     goto cleanup;
@@ -415,15 +414,6 @@ static void print_result(const double *x,
   }
 }
 
-/* Usage */
-static void usage(void)
-{
-  fprintf(stderr,"Data smooth by approximation polynom from moving window of data (least square)\n");
-  fprintf(stderr, "Usage: %s [options] [data_file|-]\n" ,progname);
-  fprintf(stderr, "If data_file is omitted or '-', reads from stdin\n");
-  fprintf(stderr,"-h or -? for help\n");
-}
-
 /* Help */
 static void help(void)
 {
@@ -470,7 +460,10 @@ static void help(void)
     0
   };
   char **p = msg;
-  usage();
+  fprintf(stderr,"Data smooth by approximation polynom from moving window of data (least square)\n");
+  fprintf(stderr, "Usage: %s [options] [data_file|-]\n" ,progname);
+  fprintf(stderr, "If data_file is omitted or '-', reads from stdin\n");
+  fprintf(stderr,"-h or -? for help\n");
   fprintf(stderr,"%s, Version %s, %s\n\n", progname, VERSION, REVDATE);
   while (*p)
     fprintf(stderr, "%s\n", *p++);

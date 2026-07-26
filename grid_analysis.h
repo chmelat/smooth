@@ -21,8 +21,6 @@ typedef struct {
     
     /* Additional statistics */
     int n_points;           /* Number of points */
-    int n_intervals;        /* Number of intervals (n_points - 1) */
-    double *spacings;       /* Array of spacings (can be NULL if not requested) */
     int n_clusters;         /* Number of detected clusters */
     double uniformity_score; /* Score 0-1, where 1 is perfectly uniform */
 } GridAnalysis;
@@ -31,12 +29,11 @@ typedef struct {
  * * Parameters:
  * x              - Array of x-coordinates (must be strictly monotonic increasing)
  * n              - Number of data points
- * store_spacings - If 1, stores spacing array in result (must be freed)
  * * Returns:
  * Pointer to GridAnalysis structure containing analysis results
  * Returns NULL on error.
  */
-GridAnalysis* analyze_grid(const double *x, int n, int store_spacings);
+GridAnalysis* analyze_grid(const double *x, int n);
 
 /* Get recommended method based on grid analysis
  * * Returns:

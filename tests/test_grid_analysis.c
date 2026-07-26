@@ -56,7 +56,7 @@ void test_grid_perfectly_uniform(void) {
      *   n - počet bodů
      *   0 - neukládáme spacing array (šetříme paměť)
      */
-    GridAnalysis *result = analyze_grid(x, n, 0);
+    GridAnalysis *result = analyze_grid(x, n);
 
     /* ASSERT (kontrola výsledků)
      * Používáme Unity makra pro kontrolu:
@@ -112,7 +112,7 @@ void test_grid_nonuniform(void) {
     int n = 6;
 
     /* ACT */
-    GridAnalysis *result = analyze_grid(x, n, 0);
+    GridAnalysis *result = analyze_grid(x, n);
 
     /* ASSERT */
     // 1. Funkce by měla úspěšně proběhnout
@@ -153,7 +153,7 @@ void test_grid_minimum_points(void) {
     int n = 2;
 
     /* ACT */
-    GridAnalysis *result = analyze_grid(x, n, 0);
+    GridAnalysis *result = analyze_grid(x, n);
 
     /* ASSERT */
     // Funkce by měla vždy vrátit validní výsledek
@@ -190,7 +190,7 @@ void test_grid_nearly_uniform(void) {
     int n = 6;
 
     /* ACT */
-    GridAnalysis *result = analyze_grid(x, n, 0);
+    GridAnalysis *result = analyze_grid(x, n);
 
     /* ASSERT */
     TEST_ASSERT_NOT_NULL(result);
@@ -226,7 +226,7 @@ void test_grid_null_pointer(void) {
     int n = 5;
 
     /* ACT */
-    GridAnalysis *result = analyze_grid(x, n, 0);
+    GridAnalysis *result = analyze_grid(x, n);
 
     /* ASSERT
      * Funkce by měla vrátit NULL když dostane nevalidní vstup
@@ -258,7 +258,7 @@ void test_grid_large_dataset(void) {
     }
 
     /* ACT */
-    GridAnalysis *result = analyze_grid(x, n, 0);
+    GridAnalysis *result = analyze_grid(x, n);
 
     /* ASSERT */
     TEST_ASSERT_NOT_NULL(result);
@@ -272,8 +272,8 @@ void test_grid_large_dataset(void) {
     // Spacing by měl být 0.1
     TEST_ASSERT_DOUBLE_WITHIN(0.001, 0.1, result->h_avg);
 
-    // Počet intervalů by měl být n-1 = 999
-    TEST_ASSERT_EQUAL_INT(999, result->n_intervals);
+    // Počet bodů by měl odpovídat vstupu
+    TEST_ASSERT_EQUAL_INT(1000, result->n_points);
 
     /* CLEANUP */
     free_grid_analysis(result);
@@ -293,7 +293,7 @@ void test_grid_with_outlier(void) {
     int n = 6;
 
     /* ACT */
-    GridAnalysis *result = analyze_grid(x, n, 0);
+    GridAnalysis *result = analyze_grid(x, n);
 
     /* ASSERT */
     TEST_ASSERT_NOT_NULL(result);

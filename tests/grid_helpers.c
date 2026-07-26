@@ -87,7 +87,7 @@ void create_and_analyze_grid(double *x, int n, double x_start, double h,
             break;
     }
 
-    GridAnalysis *temp = analyze_grid(x, n, 0);
+    GridAnalysis *temp = analyze_grid(x, n);
     if (temp) {
         *analysis = *temp;  // Copy structure contents
         free(temp);
