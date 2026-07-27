@@ -162,6 +162,13 @@ void test_parser_nan_in_y_skips_row(void);
 void test_parser_inf_in_x_skips_row(void);
 void test_parser_label_outside_xy_is_harmless(void);
 void test_parser_comments_are_stripped(void);
+void test_parser_ts_t_format_default_columns(void);
+void test_parser_ts_space_format_default_columns(void);
+void test_parser_ts_k_maps_y_after_timestamp_t_format(void);
+void test_parser_ts_k_maps_y_after_timestamp_space_format(void);
+void test_parser_ts_y_before_timestamp(void);
+void test_parser_ts_malformed_row_is_reported(void);
+void test_parser_ts_nonnumeric_y_is_reported(void);
 
 // Testy pro timestamp.c
 void test_parse_timestamp_space_separator(void);
@@ -433,6 +440,13 @@ int main(void) {
     RUN_TEST(test_parser_inf_in_x_skips_row);
     RUN_TEST(test_parser_label_outside_xy_is_harmless);
     RUN_TEST(test_parser_comments_are_stripped);
+    RUN_TEST(test_parser_ts_t_format_default_columns);
+    RUN_TEST(test_parser_ts_space_format_default_columns);
+    RUN_TEST(test_parser_ts_k_maps_y_after_timestamp_t_format);
+    RUN_TEST(test_parser_ts_k_maps_y_after_timestamp_space_format);
+    RUN_TEST(test_parser_ts_y_before_timestamp);
+    RUN_TEST(test_parser_ts_malformed_row_is_reported);
+    RUN_TEST(test_parser_ts_nonnumeric_y_is_reported);
 
     /* UNITY_END() ukončí Unity framework a vrátí výsledek
      * Návratová hodnota:

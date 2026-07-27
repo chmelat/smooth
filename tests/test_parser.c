@@ -66,6 +66,74 @@ static SmoothRun run_smooth(const char *args, const char *fixture) {
     return r;
 }
 
+/* Timestamp-mode counterpart of run_smooth().
+ *
+ * A -T output row is "<timestamp tokens...> <y>", so the x field cannot be read
+ * with sscanf("%lf %lf") — "2026-01-01" would parse as 2026 followed by -1.
+ * Instead the last whitespace token is parsed as y, and a row is only accepted
+ * when it starts with a digit (timestamps do; "Warning:"/"ERROR:" lines do not).
+ *
+ * The two "# Skipped ..." messages share a prefix, so they are told apart by
+ * substring, not by sscanf format.
+ */
+typedef struct {
+    int    data_rows;
+    int    skip_nonnumeric;   /* -1 if the message was absent */
+    int    skip_malformed;    /* -1 if the message was absent */
+    double first_y, last_y;
+} SmoothRunTs;
+
+static SmoothRunTs run_smooth_ts(const char *args, const char *fixture) {
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), SMOOTH_BIN " %s %s 2>&1", args, fixture);
+    FILE *p = popen(cmd, "r");
+    TEST_ASSERT_NOT_NULL_MESSAGE(p, "popen failed");
+
+    SmoothRunTs r = {0};
+    r.skip_nonnumeric = -1;
+    r.skip_malformed  = -1;
+
+    char ln[1024];
+    while (fgets(ln, sizeof(ln), p)) {
+        if (ln[0] == '#') {
+            int k;
+            if (sscanf(ln, "# Skipped %d", &k) == 1) {
+                if (strstr(ln, "malformed timestamp") != NULL) {
+                    r.skip_malformed = k;
+                } else {
+                    r.skip_nonnumeric = k;
+                }
+            }
+            continue;
+        }
+
+        char *q = ln;
+        while (*q == ' ' || *q == '\t') q++;
+        if (*q < '0' || *q > '9') continue;  /* not a data row */
+
+        /* Find the last whitespace-separated token and require it to be a
+         * complete number. */
+        size_t len = strlen(ln);
+        while (len > 0 && (ln[len-1] == '\n' || ln[len-1] == '\r' ||
+                           ln[len-1] == ' '  || ln[len-1] == '\t')) {
+            ln[--len] = '\0';
+        }
+        if (len == 0) continue;
+        char *tok = ln + len;
+        while (tok > ln && tok[-1] != ' ' && tok[-1] != '\t') tok--;
+
+        char *endptr;
+        double yv = strtod(tok, &endptr);
+        if (*endptr != '\0') continue;  /* trailing junk: not a data row */
+
+        if (r.data_rows == 0) r.first_y = yv;
+        r.last_y = yv;
+        r.data_rows++;
+    }
+    pclose(p);
+    return r;
+}
+
 /* T-separated ISO timestamp counts as one whitespace token, so a row
  * "2026-04-29T11:40:00 0 1 2 3" has 5 logical columns. -k 2:5 selects
  * the seconds counter (col 2) as x and the last value (col 3) as y. */
@@ -199,5 +267,145 @@ void test_parser_label_outside_xy_is_harmless(void) {
     TEST_ASSERT_FALSE(r.has_skip_msg);
     TEST_ASSERT_DOUBLE_WITHIN(1e-9, 1.0, r.first_x);
     TEST_ASSERT_DOUBLE_WITHIN(1e-9, 6.0, r.last_x);
+    remove(path);
+}
+
+/* -T mode, T-separated timestamp (ts_token_count = 1), default columns
+ * (x = timestamp, y = last column). Data is exactly linear so -m0 -n3 -p1
+ * reproduces y exactly. */
+void test_parser_ts_t_format_default_columns(void) {
+    const char *path = "/tmp/test_parser_ts_t.dat";
+    write_fixture(path,
+        "2026-01-01T00:00:00 10.0\n"
+        "2026-01-01T00:00:01 11.0\n"
+        "2026-01-01T00:00:02 12.0\n"
+        "2026-01-01T00:00:03 13.0\n"
+        "2026-01-01T00:00:04 14.0\n");
+    SmoothRunTs r = run_smooth_ts("-T -m0 -n3 -p1", path);
+    TEST_ASSERT_EQUAL_INT(5, r.data_rows);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 10.0, r.first_y);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 14.0, r.last_y);
+    TEST_ASSERT_EQUAL_INT(-1, r.skip_nonnumeric);
+    TEST_ASSERT_EQUAL_INT(-1, r.skip_malformed);
+    remove(path);
+}
+
+/* -T mode, space-separated timestamp (ts_token_count = 2), default columns.
+ * Same data as the previous test, just with the timestamp split across two
+ * whitespace tokens. */
+void test_parser_ts_space_format_default_columns(void) {
+    const char *path = "/tmp/test_parser_ts_space.dat";
+    write_fixture(path,
+        "2026-01-01 00:00:00 10.0\n"
+        "2026-01-01 00:00:01 11.0\n"
+        "2026-01-01 00:00:02 12.0\n"
+        "2026-01-01 00:00:03 13.0\n"
+        "2026-01-01 00:00:04 14.0\n");
+    SmoothRunTs r = run_smooth_ts("-T -m0 -n3 -p1", path);
+    TEST_ASSERT_EQUAL_INT(5, r.data_rows);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 10.0, r.first_y);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 14.0, r.last_y);
+    TEST_ASSERT_EQUAL_INT(-1, r.skip_nonnumeric);
+    TEST_ASSERT_EQUAL_INT(-1, r.skip_malformed);
+    remove(path);
+}
+
+/* -T mode, T-separated timestamp, y_column (3) > x_column (1): shift is 0
+ * because the timestamp is already a single whitespace token. */
+void test_parser_ts_k_maps_y_after_timestamp_t_format(void) {
+    const char *path = "/tmp/test_parser_ts_k_t.dat";
+    write_fixture(path,
+        "2026-01-01T00:00:00 expA 10.0\n"
+        "2026-01-01T00:00:01 expA 11.0\n"
+        "2026-01-01T00:00:02 expA 12.0\n"
+        "2026-01-01T00:00:03 expA 13.0\n"
+        "2026-01-01T00:00:04 expA 14.0\n");
+    SmoothRunTs r = run_smooth_ts("-T -k 1:3 -m0 -n3 -p1", path);
+    TEST_ASSERT_EQUAL_INT(5, r.data_rows);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 10.0, r.first_y);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 14.0, r.last_y);
+    TEST_ASSERT_EQUAL_INT(-1, r.skip_nonnumeric);
+    TEST_ASSERT_EQUAL_INT(-1, r.skip_malformed);
+    remove(path);
+}
+
+/* -T mode, space-separated timestamp, y_column (3) > x_column (1): shift is
+ * +1 because the timestamp occupies two whitespace tokens. This pins the
+ * logical-column abstraction: even though the space-separated row has one
+ * more whitespace token than the T-separated row above, the SAME -k 1:3
+ * flag is correct for both, because the timestamp counts as a single
+ * logical column regardless of its token width. (-k 1:4 would instead fail
+ * with "insufficient columns for y column 4".) */
+void test_parser_ts_k_maps_y_after_timestamp_space_format(void) {
+    const char *path = "/tmp/test_parser_ts_k_space.dat";
+    write_fixture(path,
+        "2026-01-01 00:00:00 expA 10.0\n"
+        "2026-01-01 00:00:01 expA 11.0\n"
+        "2026-01-01 00:00:02 expA 12.0\n"
+        "2026-01-01 00:00:03 expA 13.0\n"
+        "2026-01-01 00:00:04 expA 14.0\n");
+    SmoothRunTs r = run_smooth_ts("-T -k 1:3 -m0 -n3 -p1", path);
+    TEST_ASSERT_EQUAL_INT(5, r.data_rows);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 10.0, r.first_y);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 14.0, r.last_y);
+    TEST_ASSERT_EQUAL_INT(-1, r.skip_nonnumeric);
+    TEST_ASSERT_EQUAL_INT(-1, r.skip_malformed);
+    remove(path);
+}
+
+/* -T mode, y_column (1) < x_column (2): logical columns before the timestamp
+ * are unaffected by its token width, so no shift is applied. */
+void test_parser_ts_y_before_timestamp(void) {
+    const char *path = "/tmp/test_parser_ts_y_first.dat";
+    write_fixture(path,
+        "10.0 2026-01-01 00:00:00\n"
+        "11.0 2026-01-01 00:00:01\n"
+        "12.0 2026-01-01 00:00:02\n"
+        "13.0 2026-01-01 00:00:03\n"
+        "14.0 2026-01-01 00:00:04\n");
+    SmoothRunTs r = run_smooth_ts("-T -k 2:1 -m0 -n3 -p1", path);
+    TEST_ASSERT_EQUAL_INT(5, r.data_rows);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 10.0, r.first_y);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 14.0, r.last_y);
+    TEST_ASSERT_EQUAL_INT(-1, r.skip_nonnumeric);
+    TEST_ASSERT_EQUAL_INT(-1, r.skip_malformed);
+    remove(path);
+}
+
+/* Regression guard for plan 001's silent-data-loss fix: a row whose timestamp
+ * field fails to parse must be dropped and reported via "# Skipped N ...
+ * malformed timestamp", not silently included with garbage x. */
+void test_parser_ts_malformed_row_is_reported(void) {
+    const char *path = "/tmp/test_parser_ts_malformed.dat";
+    write_fixture(path,
+        "2026-01-01 00:00:00 1\n"
+        "2026-01-01 00:00:01 2\n"
+        "BADROW\n"
+        "2026-01-01 00:00:03 4\n"
+        "alsobad\n"
+        "2026-01-01 00:00:05 6\n"
+        "2026-01-01 00:00:06 7\n");
+    SmoothRunTs r = run_smooth_ts("-T -m0 -n3 -p1", path);
+    TEST_ASSERT_EQUAL_INT(5, r.data_rows);
+    TEST_ASSERT_EQUAL_INT(2, r.skip_malformed);
+    remove(path);
+}
+
+/* The skipped_nonnumeric path inside the -T branch (a syntactically valid
+ * timestamp but a non-numeric y value), as distinct from a malformed
+ * timestamp. */
+void test_parser_ts_nonnumeric_y_is_reported(void) {
+    const char *path = "/tmp/test_parser_ts_nan.dat";
+    write_fixture(path,
+        "2026-01-01 00:00:00 10.0\n"
+        "2026-01-01 00:00:01 11.0\n"
+        "2026-01-01 00:00:02 NaN\n"
+        "2026-01-01 00:00:03 13.0\n"
+        "2026-01-01 00:00:04 14.0\n"
+        "2026-01-01 00:00:05 15.0\n");
+    SmoothRunTs r = run_smooth_ts("-T -m0 -n3 -p1", path);
+    TEST_ASSERT_EQUAL_INT(5, r.data_rows);
+    TEST_ASSERT_EQUAL_INT(1, r.skip_nonnumeric);
+    TEST_ASSERT_EQUAL_INT(-1, r.skip_malformed);
     remove(path);
 }
