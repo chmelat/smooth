@@ -3,7 +3,20 @@
  *
  * Version History
  * ---------------
- * v5.11.46 (current): Ponytail audit v5.11.43 — closes the report. Two
+ * v5.11.47 (current): Fix multi-line grid warnings corrupting the output
+ *           table. print_grid_analysis() prefixed only the first line of
+ *           warning_msg with the caller's "# ", so every continuation line
+ *           ("Adaptive methods may improve results.", "Consider resampling
+ *           data to a more uniform grid.", ...) was written to stdout as
+ *           bare text in the middle of the data table, breaking any numeric
+ *           consumer. All three CV bands and the cluster warning are
+ *           multi-line, so this hit every non-uniform input above CV 0.2.
+ *           The fix walks warning_msg by line and emits the prefix on each;
+ *           only line 1 carries the "WARNING: " label, so line-1 output is
+ *           byte-identical to v5.11.46. Verified over CV 0.00-4.63 plus the
+ *           clustered case: zero unprefixed lines. Regression guard lives in
+ *           the run-smooth driver (stdout table integrity check).
+ * v5.11.46: Ponytail audit v5.11.43 — closes the report. Two
  *           findings applied, one rejected on measurement.
  *           (19) tikhonov: the two dcopy_ calls were plain array copies ->
  *           memcpy; drops the extern BLAS declaration and the `inc` variable.
@@ -397,5 +410,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.46"
-#define REVDATE "2026-07-26"
+#define VERSION "5.11.47"
+#define REVDATE "2026-07-27"

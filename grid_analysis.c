@@ -216,7 +216,20 @@ void print_grid_analysis(GridAnalysis *analysis, int verbose, const char *prefix
      * gate on reliability_warning rely on the message being visible (e.g.
      * smooth.c calls with verbose=0 inside an `if (reliability_warning)`). */
     if (analysis->reliability_warning) {
-        printf("%sWARNING: %s\n", prefix, analysis->warning_msg);
+        /* warning_msg is multi-line. Prefix EVERY line: with a single prefix
+         * the continuation lines landed on stdout as bare text and corrupted
+         * the data table for any numeric consumer (fixed in v5.11.47).
+         * Only the first line carries the "WARNING: " label. */
+        const char *line = analysis->warning_msg;
+        const char *label = "WARNING: ";
+        while (*line) {
+            const char *nl = strchr(line, '\n');
+            printf("%s%s%.*s\n", prefix, label,
+                   nl ? (int)(nl - line) : (int)strlen(line), line);
+            label = "";
+            if (nl == NULL) break;
+            line = nl + 1;
+        }
     }
 
     if (verbose >= 1) {

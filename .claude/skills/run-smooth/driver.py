@@ -140,15 +140,16 @@ def main():
         assert "grid" in p.stderr.lower(), f"{name}: rejection did not mention the grid"
         print(f"  [OK] {name} rejected: {p.stderr.strip().splitlines()[-1][:60]}")
 
-    print("stdout table integrity (known defect — see SKILL.md Gotchas):")
-    leaks = leaked_lines(run(["-m", "0", "-n", "7", non]).stdout)
-    if leaks:
-        print(f"  [KNOWN BUG] {len(leaks)} unprefixed diagnostic line(s) on stdout, "
-              f"e.g. {leaks[0]!r}")
-        print("             grid_analysis.c warning_msg is multi-line; only line 1 "
-              "gets `# WARNING: `")
-    else:
-        print("  [OK] every diagnostic line is `#`-prefixed (defect appears fixed)")
+    print("stdout table integrity — every diagnostic line must be `#`-prefixed:")
+    # Regression guard for the multi-line warning_msg leak fixed in v5.11.47:
+    # continuation lines used to land on stdout bare and corrupt the table.
+    for label, args in [
+        ("CV>0.2  (noticeable, 2-line msg)", ["-m", "0", "-n", "7", non]),
+        ("CV>0.2  (-g verbose)", ["-g", non]),
+    ]:
+        leaks = leaked_lines(run(args).stdout)
+        assert not leaks, f"{label}: {len(leaks)} unprefixed line(s), e.g. {leaks[0]!r}"
+        print(f"  [OK] {label}: no unprefixed lines")
 
     print("derivatives (-d) add a third column:")
     rows = columns(run(["-m", "2", "-l", "auto", "-d", uni]).stdout)

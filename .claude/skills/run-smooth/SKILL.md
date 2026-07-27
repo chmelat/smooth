@@ -65,16 +65,6 @@ uniform grid — all four methods must smooth:
 ALL CHECKS PASSED
 ```
 
-One line is **expected to report a real, still-open defect** (see Gotchas):
-
-```
-stdout table integrity (known defect — see SKILL.md Gotchas):
-  [KNOWN BUG] 1 unprefixed diagnostic line(s) on stdout, e.g. 'Adaptive methods may improve results.'
-```
-
-The driver does not fail on it. If it ever prints `[OK] every diagnostic line
-is '#'-prefixed`, the defect was fixed - delete that check.
-
 ### Driving it by hand
 
 Every checked-in `.dat` in this repo is non-uniform (CV = 0.177), so **Savgol
@@ -121,13 +111,14 @@ Both pass clean as of this writing: `116 Tests 0 Failures 0 Ignored`, and
   freshly built and whose warnings never appeared. Always `make` first, or
   `make clean && make && make test`. Same trap for any bare object target
   (`make smooth.o`).
-- **Diagnostic lines leak onto stdout unprefixed.** `grid_analysis.c:130-158`
-  builds a multi-line `warning_msg`, but only its *first* line gets the
-  `# WARNING: ` prefix. Continuation lines land on stdout bare, e.g.
-  `Adaptive methods may improve results.` - which corrupts the table for any
-  numeric consumer. Triggers whenever CV crosses a warning band (all three
-  bands, roughly CV > 0.2). Do not assume `grep -v '^#'` yields clean numbers;
-  filter on "parses as floats" instead, as `driver.py:columns()` does.
+- **Grid warnings are multi-line.** `grid_analysis.c:130-168` builds a
+  `warning_msg` of 2-3 lines per band, plus a cluster warning; all of it is
+  printed by the single site in `print_grid_analysis()`. Up to v5.11.46 only
+  the *first* line got the `# WARNING: ` prefix, so continuation lines landed
+  on stdout as bare text and corrupted the table for numeric consumers. Fixed
+  in v5.11.47 - every line is prefixed now. If you touch that print site, keep
+  the driver's "stdout table integrity" check passing; it is the regression
+  guard, and the leak is invisible on uniform data (it needs CV > 0.2).
 - **No repo data file is uniform.** All the committed `.dat` files sit at
   CV = 0.177, above Savgol's 0.05 threshold and above Butterworth's 0.15.
   Both reject. Use `driver.py fixture` to get a testable uniform grid.
@@ -150,7 +141,7 @@ Both pass clean as of this writing: `116 Tests 0 Failures 0 Ignored`, and
 |---|---|
 | `ERROR: Savitzky-Golay method not suitable for non-uniform grid!`, exit 1 | Expected on every repo `.dat`. Generate a uniform fixture: `driver.py fixture /tmp/uniform.dat` |
 | `ERROR: Butterworth filter not suitable for non-uniform grid (CV=0.1772, threshold=0.1500)!` | Same - needs a uniform grid |
-| `ValueError: could not convert string to float: 'Adaptive'` while parsing output | The unprefixed-diagnostic defect above. Skip non-numeric lines |
+| `ValueError: could not convert string to float: 'Adaptive'` while parsing output | The pre-v5.11.47 unprefixed-warning bug. You are on an old build - `make clean && make` |
 | `Need more data (n < 5)!`, exit 1 | Input has fewer than 5 usable rows (empty file, or all rows filtered as comments/NaN) |
 | `Unknown method number: 9`, exit 1 | `-m` takes 0-3 only |
 | `Lambda must be non-negative!`, exit 1 | `-l` needs `>= 0` or the literal `auto` |
