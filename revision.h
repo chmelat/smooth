@@ -3,7 +3,31 @@
  *
  * Version History
  * ---------------
- * v5.11.47 (current): Fix multi-line grid warnings corrupting the output
+ * v5.11.48 (current): Report malformed timestamp rows in `-T` mode instead
+ *           of dropping them silently. The `else` branch at parser.c:141
+ *           (now :142) fired whenever the timestamp column was present but
+ *           the second whitespace token was missing — a bare `2026-01-01`,
+ *           a stray label, or a truncated final line — and simply
+ *           `continue`d without incrementing any counter or printing
+ *           anything. It was the only unaccounted row-drop in the file; its
+ *           sibling non-numeric-y drop (parser.c:161-164) already counted
+ *           into skipped_nonnumeric. Invisible and misleading: with no
+ *           message at all, the resulting gap in the x grid was reported
+ *           back to the user as a spurious "# WARNING: Significant spacing
+ *           variation detected: CV = 0.38", blaming the user's sampling for
+ *           a hole the parser itself created. Fix: a new
+ *           skipped_malformed_ts counter, incremented at the drop site and
+ *           reported on stdout as "# Skipped N data row(s) with malformed
+ *           timestamp in column M", mirroring skipped_nonnumeric's existing
+ *           convention and output stream. Which rows get dropped is
+ *           unchanged — a truncated final line is common in real data and
+ *           must stay tolerated; only whether the user is told changed.
+ *           Verified: three program outputs (-T, Tikhonov, polyfit -d) on
+ *           clean input byte-identical to v5.11.47; 116 tests pass; zero
+ *           valgrind leaks. The end-to-end regression guard for this path
+ *           (a malformed-timestamp fixture exercising the parser) lands
+ *           with the timestamp parser tests in a follow-up plan.
+ * v5.11.47: Fix multi-line grid warnings corrupting the output
  *           table. print_grid_analysis() prefixed only the first line of
  *           warning_msg with the caller's "# ", so every continuation line
  *           ("Adaptive methods may improve results.", "Consider resampling
@@ -410,5 +434,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.47"
+#define VERSION "5.11.48"
 #define REVDATE "2026-07-27"

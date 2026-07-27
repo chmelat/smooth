@@ -22,6 +22,7 @@ int parse_input(FILE *fp,
   char line[MAX_LINE];
   int line_number = 0;
   int skipped_nonnumeric = 0;
+  int skipped_malformed_ts = 0;
   int n = 0;
   int abuf = 0;
   double *x = NULL;
@@ -139,6 +140,7 @@ int parse_input(FILE *fp,
         snprintf(timestamp_str, sizeof(timestamp_str), "%s %s",
                  tokens[ts_tok_start], tokens[ts_tok_start + 1]);
       } else {
+        skipped_malformed_ts++;
         continue;  /* malformed: space-format expects two tokens, only one present */
       }
 
@@ -281,6 +283,11 @@ int parse_input(FILE *fp,
       printf("# Skipped %d data row(s) with non-numeric or NaN/Inf value in column %d (x) or %d (y)\n",
              skipped_nonnumeric, x_column, y_column);
     }
+  }
+
+  if (skipped_malformed_ts > 0) {
+    printf("# Skipped %d data row(s) with malformed timestamp in column %d\n",
+           skipped_malformed_ts, x_column);
   }
 
   if (timestamp_mode) {
