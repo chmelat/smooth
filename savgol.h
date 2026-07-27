@@ -70,13 +70,13 @@ typedef struct {
  *   // This will work (uniform grid):
  *   double x[] = {0.0, 1.0, 2.0, 3.0, 4.0, 5.0};
  *   double y[] = {1.0, 2.1, 2.9, 4.2, 5.1, 6.0};
- *   GridAnalysis *grid = analyze_grid(x, 6, 0);
+ *   GridAnalysis *grid = analyze_grid(x, 6);
  *   SavgolResult *result = savgol_smooth(x, y, 6, 5, 2, grid);
  *
  *   // This will FAIL (non-uniform grid):
  *   double x[] = {0.0, 1.0, 1.5, 4.0, 5.0, 10.0};
  *   double y[] = {1.0, 2.1, 2.9, 4.2, 5.1, 6.0};
- *   GridAnalysis *grid = analyze_grid(x, 6, 0);
+ *   GridAnalysis *grid = analyze_grid(x, 6);
  *   SavgolResult *result = savgol_smooth(x, y, 6, 5, 2, grid);
  *   // Returns NULL with error message suggesting Tikhonov method
  */

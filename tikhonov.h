@@ -33,7 +33,9 @@ typedef struct {
  *   lambda    - Regularization parameter (>= 0)
  *               Small lambda: less smoothing, follows data closely
  *               Large lambda: more smoothing, smoother result
- *   grid_info - Grid analysis results (used for discretization method selection)
+ *   grid_info - Grid analysis results (required, non-NULL); the module uses a
+ *               single integral-measure discretization and does not select
+ *               between schemes based on grid statistics
  * 
  * Returns:
  *   Pointer to TikhonovResult structure containing:
@@ -70,11 +72,12 @@ TikhonovResult* tikhonov_smooth(const double *x, const double *y, int n, double 
  *   Optimal lambda value minimizing GCV criterion
  * 
  * Notes:
- *   - Uses grid search with refinement
+ *   - Uses grid search with refinement (refinement only runs for n <= 5000;
+ *     see tikhonov.c for the exact thresholds)
  *   - Prints detailed optimization information to stdout
- *   - Search range: 1e-6 to 1e0
+ *   - Search range: 1e-8 to 1e0 (tikhonov.c is the source of truth)
  *   - For small datasets (n < 3), returns conservative default
- *   - Warns if regularization term dominates excessively
+ *   - Warns if the chosen lambda lands on the edge of the search range
  */
 double find_optimal_lambda_gcv(const double *x, const double *y, int n, const GridAnalysis *grid_info);
 
@@ -89,37 +92,42 @@ double find_optimal_lambda_gcv(const double *x, const double *y, int n, const Gr
 void free_tikhonov_result(TikhonovResult *result);
 
 /* Example usage:
- * 
+ *
+ * #include <stdio.h>
  * #include "tikhonov.h"
- * 
- * int main() {
+ * #include "grid_analysis.h"
+ *
+ * int main(void) {
  *     double x[] = {0.0, 1.0, 2.0, 3.0, 4.0};
  *     double y[] = {1.0, 2.1, 3.9, 6.2, 8.1};
  *     int n = 5;
- *     
- *     // Method 1: Manual lambda
- *     TikhonovResult *result = tikhonov_smooth(x, y, n, 0.1);
- *     
- *     // Method 2: Automatic lambda selection
- *     double optimal_lambda = find_optimal_lambda_gcv(x, y, n);
- *     TikhonovResult *result = tikhonov_smooth(x, y, n, optimal_lambda);
- *     
+ *
+ *     // Grid analysis is required; every method takes it as input.
+ *     GridAnalysis *grid = analyze_grid(x, n);
+ *     if (grid == NULL) return 1;
+ *
+ *     // Manual lambda:   tikhonov_smooth(x, y, n, 0.1, grid)
+ *     // Automatic lambda (GCV):
+ *     double lambda = find_optimal_lambda_gcv(x, y, n, grid);
+ *     TikhonovResult *result = tikhonov_smooth(x, y, n, lambda, grid);
+ *
  *     if (result != NULL) {
  *         printf("# Functional J = %.3e\n", result->total_functional);
- *         
+ *
  *         for (int i = 0; i < n; i++) {
- *             printf("%8.4f %8.4f %8.4f\n", 
+ *             printf("%8.4f %8.4f %8.4f\n",
  *                    x[i], result->y_smooth[i], result->y_deriv[i]);
  *         }
- *         
+ *
  *         free_tikhonov_result(result);
  *     }
- *     
+ *
+ *     free_grid_analysis(grid);
  *     return 0;
  * }
- * 
+ *
  * Compilation:
- *   gcc -o program program.c tikhonov.c -llapack -lblas -lm
+ *   gcc -o program program.c tikhonov.c grid_analysis.c -llapack -lblas -lm
  */
 
 #endif /* TIKHONOV_H */
