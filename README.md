@@ -529,7 +529,7 @@ signature.
    $h_0 = \text{median}(h_i)$.
 2. For each spacing form the ratio $r_i = h_i / h_0$ and the nearest integer
    $k_i = \text{round}(r_i)$.
-3. A spacing counts as a dropout when $|r_i - k_i| \le 0.25$ and $k_i \geq 2$;
+3. A spacing counts as a dropout when $|r_i - k_i| \leq 0.25$ and $k_i \geq 2$;
    it then accounts for $k_i - 1$ missing samples.
 4. The fraction of spacings lying near *any* integer multiple,
    $\text{integer-fit}$, decides whether the grid is regular at all. The report
@@ -821,7 +821,7 @@ $$CV = \frac{\sigma(h)}{h_{\text{avg}}}$$
 |----------|----------|
 | $CV > 0.05$ | REJECT — Grid too non-uniform for SG |
 | $CV > 0.01$ | WARNING — Nearly uniform, proceed with caution |
-| $CV \le 0.01$ | OK — Grid sufficiently uniform |
+| $CV \leq 0.01$ | OK — Grid sufficiently uniform |
 
 **What happens when grid is rejected:**
 ```
@@ -1178,10 +1178,10 @@ One log-spaced GCV scan serves every dataset size; only the refinement step depe
 
 | Size | Trace estimator | Lambda search |
 |------|-----------------|---------------|
-| $n \le 5000$ | Eigenvalue sum above | 13-point log scan over $[10^{-8}, 10^0]$ + 8-point refinement around the minimum |
+| $n \leq 5000$ | Eigenvalue sum above | 13-point log scan over $[10^{-8}, 10^0]$ + 8-point refinement around the minimum |
 | $n > 5000$ | Eigenvalue sum above | 13-point log scan only (no refinement) |
 
-The eigenvalue sum is $O(n)$ per $\lambda$ candidate — the same order as the band solve itself — so it is used for all dataset sizes. The refinement step at $n \le 5000$ adds 8 extra $\lambda$ evaluations clustered around the coarse-scan minimum (factors $0.3 \ldots 1.7$). Datasets that straddle the threshold may therefore receive slightly different optimal $\lambda$ from otherwise-identical inputs.
+The eigenvalue sum is $O(n)$ per $\lambda$ candidate — the same order as the band solve itself — so it is used for all dataset sizes. The refinement step at $n \leq 5000$ adds 8 extra $\lambda$ evaluations clustered around the coarse-scan minimum (factors $0.3 \ldots 1.7$). Datasets that straddle the threshold may therefore receive slightly different optimal $\lambda$ from otherwise-identical inputs.
 
 Because $\lambda$ is dimensional (it scales with $h^3$ and the squared amplitude of $y$), the fixed search range $[10^{-8}, 10^0]$ may not match the scale of every dataset. If the selected optimum lies at the edge of the range, a warning is printed and $\lambda$ should be set manually with `-l`.
 
