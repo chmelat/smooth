@@ -529,11 +529,11 @@ signature.
    $h_0 = \text{median}(h_i)$.
 2. For each spacing form the ratio $r_i = h_i / h_0$ and the nearest integer
    $k_i = \text{round}(r_i)$.
-3. A spacing counts as a dropout when $|r_i - k_i| \le 0.25$ and $k_i \ge 2$;
+3. A spacing counts as a dropout when $|r_i - k_i| \le 0.25$ and $k_i \geq 2$;
    it then accounts for $k_i - 1$ missing samples.
 4. The fraction of spacings lying near *any* integer multiple,
    $\text{integer-fit}$, decides whether the grid is regular at all. The report
-   appears only when $\text{integer-fit} \ge 0.90$.
+   appears only when $\text{integer-fit} \geq 0.90$.
 
 The median in step 1 is the load-bearing choice. The **mean** is contaminated
 by the very gaps being searched for: on a record missing 20% of its samples the
