@@ -311,8 +311,6 @@ static double compute_gcv_score_robust(const double *x, const double *y, int n, 
         rss += residual * residual;
     }
     
-    /* Grid uniformity for trace-approximation validity (already in grid_info) */
-    double ratio = grid_info->ratio_max_min;
     double h_avg = grid_info->h_avg;
 
     /* Analytical trace from the uniform-grid eigenvalue model of the penalty
@@ -330,10 +328,6 @@ static double compute_gcv_score_robust(const double *x, const double *y, int n, 
         trace_H += 1.0 / (1.0 + lambda * eigenval);
     }
 
-    if (ratio > 2.0) {
-        printf("# Note: Trace(H) approximation less accurate for non-uniform grid (ratio=%.2f)\n", ratio);
-    }
-    
     /* Standard GCV */
     double denom = 1.0 - trace_H / n;
     if (denom > 1e-8) {
@@ -342,8 +336,8 @@ static double compute_gcv_score_robust(const double *x, const double *y, int n, 
         gcv_score = 1e20;
     }
     
-    printf("# λ=%9.3e: J=%9.3e, RSS=%9.3e, tr(H)=%6.1f (%.2f), GCV=%9.3e\n",
-           lambda, result->total_functional, rss, trace_H, trace_H / n, gcv_score);
+    fprintf(stderr, "# lambda=%9.3e: J=%9.3e, RSS=%9.3e, tr(H)=%6.1f (%.2f), GCV=%9.3e\n",
+            lambda, result->total_functional, rss, trace_H, trace_H / n, gcv_score);
 
 
     free_tikhonov_result(result);
@@ -369,11 +363,25 @@ double find_optimal_lambda_gcv(const double *x, const double *y, int n, const Gr
         return best_lambda;
     }
 
-    printf("# GCV optimization for n=%d points (see README: Generalized Cross Validation)\n", n);
-    printf("# Grid CV = %.3f (integral-measure penalty discretization)\n",
-           grid_info->cv);
+    /* The per-lambda search trace goes to stderr: it is progress output, not
+     * something to preserve alongside the smoothed data. The chosen lambda and
+     * the caveats about its reliability stay on stdout (see the diagnostic
+     * output convention in the smooth-dev-tasks skill). The '#' prefix is kept
+     * so a caller merging the streams with 2>&1 still sees valid comments. */
+    fprintf(stderr, "# GCV optimization for n=%d points (see README: Generalized Cross Validation)\n", n);
+    fprintf(stderr, "# Grid CV = %.3f (integral-measure penalty discretization)\n",
+            grid_info->cv);
+
+    /* Both caveats qualify the reliability of the lambda that is saved with the
+     * data, so both are stdout — and both print once. The ratio note used to
+     * live in compute_gcv_score_robust(), where the sweep repeated it verbatim
+     * once per trial lambda (21 identical lines on a 60-point mesh). */
     if (grid_info->cv > 0.2) {
         printf("# WARNING: Highly non-uniform grid detected. Trace approximation less accurate.\n");
+    }
+    if (grid_info->ratio_max_min > 2.0) {
+        printf("# Note: Trace(H) approximation less accurate for non-uniform grid (ratio=%.2f)\n",
+               grid_info->ratio_max_min);
     }
     
     /* Log-spaced GCV search over [lambda_min, lambda_max] */
@@ -394,7 +402,7 @@ double find_optimal_lambda_gcv(const double *x, const double *y, int n, const Gr
     /* Refinement around best_lambda (skipped for large n: each score is a full
      * O(n) solve, so the extra 8 evaluations are not worth the sub-grid gain) */
     if (n <= 5000) {
-        printf("# Refinement around λ=%.6e\n", best_lambda);
+        fprintf(stderr, "# Refinement around lambda=%.6e\n", best_lambda);
         for (int i = 0; i < 8; i++) {
             double factor = 0.3 + 1.4 * i / 7.0;
             double lambda_test = best_lambda * factor;
@@ -414,12 +422,12 @@ double find_optimal_lambda_gcv(const double *x, const double *y, int n, const Gr
      * search range cannot fit every data scale. Flag a result pinned to the
      * range edge instead of returning it silently as "optimal". */
     if (best_lambda <= lambda_min * 1.01 || best_lambda >= lambda_max * 0.99) {
-        printf("# WARNING: optimal λ = %.3e lies at the edge of the search range [%.0e, %.0e].\n",
+        printf("# WARNING: optimal lambda = %.3e lies at the edge of the search range [%.0e, %.0e].\n",
                best_lambda, lambda_min, lambda_max);
-        printf("#          The true optimum may lie outside this range; consider setting λ manually (-l <value>).\n");
+        printf("#          The true optimum may lie outside this range; consider setting lambda manually (-l <value>).\n");
     }
 
-    printf("# Optimal λ: %.6e (GCV=%.3e)\n", best_lambda, best_gcv);
+    fprintf(stderr, "# Optimal lambda: %.6e (GCV=%.3e)\n", best_lambda, best_gcv);
     return best_lambda;
 }
 

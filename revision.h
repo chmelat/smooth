@@ -3,7 +3,43 @@
  *
  * Version History
  * ---------------
- * v5.11.52 (current): Replace the cluster detector with sampling-regime
+ * v5.11.53 (current): Keep the GCV sweep trace out of the data stream, and
+ *           make all program output ASCII (audit findings B8+B9; plan 007).
+ *           Three separable defects sharing one set of lines.
+ *           (1) BEHAVIOUR CHANGE: the per-lambda GCV search trace moved from
+ *           stdout to stderr — the sweep rows, its header, the grid-CV line,
+ *           the refinement header and the "Optimal lambda" conclusion. They
+ *           keep their '#' prefix, so merging with 2>&1 still yields valid
+ *           comments. `smooth -m 2 -l auto data > out.dat` no longer captures
+ *           the table; `2>> out.dat` recovers the old behaviour. On stdout
+ *           stay only the lines that qualify the lambda saved with the data:
+ *           the edge-of-range and highly-non-uniform warnings. Measured on
+ *           test_data.dat: 28 stdout comment lines -> 7. This also removes one
+ *           of the three places the chosen lambda was printed to stdout
+ *           (tikhonov.c's "Optimal lambda"; smooth.c's two lines are
+ *           unchanged). No CLI flag was added — compute_gcv_score_robust()
+ *           had a `verbose` parameter and lost it in v5.11.43 because both
+ *           call sites passed 1; stream selection gets the same result with
+ *           no new surface.
+ *           (2) The "Trace(H) approximation less accurate" note lived inside
+ *           compute_gcv_score_robust(), so the sweep repeated it verbatim once
+ *           per trial lambda — 21 identical lines on a 60-point alternating
+ *           mesh, where the program emitted 62 diagnostic lines for 60 data
+ *           rows. Hoisted into find_optimal_lambda_gcv() next to the cv>0.2
+ *           warning: both non-uniformity caveats now print once, on stdout.
+ *           compute_gcv_score_robust() is now free of output entirely, the
+ *           state v5.11.43 was reaching for. Its `ratio` local went with it.
+ *           (3) Seven output strings carried non-ASCII glyphs: five `λ` in
+ *           tikhonov.c, `×` in smooth.c's Butterworth cutoff line, and an em
+ *           dash in butterworth.c's auto-cutoff warning. All ASCII now
+ *           (`lambda`, `*`, `;`); source comments are untouched. Program
+ *           output contains zero non-ASCII bytes on either stream.
+ *           tikhonov.h:77 claimed the detailed information goes to stdout;
+ *           corrected. The convention block in butterworth.c and the
+ *           smooth-dev-tasks skill gain the stderr "# ..." category.
+ *           No numerics change: data rows, the selected lambda, the sweep
+ *           range and the refinement rule are all identical. 138 tests pass.
+ * v5.11.52: Replace the cluster detector with sampling-regime
  *           detection, and correct v5.11.51. Two problems with one root
  *           cause — a local phenomenon judged against a global statistic.
  *           First, v5.11.51's dropout gate could not tell lost samples from
@@ -595,5 +631,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.52"
+#define VERSION "5.11.53"
 #define REVDATE "2026-07-28"

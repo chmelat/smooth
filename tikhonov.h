@@ -74,7 +74,9 @@ TikhonovResult* tikhonov_smooth(const double *x, const double *y, int n, double 
  * Notes:
  *   - Uses grid search with refinement (refinement only runs for n <= 5000;
  *     see tikhonov.c for the exact thresholds)
- *   - Prints detailed optimization information to stdout
+ *   - The per-lambda search trace is written to stderr as "# ..." (progress
+ *     output, not data); the selected lambda and the warnings qualifying its
+ *     reliability go to stdout as "# ..."
  *   - Search range: 1e-8 to 1e0 (tikhonov.c is the source of truth)
  *   - For small datasets (n < 3), returns conservative default
  *   - Warns if the chosen lambda lands on the edge of the search range

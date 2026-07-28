@@ -8,6 +8,10 @@
  *   stdout "# ..."        — info that should be preserved with the saved data
  *                           (affects interpretation of the result: selected fc,
  *                           grid CV, numerical-quality warnings).
+ *   stderr "# ..."        — iterative/progress traces (the Tikhonov GCV sweep)
+ *                           that would otherwise flood a redirected data file.
+ *                           The '#' prefix is kept so a caller merging the
+ *                           streams with 2>&1 still sees valid comments.
  *   stderr "Warning: ..." — runtime/operational warnings irrelevant to the
  *                           filtered output (memory usage, etc.).
  *   stderr "ERROR: ..."   — hard failures; function returns NULL/non-zero.
@@ -509,7 +513,7 @@ static double estimate_cutoff_frequency(const double *y, int n)
     } else {
         printf("# WARNING: Auto cutoff: no candidate satisfied the discrepancy "
                "principle; falling back to the largest (weakest) fc = %.4f. "
-               "Signal may be broadband — consider setting fc manually.\n",
+               "Signal may be broadband; consider setting fc manually.\n",
                selected);
     }
 

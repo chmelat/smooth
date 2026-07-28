@@ -21,6 +21,7 @@ Baseline measured on `86764a9`, for drift detection:
 | 004 | Make the Tikhonov output derivative second-order on non-uniform grids | P2 | S | — | DONE |
 | 005 | Detect missing samples in a nominally regular grid | P2 | M | — | DONE |
 | 006 | Replace the cluster detector with a sampling-regime detector | P1 | M | 005 | DONE |
+| 007 | Keep the GCV sweep trace out of the data stream, and make output ASCII | P2 | S–M | — | DONE |
 
 **001** — executed, reviewed, and **merged into `main` as `05cee50`**
 (fast-forward) on 2026-07-27. Branch `advisor/001-report-malformed-timestamp-rows`
@@ -79,7 +80,7 @@ Verified and ranked, but no plan written. Listed so they are not re-derived.
 | CLI numeric args parsed with `atoi`/`atof` (B2) | bug | S | `-p abc` silently yields degree 0; `-n 99999999999999` is signed-overflow UB (observed: 276447231). `parser.c` already uses `strtod` + `endptr` correctly — the CLI does not. Open since v5.11.22. |
 | No CI configuration | dx | S | No `.github/`, `.gitlab-ci`, or `.travis`. The `CLAUDE.md` hard rule "do not commit without `make test` passing and no new valgrind leaks" is enforced only by discipline. |
 | ~~Tikhonov output derivative is 1st-order on non-uniform grids (TK5)~~ | bug | S | **Planned as 004.** Re-analysis sharpened it — see below. |
-| `-l auto` writes 26 diagnostic lines into the data stream, 19 with UTF-8 `λ` (B8+B9) | tech-debt | S–M | Measured on 40 points. `help()` advertises Unix-filter use (`cat data \| smooth`); the rest of the program is ASCII. |
+| ~~`-l auto` writes 26 diagnostic lines into the data stream, 19 with UTF-8 `λ` (B8+B9)~~ | tech-debt | S–M | **Planned as 007.** Re-measured at `fbf4130` and found wider — see below. |
 | ~~CRLF input files fail to parse entirely~~ | bug | S | **Fixed in v5.11.50**, no plan needed. Found 2026-07-28 while planning 005. Root cause: the `-T` tokenizer at `parser.c:105-115` omitted `'\r'` from its separator set while the numeric branch at `:211-232` included it — two tokenizers in one function disagreeing about one character. Fixed by stripping the terminator once after `fgets`. `pt.dat` went from 0 to 4286 parsed rows; LF output byte-identical across 14 input/flag combinations. |
 | ~~Missing samples in a regular grid are invisible~~ | feature | M | **Planned as 005, implemented in v5.11.51.** `all.dat` was missing 58 samples while reporting "nearly uniform, clusters: 0"; `pt.dat` is missing 20.5%. Neither CV nor the cluster detector can see it. |
 
@@ -164,6 +165,51 @@ Consequences worth carrying forward:
 - The **boundary** derivative is first-order even on a uniform grid (two-point
   one-sided), measured 14x improvement there. That part of TK5 was never recorded
   and has nothing to do with non-uniformity.
+
+**007** — executed on branch `advisor/007-gcv-trace-off-stdout` as `6227f4d`,
+2026-07-28, **not yet merged or reviewed**. Every measured expectation in the
+plan was hit exactly: stdout comment lines 28 -> 7 on `test_data.dat` and 62 -> 17
+on the alternating mesh, stderr 21 and 25, the `Trace(H)` note 21 -> 1, zero
+non-ASCII bytes on either stream, `-l auto` data rows byte-identical. 138 tests,
+valgrind clean, no compiler warnings.
+
+**Executed with verification descoped at the user's instruction.** Steps 1, 5, 6
+and 7 of the plan were skipped: no baseline-capture harness, no byte-identity
+sweep across `-m 0`/`-m 3`/`-l 0.1`/`-g`, **no `tests/test_output.c` and no
+mutation test**. The suite therefore stays at 138 and nothing guards the stream
+contract — a future edit can put the trace back on stdout and every test will
+still pass. `make test` and `make test-valgrind` were run because `CLAUDE.md`
+forbids committing without them. Spot checks that were run instead: `-l auto`
+data rows diffed identical, and the reworded Butterworth cutoff line rendered on
+a uniform grid. If this is reviewed, the two tests from plan step 6 are the gap
+to close first.
+
+### B8+B9 re-measurement, 2026-07-28 — wider than recorded, and one of it is a repeat bug
+
+The original entry said "26 lines, 19 with `λ`, measured on 40 points". Re-measured
+at `fbf4130` on the tracked 100-point `test_data.dat`: **28** stdout comment lines,
+**21** non-ASCII. Three things the entry did not have:
+
+- **The glyph problem is not only `λ`, and not only in `tikhonov.c`.** `smooth.c:330`
+  prints `fc × f_Nyquist` and `butterworth.c:512` prints an em dash. Seven output
+  sites total across three files — same defect class, so 007 closes all of them,
+  the way 003 folded `savgol.h` in.
+- **`tikhonov.c:334` prints the same sentence up to 21 times.** It sits inside
+  `compute_gcv_score_robust()`, which the sweep calls once per trial $\lambda$. On a
+  60-point alternating 0.1/0.4 mesh the program emits **62 diagnostic lines for 60
+  data rows**, 21 of them byte-identical. That is a repeat bug, not volume — it
+  needs hoisting, not just redirecting.
+- **The chosen $\lambda$ is printed to stdout three times** — `tikhonov.c:422`,
+  `smooth.c:262`, `smooth.c:274`. Moving 422 to stderr resolves it without deleting
+  a line anyone might parse.
+
+The fix needs no new CLI surface. `revision.h:265-266` records that
+`compute_gcv_score_robust()` **had** a `verbose` parameter and lost it in v5.11.43
+because both call sites passed 1. Re-adding verbosity as a flag would re-litigate a
+finished ponytail audit; stream selection gets the same result for free, and the
+convention deciding each line is already written down in
+`.claude/skills/smooth-dev-tasks/SKILL.md:70-76`. Measured effect of 007: 28 stdout
+lines → 7, 21 non-ASCII → 0, 21 repeats → 1.
 
 ## Findings considered and rejected
 

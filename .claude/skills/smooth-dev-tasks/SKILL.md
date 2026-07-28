@@ -71,6 +71,9 @@ Verify with `make test-valgrind` before committing.
 
 - `stdout` as `# ...` — info that should be preserved with the saved data
   (selected parameters, grid CV, numerical-quality warnings).
+- `stderr` as `# ...` — iterative/progress traces (the Tikhonov GCV sweep) that
+  would otherwise flood a redirected data file. Keep the `#` prefix so callers
+  merging with `2>&1` still see valid comments.
 - `stderr` as `Warning: ...` — runtime/operational concerns (memory usage)
   that do not belong in the data file.
 - `stderr` as `ERROR: ...` — hard failures; function returns NULL/non-zero.

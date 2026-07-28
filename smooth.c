@@ -327,7 +327,7 @@ int main(int argc, char **argv)
         printf("# Effective sample rate: fs = %.6lG (= 1/h_avg)\n", result->sample_rate);
         printf("# Nyquist frequency: f_Nyquist = %.6lG (= fs/2)\n", result->sample_rate / 2.0);
         printf("# Normalized cutoff frequency: fc = %.6lG (where 1.0 = f_Nyquist)\n", result->cutoff_freq);
-        printf("# Actual cutoff frequency: f_cutoff = %.6lG (= fc × f_Nyquist)\n",
+        printf("# Actual cutoff frequency: f_cutoff = %.6lG (= fc * f_Nyquist)\n",
                result->cutoff_freq * result->sample_rate / 2.0);
         printf("# Effective order after filtfilt: %d\n", 2 * result->order);
 
