@@ -20,6 +20,7 @@ Baseline measured on `86764a9`, for drift detection:
 | 003 | Make the header documentation in `tikhonov.h` and `savgol.h` true | P2 | S | — | DONE |
 | 004 | Make the Tikhonov output derivative second-order on non-uniform grids | P2 | S | — | DONE |
 | 005 | Detect missing samples in a nominally regular grid | P2 | M | — | DONE |
+| 006 | Replace the cluster detector with a sampling-regime detector | P1 | M | 005 | TODO |
 
 **001** — executed, reviewed, and **merged into `main` as `05cee50`**
 (fast-forward) on 2026-07-27. Branch `advisor/001-report-malformed-timestamp-rows`
