@@ -599,8 +599,34 @@ report then names the shift and where the largest jump is:
 #   Sampling: mixed regimes - median spacing changes 10x across the record, largest jump 10x at x = 2.490000e+02
 ```
 
-Exactly one characterization is printed per grid. A clean uniform grid and a
-smoothly non-uniform one produce no line at all.
+### What gets printed
+
+Exactly one characterization is printed per grid, chosen in this order:
+
+| Condition | Line |
+|-----------|------|
+| Mixed regimes | `Sampling: mixed regimes - median spacing changes Nx across the record, largest jump Nx at x = ...` |
+| Missing samples | `Missing samples: N in M gap(s), longest run K (base period ..., largest jump Nx at x = ...)` |
+| Neither, but some neighbouring pair differs by more than 2x | `Largest spacing jump: Nx at x = ...` |
+| None of the above | nothing |
+
+The third line is the catch-all for an abrupt change that is neither a dropout
+nor a regime shift — most often a single gap that is **not** an integer multiple
+of the base period, so it cannot be counted as lost samples:
+
+```
+#   Largest spacing jump: 2.7x at x = 1.900000e+01
+```
+
+A clean uniform grid and a smoothly non-uniform one produce no line at all: the
+first has no jump, and the second has no *local* jump however much its spacing
+drifts overall.
+
+**Both detections need at least 11 points** (10 spacings). Below that a median is
+not a meaningful estimate of anything, so they are skipped entirely and no line is
+printed — a short record with an obvious gap will therefore say nothing. The rest
+of the grid analysis (CV, uniformity, min/max spacing) is unaffected and still
+reported.
 
 **[WARNING] Known limits**, all measured:
 
@@ -1444,7 +1470,8 @@ typedef struct {
     // Sampling regime + missing samples (advisory; no method reads these)
     double max_jump;        // Largest ratio between neighbouring spacings
     double max_jump_x;      // x where it occurs (the point before the gap)
-    int n_jumps;            // Neighbouring pairs exceeding the jump ratio
+    int n_jumps;            // How many neighbouring pairs exceed 2x (only the
+                            //   largest is reported; this counts them all)
     double regime_shift;    // Median spacing, first half vs second half
     int multi_regime;       // 1 = the sampling rate changed mid-record
     double h_base;          // Median spacing = base period estimate
