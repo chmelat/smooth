@@ -103,6 +103,25 @@ are correct and stay.
 
 ## The design
 
+> **CORRECTION, recorded during execution 2026-07-28.** The mode-fraction
+> discriminator specified below is **wrong and was not shipped**. It cannot
+> separate heavy scattered loss from a rate change: measured, random 40% loss
+> puts 55% of spacings at the base period and a 1 Hz to 10 Hz change puts 50%
+> there — an overlap, not a margin. The 005 regression test
+> `test_grid_dropouts_median_survives_heavy_loss` failed at step 9 and caught it.
+>
+> What shipped in v5.11.52 uses **`regime_shift`**: the ratio of the median
+> spacing of the record's first half to that of its second half. Measured, that
+> is **1.00 for dropouts of any severity** against **10.00 for a rate change**.
+> The two-part condition is unchanged in spirit — `regime_shift > 1.5 &&
+> max_jump > 2.0` — and the second half is still load-bearing, now because a
+> graded mesh shifts by a factor of 13000 between halves while its neighbouring
+> spacings never differ by more than 1.1x.
+>
+> The rest of this plan (removing the cluster detector, `max_jump` with its
+> location, dropping `coverage`, the three-way report, the test list) was
+> executed as written. Read `mode_fraction` as `regime_shift` throughout.
+
 Three quantities, all computed without any global reference.
 
 **Local jump ratio** — for each interior pair of spacings,
