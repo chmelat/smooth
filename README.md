@@ -479,6 +479,25 @@ The `-g` flag provides detailed grid uniformity statistics to help choose approp
 #   Recommendation: Grid is nearly uniform - standard methods work well
 ```
 
+On data logged at a fixed rate with occasional lost samples, an extra line
+appears:
+
+```
+# Grid uniformity analysis:
+#   n = 14506 points
+#   h_min = 1.000000e+00, h_max = 5.000000e+00, h_avg = 1.003999e+00
+#   CV = 0.078
+#   Grid type: NON-UNIFORM
+#   Uniformity score: 0.85
+#   Standard deviation: 7.867144e-02
+#   Detected clusters: 0
+#   Missing samples: 58 in 48 gap(s), longest run 4 (base period 1.000000e+00, coverage 99.6%)
+#   Recommendation: Grid is nearly uniform - standard methods work well
+```
+
+The line is printed only when dropouts are detected; a complete grid stays
+silent.
+
 ### Uniformity Thresholds
 
 | CV Range | Grid Type | Effect on Methods |
@@ -490,6 +509,81 @@ The `-g` flag provides detailed grid uniformity statistics to help choose approp
 | CV >= 0.20 | Highly non-uniform | SAVGOL rejected; BUTTERWORTH rejected; TIKHONOV uses integral-measure Gram matrix (GCV trace less accurate) |
 
 The coefficient of variation (CV) is defined as: $CV = \sigma(h) / h_{\text{avg}}$
+
+### Missing Sample Detection
+
+CV describes how much the spacing varies overall. It says nothing about *why*.
+Data logged at a fixed rate that occasionally loses a sample is a specific case
+worth separating out, because the record looks almost uniform while a
+meaningful part of it is simply absent.
+
+The example above is real: 14506 rows of 1 Hz logging, CV of 0.078 — below
+every threshold in the table — and 58 samples gone. Without the extra line the
+report reads "Grid is nearly uniform, standard methods work well", which is
+true about the smoothing and misleading about the data.
+
+**How it works.** A lost sample does not perturb the grid randomly. It leaves a
+gap that is an integer multiple of the base period: one lost sample gives
+$2h_0$, three consecutive give $4h_0$. The detector looks for exactly that
+signature.
+
+1. Estimate the base period as the **median** of all spacings,
+   $h_0 = \operatorname{median}(h_i)$.
+2. For each spacing form the ratio $r_i = h_i / h_0$ and the nearest integer
+   $k_i = \operatorname{round}(r_i)$.
+3. A spacing counts as a dropout when $|r_i - k_i| \le 0.25$ and $k_i \ge 2$;
+   it then accounts for $k_i - 1$ missing samples.
+4. The fraction of spacings lying near *any* integer multiple,
+   $\text{integer-fit}$, decides whether the grid is regular at all. The report
+   appears only when $\text{integer-fit} \ge 0.90$.
+
+The median in step 1 is the load-bearing choice. The **mean** is contaminated
+by the very gaps being searched for: on a record missing 20% of its samples the
+mean spacing reads 1.258 s where the true period is 1.000 s, and every ratio
+computed from it is wrong. The median is unaffected until more than half the
+samples are gone.
+
+Step 4 is what keeps the detector honest on data that is non-uniform by design,
+where counting "missing" samples would be meaningless:
+
+| Data | integer-fit | Reported? |
+|------|-------------|-----------|
+| Regular grid with dropouts (up to 40% loss) | 100% | Yes |
+| Randomly spaced points (Poisson) | ~50% | No |
+| Geometrically graded mesh (ratio 1.02 to 1.30) | 47% to 75% | No |
+| Alternating two-value mesh, balanced | 0% | No |
+
+A regular grid scores 100% regardless of how many samples are lost, because
+every surviving spacing is still a multiple of the base period. The margin to
+the 0.90 gate is therefore wide in the common case, but it is not uniform: a
+strongly graded mesh reaches 75%, so the threshold is closer to the rejected
+cases than the 100% column suggests.
+
+**Reported quantities**
+
+| Field | Meaning |
+|-------|---------|
+| Missing samples | Total estimated lost samples, $\sum (k_i - 1)$ |
+| gaps | How many separate interruptions they occurred in |
+| longest run | Largest number of consecutive samples lost at one point |
+| base period | The estimated $h_0$ |
+| coverage | $n / (n + n_{\text{missing}})$ — fraction of the intended record present |
+
+**[WARNING] Known limits**, all measured:
+
+- **Loss of 50% or more** breaks the estimate outright. The median jumps to
+  $2h_0$ and the count collapses; 45% loss still reports exactly.
+- **Clock jitter beyond about $\pm 15\%$** of the base period causes
+  under-reporting, as real spacings drift out of the $\pm 0.25$ window. Not a
+  concern for machine timestamps; relevant for hand-logged data.
+- **A grid whose spacings are exact multiples of each other by design** is
+  indistinguishable from dropouts. A mesh alternating $h$ and $4h$, unbalanced
+  enough that the median lands on $h$, is reported as missing samples although
+  nothing is missing. This follows from the definition, not from the
+  implementation.
+
+The detection is **advisory only**. No smoothing method reads it, and it never
+changes a method's behaviour, its parameters, or its output values.
 
 ---
 
@@ -1310,6 +1404,13 @@ typedef struct {
     int reliability_warning;// Reliability warning
     char warning_msg[512];  // Warning text
     int n_points;           // Number of points
+    // Missing sample detection (advisory; no method reads these)
+    double h_base;          // Median spacing = base period estimate
+    double integer_fit;     // Fraction of spacings near an integer multiple
+    int n_gaps;             // Gaps that are an integer multiple k >= 2
+    int n_missing;          // Estimated missing samples, sum of (k-1)
+    int max_run;            // Longest run of consecutive missing samples
+    int has_dropouts;       // 1 = regular grid with detected dropouts
 } GridAnalysis;
 
 // Grid analysis functions
