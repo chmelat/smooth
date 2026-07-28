@@ -140,9 +140,23 @@ Consequences worth carrying forward:
 
 - Any future decision keyed on "is this grid bad for derivatives" should use local
   asymmetry $|h_r-h_l|/h$, **not** `GridAnalysis.cv`.
-- `grid_analysis.c`'s cluster detector does not catch this either: it looks for a
-  1:10 spacing ratio, and the 1:4 alternating mesh above reports `clusters: 0`
-  while being the worst case for the derivative.
+- `grid_analysis.c`'s cluster detector does not catch this either, and is far
+  stricter than "a 1:10 spacing ratio" (as an earlier revision of this note
+  claimed). The test at `grid_analysis.c:90-97` is an AND of two thresholds taken
+  against the *global* mean, `h_prev < 0.1*h_avg && h_curr > 10*h_avg`, so
+  neighbouring spacings must differ by more than **100x** and straddle `h_avg`.
+  Three measured consequences: the 1:4 alternating mesh reports `clusters: 0`
+  while being the worst case for the derivative; a single 200x gap in an
+  otherwise uniform grid also reports `0`, because "small" is measured against
+  `h_avg` rather than the local neighbourhood; and dense blocks need roughly 10+
+  points each to register at all, since $h_{avg} \approx (k-1)G/(km)$ makes
+  $G > 10 h_{avg}$ require $m \gtrsim 10$ — five blocks of five points score `0`
+  even with a 1000x jump. It also counts trailing edges only (small gap followed
+  by large), so $k$ blocks yield $k-1$.
+- `n_clusters` is advisory only: no method reads it. Its sole consumers are the
+  warning at `grid_analysis.c:162` and the `-g` report line at `:238`; every
+  method policy gate runs off CV. There is no test coverage for it — `grep
+  cluster tests/*.c` returns nothing.
 - The **boundary** derivative is first-order even on a uniform grid (two-point
   one-sided), measured 14x improvement there. That part of TK5 was never recorded
   and has nothing to do with non-uniformity.
