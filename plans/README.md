@@ -19,7 +19,7 @@ Baseline measured on `86764a9`, for drift detection:
 | 002 | Add end-to-end tests for the timestamp-mode input parser | P1 | S–M | 001 | DONE |
 | 003 | Make the header documentation in `tikhonov.h` and `savgol.h` true | P2 | S | — | DONE |
 | 004 | Make the Tikhonov output derivative second-order on non-uniform grids | P2 | S | — | DONE |
-| 005 | Detect missing samples in a nominally regular grid | P2 | M | — | TODO |
+| 005 | Detect missing samples in a nominally regular grid | P2 | M | — | DONE |
 
 **001** — executed, reviewed, and **merged into `main` as `05cee50`**
 (fast-forward) on 2026-07-27. Branch `advisor/001-report-malformed-timestamp-rows`
@@ -80,7 +80,7 @@ Verified and ranked, but no plan written. Listed so they are not re-derived.
 | ~~Tikhonov output derivative is 1st-order on non-uniform grids (TK5)~~ | bug | S | **Planned as 004.** Re-analysis sharpened it — see below. |
 | `-l auto` writes 26 diagnostic lines into the data stream, 19 with UTF-8 `λ` (B8+B9) | tech-debt | S–M | Measured on 40 points. `help()` advertises Unix-filter use (`cat data \| smooth`); the rest of the program is ASCII. |
 | ~~CRLF input files fail to parse entirely~~ | bug | S | **Fixed in v5.11.50**, no plan needed. Found 2026-07-28 while planning 005. Root cause: the `-T` tokenizer at `parser.c:105-115` omitted `'\r'` from its separator set while the numeric branch at `:211-232` included it — two tokenizers in one function disagreeing about one character. Fixed by stripping the terminator once after `fgets`. `pt.dat` went from 0 to 4286 parsed rows; LF output byte-identical across 14 input/flag combinations. |
-| Missing samples in a regular grid are invisible | feature | M | **Planned as 005.** `all.dat` is missing 58 samples and reports "nearly uniform, clusters: 0"; `pt.dat` is missing 20.5%. Neither CV nor the cluster detector can see it — see 005 for the measured design. |
+| ~~Missing samples in a regular grid are invisible~~ | feature | M | **Planned as 005, implemented in v5.11.51.** `all.dat` was missing 58 samples while reporting "nearly uniform, clusters: 0"; `pt.dat` is missing 20.5%. Neither CV nor the cluster detector can see it. |
 
 **003** — executed, reviewed, and **merged into `main` as `d57a778`**
 (fast-forward) on 2026-07-27. Branch `advisor/003-fix-header-doc-drift` retained.
