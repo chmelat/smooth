@@ -67,6 +67,19 @@ int parse_input(FILE *fp,
       }
     }
 
+    /* Strip the line terminator, CR included, so CRLF input parses. The two
+     * tokenizers below disagree about '\r': the numeric branch treats it as a
+     * terminator, the timestamp branch does not, so on a CRLF file the CR stuck
+     * to the last token and strtod rejected it — every row of the file was
+     * dropped as non-numeric. Stripping once here fixes both branches and any
+     * future one. Must run after the truncation check above, which needs the
+     * raw '\n', and before the comment strip below. */
+    {
+      size_t llen = strlen(line);
+      while (llen > 0 && (line[llen-1] == '\n' || line[llen-1] == '\r'))
+        line[--llen] = '\0';
+    }
+
     /* Strip '#' comment (full-line or inline) through end of line. A line that
      * is nothing but a comment becomes empty and is dropped by the blank-line
      * checks below, so it never counts as a skipped data row. */

@@ -171,6 +171,9 @@ void test_parser_ts_k_maps_y_after_timestamp_space_format(void);
 void test_parser_ts_y_before_timestamp(void);
 void test_parser_ts_malformed_row_is_reported(void);
 void test_parser_ts_nonnumeric_y_is_reported(void);
+void test_parser_crlf_timestamp_space_format(void);
+void test_parser_crlf_timestamp_t_format(void);
+void test_parser_crlf_numeric_with_comments(void);
 
 // Testy pro timestamp.c
 void test_parse_timestamp_space_separator(void);
@@ -451,6 +454,9 @@ int main(void) {
     RUN_TEST(test_parser_ts_y_before_timestamp);
     RUN_TEST(test_parser_ts_malformed_row_is_reported);
     RUN_TEST(test_parser_ts_nonnumeric_y_is_reported);
+    RUN_TEST(test_parser_crlf_timestamp_space_format);
+    RUN_TEST(test_parser_crlf_timestamp_t_format);
+    RUN_TEST(test_parser_crlf_numeric_with_comments);
 
     /* UNITY_END() ukončí Unity framework a vrátí výsledek
      * Návratová hodnota:

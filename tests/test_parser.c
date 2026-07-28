@@ -409,3 +409,73 @@ void test_parser_ts_nonnumeric_y_is_reported(void) {
     TEST_ASSERT_EQUAL_INT(-1, r.skip_malformed);
     remove(path);
 }
+
+/* CRLF input, -T with a space-separated timestamp.
+ *
+ * The timestamp tokenizer treated ' ', '\t' and '\n' as separators but not
+ * '\r', so on a CRLF file the CR stayed attached to the last token and strtod
+ * rejected it: every row was counted as non-numeric and the run died with
+ * "ERROR: No valid data points found". The numeric branch never had the bug —
+ * it lists '\r' explicitly — which is why this went unnoticed. Fixed in
+ * v5.11.50 by stripping the terminator once after fgets.
+ *
+ * A regression here reports 0 data rows and skip_nonnumeric == 5. */
+void test_parser_crlf_timestamp_space_format(void) {
+    const char *path = "/tmp/test_parser_crlf_ts_space.dat";
+    write_fixture(path,
+        "2026-01-01 00:00:00 10.0\r\n"
+        "2026-01-01 00:00:01 11.0\r\n"
+        "2026-01-01 00:00:02 12.0\r\n"
+        "2026-01-01 00:00:03 13.0\r\n"
+        "2026-01-01 00:00:04 14.0\r\n");
+    SmoothRunTs r = run_smooth_ts("-T -m0 -n3 -p1", path);
+    TEST_ASSERT_EQUAL_INT(5, r.data_rows);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 10.0, r.first_y);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 14.0, r.last_y);
+    TEST_ASSERT_EQUAL_INT(-1, r.skip_nonnumeric);
+    TEST_ASSERT_EQUAL_INT(-1, r.skip_malformed);
+    remove(path);
+}
+
+/* Same bug via the T-separated timestamp form (ts_token_count = 1), which
+ * takes a different assembly path at parser.c:135-137. */
+void test_parser_crlf_timestamp_t_format(void) {
+    const char *path = "/tmp/test_parser_crlf_ts_t.dat";
+    write_fixture(path,
+        "2026-01-01T00:00:00 10.0\r\n"
+        "2026-01-01T00:00:01 11.0\r\n"
+        "2026-01-01T00:00:02 12.0\r\n"
+        "2026-01-01T00:00:03 13.0\r\n"
+        "2026-01-01T00:00:04 14.0\r\n");
+    SmoothRunTs r = run_smooth_ts("-T -m0 -n3 -p1", path);
+    TEST_ASSERT_EQUAL_INT(5, r.data_rows);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 10.0, r.first_y);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 14.0, r.last_y);
+    TEST_ASSERT_EQUAL_INT(-1, r.skip_nonnumeric);
+    TEST_ASSERT_EQUAL_INT(-1, r.skip_malformed);
+    remove(path);
+}
+
+/* CRLF on the plain numeric path, with a comment line and a blank line mixed
+ * in. This path already handled '\r'; the test pins that the shared strip did
+ * not change it, and that comment stripping still works when '#' is followed
+ * by CRLF rather than LF. */
+void test_parser_crlf_numeric_with_comments(void) {
+    const char *path = "/tmp/test_parser_crlf_num.dat";
+    write_fixture(path,
+        "# header comment\r\n"
+        "\r\n"
+        "1.0 10.0\r\n"
+        "2.0 20.0  # inline comment\r\n"
+        "3.0 30.0\r\n"
+        "4.0 40.0\r\n"
+        "5.0 50.0\r\n");
+    SmoothRun r = run_smooth("-m0 -n3 -p1", path);
+    TEST_ASSERT_EQUAL_INT(5, r.data_rows);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 1.0,  r.first_x);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 10.0, r.first_y);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 5.0,  r.last_x);
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 50.0, r.last_y);
+    TEST_ASSERT_EQUAL_INT(0, r.has_skip_msg);
+    remove(path);
+}

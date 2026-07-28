@@ -3,7 +3,36 @@
  *
  * Version History
  * ---------------
- * v5.11.49 (current): Make the Tikhonov `-d` output second order on
+ * v5.11.50 (current): Parse CRLF input files. The `-T` tokenizer at
+ *           parser.c:105-115 treated ' ', '\t' and '\n' as separators but
+ *           not '\r', so on a file with CRLF line endings the carriage
+ *           return stayed attached to the last whitespace token. strtod
+ *           then failed the `endptr != y_tok_end` check at :163 and every
+ *           row was counted into skipped_nonnumeric, ending the run with
+ *           "ERROR: No valid data points found" plus a message blaming the
+ *           data ("non-numeric or NaN/Inf value in column 2") rather than
+ *           the line endings. Total failure, not degradation: a 4286-row
+ *           file produced zero points. Any file that had passed through a
+ *           Windows editor or a Windows logger was rejected wholesale, and
+ *           the diagnostic pointed the user at the wrong thing. The plain
+ *           numeric branch never had the bug — it lists '\r' explicitly at
+ *           :211-232 — which is exactly why this stayed hidden: the two
+ *           tokenizers in the same function disagreed about one character.
+ *           Fixed at the root rather than per-branch: the line terminator,
+ *           CR included, is now stripped once after fgets (parser.c:70-81),
+ *           before the comment strip and after the truncation check, which
+ *           still needs the raw '\n'. One guard covers both tokenizers and
+ *           any future one. Verified: output on LF input is byte-identical
+ *           to v5.11.49 across all four methods plus -g and -T (14
+ *           input/flag combinations, zero differing bytes); CRLF edge cases
+ *           all parse — missing final newline, blank lines, full-line and
+ *           inline comments, doubled CR, trailing whitespace. Three
+ *           regression tests added (parser 14 -> 17, suite 125 -> 128); the
+ *           two -T ones fail against the old parser with 0 rows instead of
+ *           5, while the numeric one passes there by design, guarding that
+ *           the shared strip did not disturb the branch that was already
+ *           correct. Zero valgrind leaks.
+ * v5.11.49: Make the Tikhonov `-d` output second order on
  *           non-uniform grids. compute_derivatives() used a difference that
  *           is symmetric in index but not in coordinate,
  *           (u_{i+1}-u_{i-1})/(x_{i+1}-x_{i-1}), whose Taylor expansion leaves
@@ -479,5 +508,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.49"
+#define VERSION "5.11.50"
 #define REVDATE "2026-07-28"
