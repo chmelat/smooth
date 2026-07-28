@@ -16,13 +16,13 @@
 #define THRESH_CV_HIGH          0.5   /* CV level suggesting adaptive methods */
 #define THRESH_CV_SEVERE        1.0   /* CV level indicating unreliable data */
 
-#define CLUSTER_RATIO_SMALL     0.1   /* Factor of avg for "small" gap */
-#define CLUSTER_RATIO_LARGE     10.0  /* Factor of avg for "large" gap */
 #define UNIFORMITY_DECAY_FACTOR 2.0   /* For score calculation: exp(-CV * factor) */
 
 #define DROPOUT_TOL        0.25  /* |r - round(r)| tolerance, in units of h_base */
 #define DROPOUT_FIT_MIN    0.90  /* Min integer_fit to treat the grid as regular */
 #define DROPOUT_MIN_SPACES 10    /* Below this the median is not meaningful */
+#define REGIME_SHIFT_MIN   1.5   /* Half-to-half median ratio that counts as a shift */
+#define JUMP_RATIO         2.0   /* Neighbouring-spacing ratio that counts as a jump */
 
 /* qsort comparator for the median. Returns via two comparisons rather than
  * (int)(da - db), which truncates to 0 for spacings less than 1.0 apart — the
@@ -30,6 +30,11 @@
 static int cmp_double(const void *a, const void *b) {
     double da = *(const double *)a, db = *(const double *)b;
     return (da > db) - (da < db);
+}
+
+/* Median of an already-sorted range. */
+static double median_sorted(const double *v, int len) {
+    return (len % 2) ? v[len/2] : 0.5 * (v[len/2 - 1] + v[len/2]);
 }
 
 /* Helper for safe string appending */
@@ -44,7 +49,6 @@ GridAnalysis* analyze_grid(const double *x, int n)
 {
     GridAnalysis *analysis;
     int i;
-    double h_prev = 0.0; /* Stores spacing from previous iteration for cluster detection */
     
     /* Input validation */
     if (x == NULL || n < 1) {
@@ -78,8 +82,8 @@ GridAnalysis* analyze_grid(const double *x, int n)
     analysis->h_max = 0.0;
     double sum_sq_diff = 0.0;
     
-    /* * MAIN LOOP (Single Pass) 
-     * Calculates: Min, Max, STD, Spacings, and Clusters
+    /* * MAIN LOOP (Single Pass)
+     * Calculates: Min, Max, STD
      */
     for (i = 0; i < n-1; i++) {
         double h_curr = x[i+1] - x[i];
@@ -98,17 +102,6 @@ GridAnalysis* analyze_grid(const double *x, int n)
         /* 2. Standard Deviation accumulation */
         double dev = h_curr - analysis->h_avg;
         sum_sq_diff += dev * dev;
-
-        /* 3. Cluster Detection */
-        /* Logic: A cluster boundary is a small gap followed by a large gap */
-        if (i > 0) {
-            if (h_prev < CLUSTER_RATIO_SMALL * analysis->h_avg && 
-                h_curr > CLUSTER_RATIO_LARGE * analysis->h_avg) {
-                analysis->n_clusters++;
-            }
-        }
-        
-        h_prev = h_curr; /* Save for next iteration */
     }
 
     /* Finalize statistics
@@ -159,7 +152,7 @@ GridAnalysis* analyze_grid(const double *x, int n)
             qsort(hs, (size_t)(n - 1), sizeof(double), cmp_double);
 
             int m = n - 1;
-            analysis->h_base = (m % 2) ? hs[m/2] : 0.5 * (hs[m/2 - 1] + hs[m/2]);
+            analysis->h_base = median_sorted(hs, m);
 
             if (analysis->h_base > 0.0) {
                 int near = 0;
@@ -180,9 +173,61 @@ GridAnalysis* analyze_grid(const double *x, int n)
                     }
                 }
                 analysis->integer_fit = (double)near / (double)m;
+
+                /* Regime shift: the median spacing of the first half of the
+                 * record against that of the second. This measures directly
+                 * what "the sampling regime changed" means, and unlike a count
+                 * of spacings sitting at the base period it does not confuse
+                 * heavy scattered loss with a rate change — measured, random
+                 * 40% loss puts only 55% of spacings at the base period while a
+                 * 1 Hz -> 10 Hz change puts 50% there, an overlap rather than a
+                 * margin. The half-to-half ratio is 1.00 against 10.00.
+                 * hs is re-filled because the sort above destroyed grid order. */
+                int half = m / 2;
+                analysis->regime_shift = 1.0;
+                if (half >= 1) {
+                    for (i = 0; i < m; i++) hs[i] = x[i+1] - x[i];
+                    qsort(hs, (size_t)half, sizeof(double), cmp_double);
+                    qsort(hs + half, (size_t)(m - half), sizeof(double), cmp_double);
+                    double m_first  = median_sorted(hs, half);
+                    double m_second = median_sorted(hs + half, m - half);
+                    if (m_first > 0.0 && m_second > 0.0) {
+                        analysis->regime_shift = (m_first > m_second)
+                                               ? m_first / m_second
+                                               : m_second / m_first;
+                    }
+                }
+
+                /* Largest local jump between neighbouring spacings. Purely
+                 * local — no global reference — because the events this
+                 * describes (rate change, interruption, burst) are local. */
+                analysis->max_jump = 1.0;
+                for (i = 0; i < n-2; i++) {
+                    double a = x[i+1] - x[i], b = x[i+2] - x[i+1];
+                    double rho = (a > b) ? a / b : b / a;
+                    if (rho > JUMP_RATIO) analysis->n_jumps++;
+                    if (rho > analysis->max_jump) {
+                        analysis->max_jump = rho;
+                        analysis->max_jump_x = x[i+1];
+                    }
+                }
+
+                /* BOTH conditions are required. A shifted median alone would
+                 * misclassify a smoothly graded mesh, whose halves differ by a
+                 * factor of 13000 while no two neighbouring spacings differ by
+                 * more than 1.1x — a gradual trend, not a regime change. */
+                analysis->multi_regime =
+                    (analysis->regime_shift > REGIME_SHIFT_MIN &&
+                     analysis->max_jump > JUMP_RATIO) ? 1 : 0;
+
+                /* A changed sampling regime is not lost samples: without this
+                 * condition a 1 Hz -> 10 Hz record claimed 2241 missing
+                 * samples and 18.2% coverage when nothing was missing at all
+                 * (v5.11.51 behaviour). */
                 analysis->has_dropouts =
                     (analysis->integer_fit >= DROPOUT_FIT_MIN &&
-                     analysis->n_missing > 0) ? 1 : 0;
+                     analysis->n_missing > 0 &&
+                     !analysis->multi_regime) ? 1 : 0;
             }
             free(hs);
         }
@@ -221,15 +266,6 @@ GridAnalysis* analyze_grid(const double *x, int n)
         append_warning(analysis->warning_msg, sizeof(analysis->warning_msg), temp_msg);
     }
     
-    /* Append cluster warning if needed */
-    if (analysis->n_clusters > 0) {
-        analysis->reliability_warning = 1;
-        snprintf(temp_msg, sizeof(temp_msg), 
-                "\nWARNING: %d abrupt spacing changes detected (possible data clustering).\n"
-                "Standard methods may over-smooth clustered regions.", 
-                analysis->n_clusters);
-        append_warning(analysis->warning_msg, sizeof(analysis->warning_msg), temp_msg);
-    }
     
     return analysis;
 }
@@ -298,17 +334,25 @@ void print_grid_analysis(GridAnalysis *analysis, int verbose, const char *prefix
     if (verbose >= 1) {
         /* Detailed report */
         printf("%s  Standard deviation: %.6e\n", prefix, analysis->h_std);
-        printf("%s  Detected clusters: %d\n", prefix, analysis->n_clusters);
         /* Printed only when detected: a clean grid should not gain a line
          * saying so, and a genuinely non-uniform grid must not be given a
          * meaningless missing-sample count. */
-        if (analysis->has_dropouts) {
+        /* Exactly one characterization per grid, most specific first. Nothing
+         * is printed for a clean uniform grid or a smoothly non-uniform one. */
+        if (analysis->multi_regime) {
+            printf("%s  Sampling: mixed regimes - median spacing changes %.3gx "
+                   "across the record, largest jump %.3gx at x = %.6e\n",
+                   prefix, analysis->regime_shift,
+                   analysis->max_jump, analysis->max_jump_x);
+        } else if (analysis->has_dropouts) {
             printf("%s  Missing samples: %d in %d gap(s), longest run %d "
-                   "(base period %.6e, coverage %.1f%%)\n",
+                   "(base period %.6e, largest jump %.3gx at x = %.6e)\n",
                    prefix, analysis->n_missing, analysis->n_gaps,
                    analysis->max_run, analysis->h_base,
-                   100.0 * analysis->n_points /
-                       (analysis->n_points + analysis->n_missing));
+                   analysis->max_jump, analysis->max_jump_x);
+        } else if (analysis->max_jump > JUMP_RATIO) {
+            printf("%s  Largest spacing jump: %.3gx at x = %.6e\n",
+                   prefix, analysis->max_jump, analysis->max_jump_x);
         }
         printf("%s  Recommendation: %s\n", prefix, get_grid_recommendation(analysis));
     }

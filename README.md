@@ -475,7 +475,6 @@ The `-g` flag provides detailed grid uniformity statistics to help choose approp
 #   Grid type: NON-UNIFORM
 #   Uniformity score: 0.90
 #   Standard deviation: 5.200000e-04
-#   Detected clusters: 0
 #   Recommendation: Grid is nearly uniform - standard methods work well
 ```
 
@@ -490,8 +489,7 @@ appears:
 #   Grid type: NON-UNIFORM
 #   Uniformity score: 0.85
 #   Standard deviation: 7.867144e-02
-#   Detected clusters: 0
-#   Missing samples: 58 in 48 gap(s), longest run 4 (base period 1.000000e+00, coverage 99.6%)
+#   Missing samples: 58 in 48 gap(s), longest run 4 (base period 1.000000e+00, largest jump 5x at x = 1.068800e+04)
 #   Recommendation: Grid is nearly uniform - standard methods work well
 ```
 
@@ -567,7 +565,42 @@ cases than the 100% column suggests.
 | gaps | How many separate interruptions they occurred in |
 | longest run | Largest number of consecutive samples lost at one point |
 | base period | The estimated $h_0$ |
-| coverage | $n / (n + n_{\text{missing}})$ — fraction of the intended record present |
+| largest jump | Biggest ratio between neighbouring spacings, and the $x$ it occurs at |
+
+### Sampling Regime
+
+Missing samples are one reason a record is not uniform. Another is that the
+sampling itself changed — a logger reconfigured mid-run, or two runs
+concatenated. Both leave gaps that are integer multiples of the base period, so
+the test above cannot tell them apart on its own: a record that switches from
+1 Hz to 10 Hz would otherwise be reported as thousands of missing samples when
+in fact nothing is missing.
+
+A second, purely local test separates them. A record is treated as **mixed
+regimes** when both of the following hold:
+
+- the median spacing of its **first half** differs from that of its **second
+  half** by more than 1.5x, and
+- some pair of **neighbouring** spacings differs by more than 2x.
+
+Both are needed. The first alone would misclassify a smoothly graded mesh, whose
+halves differ by a factor of 13000 while no two adjacent spacings differ by more
+than 1.1x — that is a gradual trend, not a change of regime. The second alone
+fires on any single gap.
+
+Measured, the half-to-half ratio is **1.0 for dropouts of any severity**,
+including 40% random loss, against **10.0** for a 1 Hz to 10 Hz change.
+
+When mixed regimes are detected the missing-sample count is suppressed, since
+counting "lost" samples across two different sampling rates is meaningless. The
+report then names the shift and where the largest jump is:
+
+```
+#   Sampling: mixed regimes - median spacing changes 10x across the record, largest jump 10x at x = 2.490000e+02
+```
+
+Exactly one characterization is printed per grid. A clean uniform grid and a
+smoothly non-uniform one produce no line at all.
 
 **[WARNING] Known limits**, all measured:
 
@@ -581,9 +614,14 @@ cases than the 100% column suggests.
   enough that the median lands on $h$, is reported as missing samples although
   nothing is missing. This follows from the definition, not from the
   implementation.
+- **Deliberate interruptions are counted as missing samples.** An instrument
+  paused for an hour and restarted reports one gap of 3599 periods. The count is
+  factually right — those samples were not taken — but the framing is "loss"
+  where the user may think "pause". The largest-jump location makes it visible
+  as a single interruption rather than scattered loss.
 
-The detection is **advisory only**. No smoothing method reads it, and it never
-changes a method's behaviour, its parameters, or its output values.
+Both detections are **advisory only**. No smoothing method reads them, and they
+never change a method's behaviour, its parameters, or its output values.
 
 ---
 
@@ -1400,11 +1438,15 @@ typedef struct {
     double cv;              // Coefficient of variation
     double uniformity_score;// Uniformity score (0-1)
     int is_uniform;         // 1 = uniform, 0 = non-uniform
-    int n_clusters;         // Number of detected clusters
     int reliability_warning;// Reliability warning
     char warning_msg[512];  // Warning text
     int n_points;           // Number of points
-    // Missing sample detection (advisory; no method reads these)
+    // Sampling regime + missing samples (advisory; no method reads these)
+    double max_jump;        // Largest ratio between neighbouring spacings
+    double max_jump_x;      // x where it occurs (the point before the gap)
+    int n_jumps;            // Neighbouring pairs exceeding the jump ratio
+    double regime_shift;    // Median spacing, first half vs second half
+    int multi_regime;       // 1 = the sampling rate changed mid-record
     double h_base;          // Median spacing = base period estimate
     double integer_fit;     // Fraction of spacings near an integer multiple
     int n_gaps;             // Gaps that are an integer multiple k >= 2

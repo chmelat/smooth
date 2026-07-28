@@ -21,12 +21,25 @@ typedef struct {
     
     /* Additional statistics */
     int n_points;           /* Number of points */
-    int n_clusters;         /* Number of detected clusters */
+
+    /* Sampling regime. All local: no global mean is involved, because the
+     * events these describe are local. max_jump is the largest ratio between
+     * neighbouring spacings, regime_shift how much the typical spacing differs
+     * between the two halves of the record. Advisory only; no method reads them. */
+    double max_jump;      /* max(h_i,h_i+1)/min(h_i,h_i+1); 1.0 on a uniform grid */
+    double max_jump_x;    /* x where max_jump occurs: the point BEFORE the gap */
+    int    n_jumps;       /* Neighbouring pairs whose ratio exceeds JUMP_RATIO */
+    double regime_shift;  /* Ratio of the median spacing of the first half of the
+                           * record to that of the second half (>= 1.0). Measures
+                           * directly what "the sampling regime changed" means.
+                           * 1.0 for dropouts of any severity, 10.0 for a
+                           * 1 Hz -> 10 Hz change. */
+    int    multi_regime;  /* 1 if the record mixes two or more sampling regimes */
     double uniformity_score; /* Score 0-1, where 1 is perfectly uniform */
 
     /* Dropout detection: a nominally regular grid with missing samples leaves
      * gaps that are integer multiples of the base period. Distinct from
-     * n_clusters (abrupt spacing change) and from cv (overall spread) — a grid
+     * multi_regime (the sampling rate changed) and from cv (overall spread) — a grid
      * can have any combination of the three. Advisory only: no smoothing method
      * reads these fields. All zero when has_dropouts == 0.
      *

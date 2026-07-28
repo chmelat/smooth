@@ -453,6 +453,146 @@ void test_grid_dropouts_short_grid_guard(void) {
     free_grid_analysis(result);
 }
 
+/* TEST 13: Změna vzorkovací frekvence NENÍ ztráta vzorků
+ *
+ * This is the corrective test. Both halves of the record have spacings that are
+ * integer multiples of the median, so integer_fit reaches 1.00 and the v5.11.51
+ * gate passed: it reported "2241 missing samples, coverage 18.2%" for a record
+ * where nothing is missing at all. regime_shift separates the two cases: it is
+ * 1.0 for dropouts of any severity and 10.0 here.
+ */
+void test_grid_regime_rate_change_detected(void) {
+    /* ARRANGE: 250 points at spacing 1.0, then 250 at 0.1 */
+    double x[500];
+    for (int i = 0; i < 250; i++) x[i] = i * 1.0;
+    for (int i = 0; i < 250; i++) x[250 + i] = x[249] + (i + 1) * 0.1;
+
+    /* ACT */
+    GridAnalysis *result = analyze_grid(x, 500);
+
+    /* ASSERT */
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(1, result->multi_regime);
+    TEST_ASSERT_EQUAL_INT(0, result->has_dropouts);
+    TEST_ASSERT_DOUBLE_WITHIN(0.1, 10.0, result->regime_shift);
+    TEST_ASSERT_DOUBLE_WITHIN(0.1, 10.0, result->max_jump);
+
+    /* CLEANUP */
+    free_grid_analysis(result);
+}
+
+/* TEST 14: Stupňovaná mřížka NENÍ smíšený režim
+ *
+ * Pins the two-part multi_regime condition. A graded mesh has a low mode
+ * fraction (spacings vary continuously, so few sit at the median) but no jump
+ * at all. Testing regime_shift alone would let an `||` slip in and every
+ * graded mesh would be misreported -- the exact mistake made while prototyping
+ * this design.
+ */
+void test_grid_regime_graded_mesh_is_not_mixed(void) {
+    /* ARRANGE: geometric grading r = 1.10 */
+    double x[60];
+    double h = 0.1;
+    x[0] = 0.0;
+    for (int i = 1; i < 60; i++) { x[i] = x[i-1] + h; h *= 1.10; }
+
+    /* ACT */
+    GridAnalysis *result = analyze_grid(x, 60);
+
+    /* ASSERT */
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(0, result->multi_regime);
+    /* The halves differ enormously -- a graded mesh grows without bound ... */
+    TEST_ASSERT_GREATER_THAN_DOUBLE(1.5, result->regime_shift);
+    /* ... yet no two NEIGHBOURING spacings differ by more than 1.1x, which is
+     * why this is a gradual trend and not a regime change. Assert both: this
+     * fixture is the reason multi_regime needs two conditions. */
+    TEST_ASSERT_LESS_THAN_DOUBLE(2.0, result->max_jump);
+
+    /* CLEANUP */
+    free_grid_analysis(result);
+}
+
+/* TEST 15: Uniformní mřížka nemá žádný skok */
+void test_grid_regime_uniform_has_no_jump(void) {
+    /* ARRANGE */
+    double x[40];
+    for (int i = 0; i < 40; i++) x[i] = i * 1.0;
+
+    /* ACT */
+    GridAnalysis *result = analyze_grid(x, 40);
+
+    /* ASSERT */
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-12, 1.0, result->max_jump);
+    TEST_ASSERT_EQUAL_INT(0, result->n_jumps);
+    TEST_ASSERT_EQUAL_INT(0, result->multi_regime);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-12, 1.0, result->regime_shift);
+
+    /* CLEANUP */
+    free_grid_analysis(result);
+}
+
+/* TEST 16: Izolovaná mezera se najde A lokalizuje
+ *
+ * The case the removed cluster detector scored 0 on: it required
+ * h_prev < 0.1*h_avg while h_prev here is 1.0 and 0.1*h_avg is ~0.55.
+ *
+ * max_jump_x is x[i+1] -- the point BETWEEN the two spacings compared, i.e.
+ * the last sample before the gap. Here the compared spacings are h[18] = 1.0
+ * and h[19] = 200.0, so the location is x[19] = 19.0.
+ *
+ * This fixture also sets has_dropouts (a 200x gap is an integer multiple, so
+ * 199 "missing"). That is the instrument-restart case in miniature and is
+ * correct; the assertions here are about the jump, not the classification.
+ */
+void test_grid_regime_isolated_gap_located(void) {
+    /* ARRANGE: 20 points at 1.0, a 200.0 gap, then 20 more at 1.0 */
+    double x[40];
+    for (int i = 0; i < 20; i++) x[i] = i * 1.0;
+    for (int i = 0; i < 20; i++) x[20 + i] = x[19] + 200.0 + i * 1.0;
+
+    /* ACT */
+    GridAnalysis *result = analyze_grid(x, 40);
+
+    /* ASSERT */
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_DOUBLE_WITHIN(1.0, 200.0, result->max_jump);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-12, 19.0, result->max_jump_x);
+
+    /* CLEANUP */
+    free_grid_analysis(result);
+}
+
+/* TEST 17: Zpřísněná brána nesmí rozbít detekci výpadků z plánu 005
+ *
+ * Same fixture as test_grid_dropouts_detected. A regular grid with scattered
+ * dropouts keeps a high mode fraction, so multi_regime must stay 0 and the
+ * dropout report must survive unchanged.
+ */
+void test_grid_regime_dropouts_still_reported(void) {
+    /* ARRANGE: uniform base 1.0, 40 nominal points, drop 10 and 20-22 */
+    double x[36];
+    int n = 0;
+    for (int i = 0; i < 40; i++) {
+        if (i == 10 || i == 20 || i == 21 || i == 22) continue;
+        x[n++] = i * 1.0;
+    }
+
+    /* ACT */
+    GridAnalysis *result = analyze_grid(x, n);
+
+    /* ASSERT */
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(1, result->has_dropouts);
+    TEST_ASSERT_EQUAL_INT(0, result->multi_regime);
+    TEST_ASSERT_EQUAL_INT(4, result->n_missing);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-12, 1.0, result->regime_shift);
+
+    /* CLEANUP */
+    free_grid_analysis(result);
+}
+
 /* ============================================================================
  * POZNÁMKY K TESTŮM:
  * ============================================================================

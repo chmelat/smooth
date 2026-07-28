@@ -3,7 +3,52 @@
  *
  * Version History
  * ---------------
- * v5.11.51 (current): Detect missing samples in a nominally regular grid.
+ * v5.11.52 (current): Replace the cluster detector with sampling-regime
+ *           detection, and correct v5.11.51. Two problems with one root
+ *           cause — a local phenomenon judged against a global statistic.
+ *           First, v5.11.51's dropout gate could not tell lost samples from
+ *           a changed sampling regime. On a record where the logger switched
+ *           from 1 Hz to 10 Hz it reported "2241 missing samples ...
+ *           coverage 18.2%" when nothing was missing at all: both halves
+ *           have spacings that are integer multiples of the median, so
+ *           integer_fit reached 1.00 and the gate passed. That case is
+ *           common — it happens whenever a logger is reconfigured or two
+ *           runs are concatenated. `coverage` compounded it by framing a
+ *           deliberate 1 h pause as 88% data loss; it is gone, replaced by
+ *           the location of the largest spacing jump, which the detector
+ *           never reported and which is what a user actually needs.
+ *           Second, the cluster detector never worked. It required
+ *           h_prev < 0.1*h_avg && h_curr > 10*h_avg, i.e. neighbouring
+ *           spacings differing by more than 100x while straddling the
+ *           global mean, so an isolated 200x gap scored 0, dense blocks
+ *           needed 10+ points each (five blocks of five scored 0 even with
+ *           a 1000x jump), and only trailing edges counted, so k blocks
+ *           yielded k-1. Across the whole scenario set used to plan this it
+ *           fired once. It had zero test coverage. Removed outright rather
+ *           than repaired: max_jump answers the same question better, with
+ *           no global reference and with a location attached. New fields:
+ *           max_jump, max_jump_x, n_jumps, regime_shift, multi_regime.
+ *           A record is "mixed regimes" only when the median spacing of its
+ *           first half differs from that of its second AND a real local jump
+ *           exists. Both halves matter: a smoothly graded mesh shifts by a
+ *           factor of 13000 between halves while no two neighbouring
+ *           spacings differ by more than 1.1x, and calling that a regime
+ *           change would be wrong. The first design of this used the
+ *           fraction of spacings sitting at the base period instead, and was
+ *           discarded on measurement — it cannot separate heavy scattered
+ *           loss from a rate change (random 40% loss puts 55% of spacings at
+ *           the base period, a rate change 50%: an overlap, not a margin).
+ *           The half-to-half median ratio is 1.00 for dropouts of any
+ *           severity against 10.00 for a rate change. Caught by the
+ *           regression test from 005, which is why that test existed.
+ *           Output is now exactly one characterization per grid, printed
+ *           only when there is something to say: clean and smoothly
+ *           non-uniform grids print nothing. Verified across ten scenarios
+ *           plus both real data files; all.dat still reports 58 missing in
+ *           48 gaps. Five tests (grid_analysis 12 -> 17, suite 133 -> 138).
+ *           No new allocation — the existing scratch array is reused for the
+ *           half medians. Zero leaks.
+ * v5.11.51: Detect missing samples in a nominally regular grid.
  *           Fixed-rate logging drops samples, and when it does the gap left
  *           behind is an integer multiple of the base period: one lost
  *           sample gives 2*h_base, three consecutive give 4*h_base. Neither
@@ -550,5 +595,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.51"
+#define VERSION "5.11.52"
 #define REVDATE "2026-07-28"

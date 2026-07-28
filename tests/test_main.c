@@ -26,6 +26,11 @@ void test_grid_dropouts_none_when_complete(void);
 void test_grid_dropouts_rejects_graded_mesh(void);
 void test_grid_dropouts_median_survives_heavy_loss(void);
 void test_grid_dropouts_short_grid_guard(void);
+void test_grid_regime_rate_change_detected(void);
+void test_grid_regime_graded_mesh_is_not_mixed(void);
+void test_grid_regime_uniform_has_no_jump(void);
+void test_grid_regime_isolated_gap_located(void);
+void test_grid_regime_dropouts_still_reported(void);
 
 // Testy pro polyfit.c
 void test_polyfit_smooth_constant_data(void);
@@ -250,6 +255,11 @@ int main(void) {
     RUN_TEST(test_grid_dropouts_rejects_graded_mesh);
     RUN_TEST(test_grid_dropouts_median_survives_heavy_loss);
     RUN_TEST(test_grid_dropouts_short_grid_guard);
+    RUN_TEST(test_grid_regime_rate_change_detected);
+    RUN_TEST(test_grid_regime_graded_mesh_is_not_mixed);
+    RUN_TEST(test_grid_regime_uniform_has_no_jump);
+    RUN_TEST(test_grid_regime_isolated_gap_located);
+    RUN_TEST(test_grid_regime_dropouts_still_reported);
 
     printf("\n--- Performance tests ---\n");
     RUN_TEST(test_grid_large_dataset);
