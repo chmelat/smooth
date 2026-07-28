@@ -18,6 +18,7 @@ Baseline measured on `86764a9`, for drift detection:
 | 001 | Report malformed timestamp rows instead of dropping them silently | P1 | S | — | DONE |
 | 002 | Add end-to-end tests for the timestamp-mode input parser | P1 | S–M | 001 | DONE |
 | 003 | Make the header documentation in `tikhonov.h` and `savgol.h` true | P2 | S | — | DONE |
+| 004 | Make the Tikhonov output derivative second-order on non-uniform grids | P2 | S | — | DONE |
 
 **001** — executed, reviewed, and **merged into `main` as `05cee50`**
 (fast-forward) on 2026-07-27. Branch `advisor/001-report-malformed-timestamp-rows`
@@ -75,7 +76,7 @@ Verified and ranked, but no plan written. Listed so they are not re-derived.
 | ~~`tikhonov.h` header documentation is actively wrong (TK6)~~ | docs | S | **Planned as 003.** Re-verification found 7 defects, not the 4 originally recorded — see below. |
 | CLI numeric args parsed with `atoi`/`atof` (B2) | bug | S | `-p abc` silently yields degree 0; `-n 99999999999999` is signed-overflow UB (observed: 276447231). `parser.c` already uses `strtod` + `endptr` correctly — the CLI does not. Open since v5.11.22. |
 | No CI configuration | dx | S | No `.github/`, `.gitlab-ci`, or `.travis`. The `CLAUDE.md` hard rule "do not commit without `make test` passing and no new valgrind leaks" is enforced only by discipline. |
-| Tikhonov output derivative is 1st-order on non-uniform grids (TK5) | bug | S | `tikhonov.c:105-107` uses `(y[i+1]-y[i-1])/(x[i+1]-x[i-1])`, 2nd-order only when `h_l == h_r`. The module's whole premise is non-uniform correctness. A 3-point weighted formula costs the same. |
+| ~~Tikhonov output derivative is 1st-order on non-uniform grids (TK5)~~ | bug | S | **Planned as 004.** Re-analysis sharpened it — see below. |
 | `-l auto` writes 26 diagnostic lines into the data stream, 19 with UTF-8 `λ` (B8+B9) | tech-debt | S–M | Measured on 40 points. `help()` advertises Unix-filter use (`cat data \| smooth`); the rest of the program is ASCII. |
 
 **003** — executed, reviewed, and **merged into `main` as `d57a778`**
@@ -114,6 +115,37 @@ Nothing prevents this recurring: headers are prose and the compiler never reads
 them. 003 verifies by extracting the examples and compiling them, but that is a
 one-off gate, not a standing one. If a third example rots, add "grep the headers
 when you change a public signature" to the `smooth-dev-tasks` skill.
+
+### TK5 re-analysis, 2026-07-27 — CV is the wrong predictor
+
+Measured while planning 004. The audit framed TK5 as "1st-order on non-uniform
+grids", which is true but misleading about *which* non-uniform grids.
+
+The leading error is $\frac{h_r-h_l}{2}u''$ — proportional to local **asymmetry**,
+not to overall spacing variation. Measured, $\lambda=0$ so the smoothing is exactly
+the identity and only the derivative is under test:
+
+| mesh | CV | clusters | improvement from the fix |
+|---|---|---|---|
+| alternating 0.1/0.4 | 0.608 | 0 | **22x** |
+| geometric grading r=1.02 | 0.275 | 0 | 1x |
+| geometric grading r=1.10 | 0.622 | 0 | 1x |
+| geometric grading r=1.30 | 0.877 | 0 | 1x |
+
+Two meshes at essentially the same CV (0.608 vs 0.622) differ by a factor of 22 in
+how much the fix helps. On a graded mesh $h_r-h_l$ is comparable to the corrected
+formula's own truncation error, so the two formulas meet.
+
+Consequences worth carrying forward:
+
+- Any future decision keyed on "is this grid bad for derivatives" should use local
+  asymmetry $|h_r-h_l|/h$, **not** `GridAnalysis.cv`.
+- `grid_analysis.c`'s cluster detector does not catch this either: it looks for a
+  1:10 spacing ratio, and the 1:4 alternating mesh above reports `clusters: 0`
+  while being the worst case for the derivative.
+- The **boundary** derivative is first-order even on a uniform grid (two-point
+  one-sided), measured 14x improvement there. That part of TK5 was never recorded
+  and has nothing to do with non-uniformity.
 
 ## Findings considered and rejected
 
