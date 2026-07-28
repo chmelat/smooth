@@ -3,7 +3,52 @@
  *
  * Version History
  * ---------------
- * v5.11.48 (current): Report malformed timestamp rows in `-T` mode instead
+ * v5.11.49 (current): Make the Tikhonov `-d` output second order on
+ *           non-uniform grids. compute_derivatives() used a difference that
+ *           is symmetric in index but not in coordinate,
+ *           (u_{i+1}-u_{i-1})/(x_{i+1}-x_{i-1}), whose Taylor expansion leaves
+ *           a leading error (h_r - h_l)/2 * u'' that vanishes only for
+ *           h_l == h_r. On an alternating 0.1/0.4 mesh with u = sin x and
+ *           lambda = 0 (so y_smooth == y exactly and the differentiation error
+ *           is isolated) theory and measurement agree to three figures:
+ *           predicted 1.499e-01, measured 1.494e-01. This was the worst place
+ *           for a uniform-grid assumption to hide: Savgol rejects above
+ *           CV 0.05 and Butterworth above CV 0.15, and savgol.c's rejection
+ *           message points the user at "-m 2 -l auto (Works correctly with
+ *           non-uniform grids)" — so non-uniform data lands precisely here.
+ *           The v5.11 line made the *penalty* grid-correct (weighted Gram
+ *           matrix (D2)^T W D2, integral measure, v5.11.34); the derivative it
+ *           emitted never got that care, leaving `-m 0` (polyfit, which
+ *           differentiates its local fit analytically) more accurate than the
+ *           method the tool recommends. Fix: all three formulas replaced by
+ *           three-point weights from undetermined coefficients — chosen to
+ *           reproduce u, u' and u'' exactly, so the error is O(h^2)u''' on any
+ *           spacing — one-sided at each boundary, spacing-aware in the
+ *           interior, same O(n) cost. On a uniform grid the interior weights
+ *           degenerate to the classical -1/(2h), 0, +1/(2h). Measured:
+ *           interior max error 1.494e-01 -> 6.642e-03 (22x); uniform-mesh
+ *           boundary on sin(x+1) 1.10e-01 -> 7.76e-03 (14x), i.e. the boundary
+ *           gain is unconditional — the old two-point one-sided difference was
+ *           first order even on uniform grids. (Where u'' happens to be 0 at
+ *           an endpoint the old formula's leading term vanishes by coincidence
+ *           and the new one is not better there; that is the only case it does
+ *           not win.) Printed output: across 2970 uniform-grid interior points
+ *           spanning spacings 0.01-3.7 and amplitudes 1e-3-1e3, zero lines
+ *           differ under %12.8lG — the new interior form is not bitwise
+ *           identical (~70 ULP) but is identical to 8 significant digits, so
+ *           the byte-identity release check still holds for interior points.
+ *           The two boundary points do change, by design, on every input.
+ *           No h_l == h_r fast path: floating-point accumulation means a
+ *           nominally uniform mesh does not have exactly equal spacings, so
+ *           such a branch would fire unpredictably. build_band_matrix() and
+ *           compute_functional() are untouched — this changes only the
+ *           reported derivative, not what is minimized. Two regression tests
+ *           (tikhonov 25 -> 27, suite 123 -> 125) assert exactness for a
+ *           quadratic on alternating and uniform meshes over all points
+ *           including both boundaries; both FAIL against the old
+ *           implementation (-1.7 and -1.25 vs expected -2). Zero valgrind
+ *           leaks.
+ * v5.11.48: Report malformed timestamp rows in `-T` mode instead
  *           of dropping them silently. The `else` branch at parser.c:141
  *           (now :142) fired whenever the timestamp column was present but
  *           the second whitespace token was missing — a bare `2026-01-01`,
@@ -434,5 +479,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.48"
-#define REVDATE "2026-07-27"
+#define VERSION "5.11.49"
+#define REVDATE "2026-07-28"

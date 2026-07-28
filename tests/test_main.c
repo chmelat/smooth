@@ -115,6 +115,8 @@ void test_tikhonov_linear_exact_null_space(void);
 
 // Testy pro tikhonov.c - A1: discretization measure
 void test_tikhonov_average_branch_integral_measure(void);
+void test_tikhonov_derivative_exact_for_quadratic_nonuniform(void);
+void test_tikhonov_derivative_uniform_grid_still_exact(void);
 
 // Testy pro butterworth.c - Basic functionality
 void test_butterworth_returns_valid_result(void);
@@ -352,6 +354,8 @@ int main(void) {
     printf("\n--- Null space verification tests ---\n");
     RUN_TEST(test_tikhonov_linear_exact_null_space);
     RUN_TEST(test_tikhonov_average_branch_integral_measure);
+    RUN_TEST(test_tikhonov_derivative_exact_for_quadratic_nonuniform);
+    RUN_TEST(test_tikhonov_derivative_uniform_grid_still_exact);
 
     printf("\n");
     printf("========================================\n");

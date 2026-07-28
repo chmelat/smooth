@@ -98,16 +98,41 @@ static void compute_derivatives(const double *x, const double *y_smooth, int n, 
         return;
     }
     
-    /* Forward difference at start */
-    y_deriv[0] = (y_smooth[1] - y_smooth[0]) / (x[1] - x[0]);
-    
-    /* Central differences in interior */
-    for (int i = 1; i < n-1; i++) {
-        y_deriv[i] = (y_smooth[i+1] - y_smooth[i-1]) / (x[i+1] - x[i-1]);
+    /* First derivative by undetermined coefficients on three points: the weights
+     * reproduce u, u' and u'' exactly, leaving an O(h^2)u''' error on any
+     * spacing. The index-symmetric difference used before was second order only
+     * for h_l == h_r; on a non-uniform grid its leading error is
+     * (h_r - h_l)/2 * u''. On a uniform grid the interior weights below reduce
+     * to the classical -1/(2h), 0, +1/(2h).
+     * x is strictly increasing (validated in tikhonov_smooth), so every spacing
+     * is > 0. n >= 3 here, so x[2] and x[n-3] are in range. */
+
+    /* Left boundary: one-sided three-point (second order) */
+    {
+        double h0 = x[1] - x[0];
+        double h1 = x[2] - x[1];
+        y_deriv[0] = -(2.0*h0 + h1) / (h0 * (h0 + h1)) * y_smooth[0]
+                   +       (h0 + h1) / (h0 * h1)       * y_smooth[1]
+                   -              h0 / (h1 * (h0 + h1)) * y_smooth[2];
     }
-    
-    /* Backward difference at end */
-    y_deriv[n-1] = (y_smooth[n-1] - y_smooth[n-2]) / (x[n-1] - x[n-2]);
+
+    /* Interior: three-point, spacing-aware */
+    for (int i = 1; i < n-1; i++) {
+        double h_l = x[i]   - x[i-1];
+        double h_r = x[i+1] - x[i];
+        y_deriv[i] = -h_r / (h_l * (h_l + h_r)) * y_smooth[i-1]
+                   + (h_r - h_l) / (h_l * h_r)  * y_smooth[i]
+                   +  h_l / (h_r * (h_l + h_r)) * y_smooth[i+1];
+    }
+
+    /* Right boundary: one-sided three-point (second order) */
+    {
+        double hA = x[n-1] - x[n-2];
+        double hB = x[n-2] - x[n-3];
+        y_deriv[n-1] =  (2.0*hA + hB) / (hA * (hA + hB)) * y_smooth[n-1]
+                     -       (hA + hB) / (hA * hB)       * y_smooth[n-2]
+                     +              hA / (hB * (hA + hB)) * y_smooth[n-3];
+    }
 }
 
 /* Compute data fidelity, regularization, and total functional values.

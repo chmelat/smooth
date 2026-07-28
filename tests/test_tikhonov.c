@@ -1116,6 +1116,88 @@ void test_tikhonov_average_branch_integral_measure(void) {
     #undef N
 }
 
+/* TEST 28: Derivace musí být přesná pro kvadratickou funkci na nerovnoměrné mřížce
+ *
+ * The three-point weights in compute_derivatives() are obtained by undetermined
+ * coefficients: they reproduce u, u' and u'' exactly, so for a quadratic
+ * (u''' = 0) the derivative is exact to machine precision on ANY spacing.
+ *
+ * The old index-symmetric difference (u_{i+1}-u_{i-1})/(x_{i+1}-x_{i-1}) carries
+ * a leading error (h_r - h_l)/2 * u'', which on this alternating 0.1/0.4 mesh is
+ * 9.0e-01 in the interior and 1.2e+00 at the right boundary -- nine orders above
+ * the 1e-9 tolerance asserted here.
+ *
+ * lambda = 0 makes the system matrix the identity, so y_smooth == y exactly and
+ * only the differentiation is under test.
+ */
+void test_tikhonov_derivative_exact_for_quadratic_nonuniform(void) {
+    /* ARRANGE */
+    #define N 21
+    double x[N], y[N];
+    const double a = 1.0, b = -2.0, c = 3.0;
+
+    x[0] = 0.0;
+    for (int i = 1; i < N; i++) {
+        x[i] = x[i-1] + ((i-1) % 2 == 0 ? 0.1 : 0.4);
+    }
+    for (int i = 0; i < N; i++) {
+        y[i] = a + b * x[i] + c * x[i] * x[i];
+    }
+
+    GridAnalysis *grid = analyze_grid(x, N);
+    TEST_ASSERT_NOT_NULL(grid);
+
+    /* ACT */
+    TikhonovResult *result = tikhonov_smooth(x, y, N, 0.0, grid);
+    TEST_ASSERT_NOT_NULL(result);
+
+    /* ASSERT: exact derivative including both boundary points */
+    for (int i = 0; i < N; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(1e-9, b + 2.0 * c * x[i], result->y_deriv[i]);
+    }
+
+    /* CLEANUP */
+    free_tikhonov_result(result);
+    free_grid_analysis(grid);
+    #undef N
+}
+
+/* TEST 29: Stejná přesnost na rovnoměrné mřížce (regresní ochrana)
+ *
+ * Guards the common uniform-grid case while the weights are rearranged. The
+ * interior weights degenerate to the classical -1/(2h), 0, +1/(2h); the
+ * boundaries stay one-sided three-point, which is a genuine improvement over
+ * the previous two-point (first-order) formula even here.
+ */
+void test_tikhonov_derivative_uniform_grid_still_exact(void) {
+    /* ARRANGE */
+    #define N 21
+    double x[N], y[N];
+    const double a = 1.0, b = -2.0, c = 3.0;
+
+    create_uniform_grid(x, N, 0.0, 0.25);
+    for (int i = 0; i < N; i++) {
+        y[i] = a + b * x[i] + c * x[i] * x[i];
+    }
+
+    GridAnalysis *grid = analyze_grid(x, N);
+    TEST_ASSERT_NOT_NULL(grid);
+
+    /* ACT */
+    TikhonovResult *result = tikhonov_smooth(x, y, N, 0.0, grid);
+    TEST_ASSERT_NOT_NULL(result);
+
+    /* ASSERT: exact derivative including both boundary points */
+    for (int i = 0; i < N; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(1e-9, b + 2.0 * c * x[i], result->y_deriv[i]);
+    }
+
+    /* CLEANUP */
+    free_tikhonov_result(result);
+    free_grid_analysis(grid);
+    #undef N
+}
+
 /* ============================================================================
  * POZNÁMKY K TESTŮM:
  * ============================================================================
