@@ -3,7 +3,49 @@
  *
  * Version History
  * ---------------
- * v5.11.50 (current): Parse CRLF input files. The `-T` tokenizer at
+ * v5.11.51 (current): Detect missing samples in a nominally regular grid.
+ *           Fixed-rate logging drops samples, and when it does the gap left
+ *           behind is an integer multiple of the base period: one lost
+ *           sample gives 2*h_base, three consecutive give 4*h_base. Neither
+ *           existing signal can see that. CV measures overall spread — the
+ *           repo's own all.dat sits at 0.078, below every warning threshold
+ *           in the file — and the cluster detector needs neighbouring
+ *           spacings differing by more than 100x while straddling h_avg
+ *           (an AND of h_prev < 0.1*h_avg and h_curr > 10*h_avg), whereas a
+ *           dropout gap is 2x. Measured before the change, `-g` on all.dat
+ *           reported "Grid is nearly uniform - standard methods work well,
+ *           Detected clusters: 0" for a record missing 58 samples across 48
+ *           gaps; pt.dat is missing 1106 samples, 20.5% of the record, and
+ *           was equally silent. Not a correctness bug — the smoothing was
+ *           fine — but a user had no way to learn a fifth of the data was
+ *           gone. New: h_base (MEDIAN spacing), integer_fit, n_gaps,
+ *           n_missing, max_run, has_dropouts. Median rather than mean
+ *           because the mean is contaminated by the very gaps being looked
+ *           for (pt.dat: mean 1.258 s against a true period of 1.0 s);
+ *           measured, the median holds up to 45% sample loss and collapses
+ *           at 50% when it jumps to 2*h_base. integer_fit gates the report
+ *           and separates a regular grid with holes from genuinely
+ *           non-uniform data with a wide margin: 100% for regular-with-
+ *           dropouts against 55% (Poisson), 49% (geometric grading) and 0%
+ *           (alternating mesh), so the 0.90 threshold is not finely tuned.
+ *           Two further measured limits, documented rather than papered
+ *           over: clock jitter above +-15% under-reports, and an unbalanced
+ *           alternating mesh whose spacings are exact multiples of each
+ *           other is a false positive by construction (30x0.1 with 10x0.4
+ *           reports 150 missing when nothing is). Deliberately additive:
+ *           every existing field keeps its value, the only output change is
+ *           one new `verbose >= 1` line printed solely when dropouts are
+ *           found, and reliability_warning is NOT set — smooth.c:248 gates
+ *           a whole output block on it, so setting it would make every
+ *           normal run on data with a single dropped sample print a warning
+ *           it does not print today. Verified: `-g` on all.dat differs from
+ *           v5.11.50 by exactly one added line; a graded mesh prints none.
+ *           Five tests (grid_analysis 7 -> 12, suite 128 -> 133); replacing
+ *           the median with the mean fails two of them. First malloc inside
+ *           analyze_grid beyond the struct itself — it sits after the main
+ *           loop, so the non-monotonic early return cannot leak it (checked
+ *           separately under valgrind). Zero leaks, 1054 allocs/1054 frees.
+ * v5.11.50: Parse CRLF input files. The `-T` tokenizer at
  *           parser.c:105-115 treated ' ', '\t' and '\n' as separators but
  *           not '\r', so on a file with CRLF line endings the carriage
  *           return stayed attached to the last whitespace token. strtod
@@ -508,5 +550,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.50"
+#define VERSION "5.11.51"
 #define REVDATE "2026-07-28"

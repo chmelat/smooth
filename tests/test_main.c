@@ -21,6 +21,11 @@ void test_grid_nearly_uniform(void);
 void test_grid_null_pointer(void);
 void test_grid_large_dataset(void);
 void test_grid_with_outlier(void);
+void test_grid_dropouts_detected(void);
+void test_grid_dropouts_none_when_complete(void);
+void test_grid_dropouts_rejects_graded_mesh(void);
+void test_grid_dropouts_median_survives_heavy_loss(void);
+void test_grid_dropouts_short_grid_guard(void);
 
 // Testy pro polyfit.c
 void test_polyfit_smooth_constant_data(void);
@@ -240,6 +245,11 @@ int main(void) {
     printf("\n--- Realistic scenario tests ---\n");
     RUN_TEST(test_grid_nearly_uniform);
     RUN_TEST(test_grid_with_outlier);
+    RUN_TEST(test_grid_dropouts_detected);
+    RUN_TEST(test_grid_dropouts_none_when_complete);
+    RUN_TEST(test_grid_dropouts_rejects_graded_mesh);
+    RUN_TEST(test_grid_dropouts_median_survives_heavy_loss);
+    RUN_TEST(test_grid_dropouts_short_grid_guard);
 
     printf("\n--- Performance tests ---\n");
     RUN_TEST(test_grid_large_dataset);

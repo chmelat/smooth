@@ -317,6 +317,142 @@ void test_grid_with_outlier(void) {
     free_grid_analysis(result);
 }
 
+/* TEST 8: Detekce chybějících vzorků v pravidelné mřížce
+ *
+ * A lost sample leaves a gap of k*h_base for integer k >= 2. Dropping index 10
+ * leaves one gap of 2h (1 missing); dropping 20, 21, 22 leaves one gap of 4h
+ * (3 missing). Counts are exact integers, so no tolerance is needed on them.
+ */
+void test_grid_dropouts_detected(void) {
+    /* ARRANGE: uniform base 1.0, 40 nominal points, drop 10 and 20-22 */
+    double x[36];
+    int n = 0;
+    for (int i = 0; i < 40; i++) {
+        if (i == 10 || i == 20 || i == 21 || i == 22) continue;
+        x[n++] = i * 1.0;
+    }
+
+    /* ACT */
+    GridAnalysis *result = analyze_grid(x, n);
+
+    /* ASSERT */
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(36, n);
+    TEST_ASSERT_EQUAL_INT(1, result->has_dropouts);
+    TEST_ASSERT_EQUAL_INT(4, result->n_missing);
+    TEST_ASSERT_EQUAL_INT(2, result->n_gaps);
+    TEST_ASSERT_EQUAL_INT(3, result->max_run);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-12, 1.0, result->h_base);
+
+    /* CLEANUP */
+    free_grid_analysis(result);
+}
+
+/* TEST 9: Kompletní mřížka nesmí hlásit žádné výpadky */
+void test_grid_dropouts_none_when_complete(void) {
+    /* ARRANGE */
+    double x[40];
+    for (int i = 0; i < 40; i++) x[i] = i * 1.0;
+
+    /* ACT */
+    GridAnalysis *result = analyze_grid(x, 40);
+
+    /* ASSERT */
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(0, result->has_dropouts);
+    TEST_ASSERT_EQUAL_INT(0, result->n_missing);
+    TEST_ASSERT_EQUAL_INT(0, result->n_gaps);
+    /* Every spacing is exactly 1*h_base */
+    TEST_ASSERT_DOUBLE_WITHIN(1e-12, 1.0, result->integer_fit);
+
+    /* CLEANUP */
+    free_grid_analysis(result);
+}
+
+/* TEST 10: Stupňovaná mřížka NESMÍ být hlášena jako mřížka s výpadky
+ *
+ * This is the discriminator test. On a geometrically graded mesh the spacings
+ * vary continuously, so few of them land near an integer multiple of the median
+ * and integer_fit falls below DROPOUT_FIT_MIN. Without this test the gate is
+ * untested and the detector would happily invent missing samples in data that
+ * is merely non-uniform.
+ */
+void test_grid_dropouts_rejects_graded_mesh(void) {
+    /* ARRANGE: geometric grading r = 1.05 */
+    double x[60];
+    double h = 0.1;
+    x[0] = 0.0;
+    for (int i = 1; i < 60; i++) { x[i] = x[i-1] + h; h *= 1.05; }
+
+    /* ACT */
+    GridAnalysis *result = analyze_grid(x, 60);
+
+    /* ASSERT */
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(0, result->has_dropouts);
+    TEST_ASSERT_LESS_THAN_DOUBLE(0.90, result->integer_fit);
+
+    /* CLEANUP */
+    free_grid_analysis(result);
+}
+
+/* TEST 11: Medián musí přežít těžkou ztrátu vzorků
+ *
+ * Guards the median-vs-mean choice. Keeping only i % 5 >= 2 drops 40% of the
+ * samples and leaves spacings of 1, 1, 3 repeating: the median is 1.0 (correct)
+ * while the MEAN is ~1.67. A mean-based h_base gives integer_fit ~= 0.33, below
+ * the gate, so has_dropouts would be 0 and this test fails.
+ */
+void test_grid_dropouts_median_survives_heavy_loss(void) {
+    /* ARRANGE */
+    double x[200];
+    int n = 0;
+    for (int i = 0; i < 200; i++) {
+        if (i % 5 < 2) continue;
+        x[n++] = i * 1.0;
+    }
+
+    /* ACT */
+    GridAnalysis *result = analyze_grid(x, n);
+
+    /* ASSERT */
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-12, 1.0, result->h_base);
+    TEST_ASSERT_EQUAL_INT(1, result->has_dropouts);
+    /* Mean spacing here is ~1.67 — well outside the tolerance above */
+    TEST_ASSERT_GREATER_THAN_DOUBLE(1.5, result->h_avg);
+
+    /* CLEANUP */
+    free_grid_analysis(result);
+}
+
+/* TEST 12: Krátká mřížka — detekce se přeskočí, analýza běží dál
+ *
+ * Below DROPOUT_MIN_SPACES the median is not meaningful, so the dropout fields
+ * stay at their calloc zeros. analyze_grid must still return a valid analysis
+ * with cv computed — a diagnostic extra must never turn a working run into a
+ * failure.
+ */
+void test_grid_dropouts_short_grid_guard(void) {
+    /* ARRANGE: 6 points -> 5 spacings, below the 10-spacing floor */
+    double x[] = {0.0, 1.0, 2.0, 3.0, 4.0, 5.0};
+
+    /* ACT */
+    GridAnalysis *result = analyze_grid(x, 6);
+
+    /* ASSERT */
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(0, result->has_dropouts);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-12, 0.0, result->h_base);
+    TEST_ASSERT_EQUAL_INT(0, result->n_missing);
+    /* The rest of the analysis is unaffected */
+    TEST_ASSERT_EQUAL_INT(1, result->is_uniform);
+    TEST_ASSERT_DOUBLE_WITHIN(0.001, 1.0, result->h_avg);
+
+    /* CLEANUP */
+    free_grid_analysis(result);
+}
+
 /* ============================================================================
  * POZNÁMKY K TESTŮM:
  * ============================================================================

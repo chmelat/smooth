@@ -23,6 +23,23 @@ typedef struct {
     int n_points;           /* Number of points */
     int n_clusters;         /* Number of detected clusters */
     double uniformity_score; /* Score 0-1, where 1 is perfectly uniform */
+
+    /* Dropout detection: a nominally regular grid with missing samples leaves
+     * gaps that are integer multiples of the base period. Distinct from
+     * n_clusters (abrupt spacing change) and from cv (overall spread) — a grid
+     * can have any combination of the three. Advisory only: no smoothing method
+     * reads these fields. All zero when has_dropouts == 0.
+     *
+     * Known limit: a mesh whose spacings are genuinely an exact multiple of one
+     * another (e.g. mostly h with an occasional 4h by design, unbalanced enough
+     * that the median lands on h) is indistinguishable from dropouts by
+     * construction and will be reported as missing samples. */
+    double h_base;       /* Median spacing — robust base period estimate */
+    double integer_fit;  /* Fraction of spacings within DROPOUT_TOL of k*h_base */
+    int    n_gaps;       /* Gaps that are an integer multiple k >= 2 of h_base */
+    int    n_missing;    /* Estimated missing samples, sum of (k-1) */
+    int    max_run;      /* Longest run of consecutive missing samples */
+    int    has_dropouts; /* 1 if integer_fit >= DROPOUT_FIT_MIN and n_missing > 0 */
 } GridAnalysis;
 
 /* Analyze grid uniformity and return detailed statistics

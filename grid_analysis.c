@@ -20,6 +20,18 @@
 #define CLUSTER_RATIO_LARGE     10.0  /* Factor of avg for "large" gap */
 #define UNIFORMITY_DECAY_FACTOR 2.0   /* For score calculation: exp(-CV * factor) */
 
+#define DROPOUT_TOL        0.25  /* |r - round(r)| tolerance, in units of h_base */
+#define DROPOUT_FIT_MIN    0.90  /* Min integer_fit to treat the grid as regular */
+#define DROPOUT_MIN_SPACES 10    /* Below this the median is not meaningful */
+
+/* qsort comparator for the median. Returns via two comparisons rather than
+ * (int)(da - db), which truncates to 0 for spacings less than 1.0 apart — the
+ * common case here. */
+static int cmp_double(const void *a, const void *b) {
+    double da = *(const double *)a, db = *(const double *)b;
+    return (da > db) - (da < db);
+}
+
 /* Helper for safe string appending */
 static void append_warning(char *buffer, size_t size, const char *msg) {
     size_t len = strlen(buffer);
@@ -125,6 +137,57 @@ GridAnalysis* analyze_grid(const double *x, int n)
         analysis->uniformity_score = exp(-analysis->cv * UNIFORMITY_DECAY_FACTOR);
     }
     
+    /* Dropout detection — see grid_analysis.h for what the fields mean.
+     * A lost sample in fixed-rate logging leaves a gap of k*h_base for integer
+     * k >= 2, a signature neither cv (overall spread) nor the cluster detector
+     * (which needs a >100x jump straddling h_avg) can see.
+     *
+     * h_base is the MEDIAN, not the mean: the mean is contaminated by the very
+     * gaps being looked for. The median holds the true period up to 45% sample
+     * loss; beyond that it jumps to 2*h_base and the estimate collapses.
+     *
+     * Skipped silently on short grids or if the scratch allocation fails; the
+     * fields stay zero from calloc. A diagnostic extra must never turn a working
+     * analysis into a failure.
+     *
+     * ponytail: qsort is O(n log n) on top of an O(n) analysis; quickselect
+     * would be O(n) if profiling ever shows this matters. */
+    if (n - 1 >= DROPOUT_MIN_SPACES) {
+        double *hs = (double *)malloc((size_t)(n - 1) * sizeof(double));
+        if (hs != NULL) {
+            for (i = 0; i < n-1; i++) hs[i] = x[i+1] - x[i];
+            qsort(hs, (size_t)(n - 1), sizeof(double), cmp_double);
+
+            int m = n - 1;
+            analysis->h_base = (m % 2) ? hs[m/2] : 0.5 * (hs[m/2 - 1] + hs[m/2]);
+
+            if (analysis->h_base > 0.0) {
+                int near = 0;
+                /* Scan the ORIGINAL spacings — hs is sorted in place and its
+                 * order no longer matches the grid. */
+                for (i = 0; i < n-1; i++) {
+                    double r = (x[i+1] - x[i]) / analysis->h_base;
+                    double k = floor(r + 0.5);
+                    if (fabs(r - k) <= DROPOUT_TOL) {
+                        near++;
+                        if (k >= 2.0) {
+                            int missing = (int)k - 1;
+                            analysis->n_gaps++;
+                            analysis->n_missing += missing;
+                            if (missing > analysis->max_run)
+                                analysis->max_run = missing;
+                        }
+                    }
+                }
+                analysis->integer_fit = (double)near / (double)m;
+                analysis->has_dropouts =
+                    (analysis->integer_fit >= DROPOUT_FIT_MIN &&
+                     analysis->n_missing > 0) ? 1 : 0;
+            }
+            free(hs);
+        }
+    }
+
     /* Assess reliability and generate warnings using SAFE string handling */
     analysis->reliability_warning = 0;
     analysis->warning_msg[0] = '\0';
@@ -236,6 +299,17 @@ void print_grid_analysis(GridAnalysis *analysis, int verbose, const char *prefix
         /* Detailed report */
         printf("%s  Standard deviation: %.6e\n", prefix, analysis->h_std);
         printf("%s  Detected clusters: %d\n", prefix, analysis->n_clusters);
+        /* Printed only when detected: a clean grid should not gain a line
+         * saying so, and a genuinely non-uniform grid must not be given a
+         * meaningless missing-sample count. */
+        if (analysis->has_dropouts) {
+            printf("%s  Missing samples: %d in %d gap(s), longest run %d "
+                   "(base period %.6e, coverage %.1f%%)\n",
+                   prefix, analysis->n_missing, analysis->n_gaps,
+                   analysis->max_run, analysis->h_base,
+                   100.0 * analysis->n_points /
+                       (analysis->n_points + analysis->n_missing));
+        }
         printf("%s  Recommendation: %s\n", prefix, get_grid_recommendation(analysis));
     }
     

@@ -87,6 +87,15 @@ Each method uses CV to make a policy decision:
 Polyfit tolerates any grid (local fit per window). When changing CV thresholds
 or adding a new method, update **all** policy points consistently.
 
+**Dropout detection is independent of CV** (v5.11.51). A regular grid with
+missing samples leaves gaps of $k \cdot h_{base}$ for integer $k \ge 2$ — a
+signature neither CV nor the cluster detector can see. It is keyed on the
+**median** spacing, not `h_avg`, because the mean is contaminated by the gaps
+being looked for. Purely advisory: no method reads `has_dropouts`, `n_missing`,
+`h_base`, `n_gaps`, `max_run` or `integer_fit`, and `reliability_warning` is
+deliberately not set from it. Keep it that way unless you intend to change what
+every normal run prints.
+
 ### Per-method design notes
 
 These are the load-bearing design choices, not user-facing math (see README for
@@ -114,7 +123,7 @@ that):
 
 Uses the **Unity** framework (vendored in `tests/`).
 
-- 128 tests total: grid_analysis (7), polyfit (21), savgol (16), tikhonov (27),
+- 133 tests total: grid_analysis (12), polyfit (21), savgol (16), tikhonov (27),
   butterworth (22), timestamp (18), parser (17). Source of truth is `tests/test_main.c`.
 - Zero leaks. `make test-valgrind` exits 1 on any definite/indirect leak or
   memory error — keep it that way.
