@@ -72,8 +72,8 @@ TikhonovResult* tikhonov_smooth(const double *x, const double *y, int n, double 
  *   Optimal lambda value minimizing GCV criterion
  * 
  * Notes:
- *   - Uses grid search with refinement (refinement only runs for n <= 5000;
- *     see tikhonov.c for the exact thresholds)
+ *   - Uses a single 13-point log-spaced grid search for every n (the n <= 5000
+ *     sub-grid refinement was removed in v5.11.55; tikhonov.c has the details)
  *   - The per-lambda search trace is written to stderr as "# ..." (progress
  *     output, not data); the selected lambda and the warnings qualifying its
  *     reliability go to stdout as "# ..."

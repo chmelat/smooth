@@ -125,7 +125,7 @@ zvlášť — `errno` chytí jen přetečení mimo `long`.
 Platné běhy ověřeny jako byte-identické proti v5.11.53 na 12 kombinacích
 metod a přepínačů plus 3 v `-T` módu.
 
-### B8. Tikhonov per-lambda GCV log jde vždy na stdout — `tikhonov.c:324,456,479,495` — **OPEN** (= B8 v5.11.22)
+### B8. ~~Tikhonov per-lambda GCV log jde vždy na stdout~~ — **FIXED v5.11.53** (plán 007)
 
 `compute_gcv_score_robust` se volá s `verbose=1` ze všech tří míst, takže při
 `-l auto` se na stdout (do hlavičky dat) vysype 13–21 řádků
@@ -133,7 +133,7 @@ metod a přepínačů plus 3 v `-T` módu.
 hlavička. **Fix:** přidat skutečný `-v` přepínač a v defaultu vypsat jen souhrn
 (`# GCV: N kandidátů vyhodnoceno, optimální λ=…`).
 
-### B9. UTF-8 `λ` ve stdout zprávách — `tikhonov.c:324,509,514` (+ 311,443-447,464) — **OPEN** (= B9 v5.11.22)
+### B9. ~~UTF-8 `λ` ve stdout zprávách~~ — **FIXED v5.11.53** (plán 007)
 
 Stdout výstup (součást uložených dat) obsahuje `# λ=…`, `# Optimal λ:`,
 `# WARNING: optimal λ …`. Zbytek programu je ASCII. CLAUDE.md má pro README
@@ -141,7 +141,7 @@ omezení na DejaVu glyfy; stejné zdůvodnění platí pro datovou hlavičku, kt
 může projít LaTeX/ASCII pipelinou. **Fix:** `# lambda=…`. Triviální, ale dotýká
 se více řádků a uživatelského výstupu, proto vědomě odloženo mimo audit.
 
-### B3. Netrackované pracovní soubory v repu — **OPEN** (= B3 v5.11.38 / B14 v5.11.22)
+### B3. ~~Netrackované pracovní soubory v repu~~ — **FIXED `c42056e`** (.gitignore)
 
 `git status` ukazuje ~30 untracked souborů v pracovním stromu: build artefakt
 `tests/test_runner`, scratch data (`all.dat`, `pt.dat`, `t1.dat`, `test_*.dat`,
@@ -149,9 +149,12 @@ se více řádků a uživatelského výstupu, proto vědomě odloženo mimo audi
 `plot_*.py`, `filter*.py`), `pdf_from_md_tmp.sh`, generátory v `tests/`. Buď
 doplnit `.gitignore`, nebo přesunout/smazat. Roste od minula.
 
-### TK3–TK8. Tikhonov auto-lambda — **OPEN**, viz `audit-tikhonov.md`
+### TK3–TK8. Tikhonov auto-lambda — viz `audit-tikhonov.md`
 
-Znovu ověřeno, že stav odpovídá `audit-tikhonov.md` (z v5.11.39). Stručně:
+**Stav k v5.11.55: uzavřeno.** TK3 zaniklo v5.11.44 (kód smazán), TK5 opraveno
+v5.11.49, TK6 v `d57a778`, TK8 v5.11.55; TK4 a TK7 posouzeny a zamítnuty.
+Aktuální tabulka a zdůvodnění jsou v `audit-tikhonov.md` — níže je původní
+znění z v5.11.41, ponechané kvůli historii:
 - **TK3** (střední): L-curve detekce rohu (jen `n>20000`) je trojnásobně křehká
   — neorientovaná křivost (`tikhonov.c:400`), index-parametrizované diference na
   ne-log-uniformní mřížce (`:452`), tichý fallback `best_idx=n_lambda/2`
@@ -241,7 +244,7 @@ Aktualizováno 2026-07-29 proti v5.11.54.
 | TK5 | tikhonov.c (derivace) | nízká        | **FIXED v5.11.49** (plán 004) |
 | TK6 | tikhonov.h (doc)      | nízká        | **FIXED `d57a778`** (plán 003) |
 | TK7 | tikhonov.c (redund.)  | kosmetika    | OPEN, zamítnuto              |
-| TK8 | tikhonov.c (gate)     | kosmetika    | OPEN                         |
+| TK8 | tikhonov.c (gate)     | kosmetika    | **FIXED v5.11.55**           |
 | C1–C4 | smooth.c            | kosmetika    | OPEN                         |
 
 Podrobnosti k TK-řadě jsou v `audit-tikhonov.md`; TK4 a TK7 tam mají zapsané

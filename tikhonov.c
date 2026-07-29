@@ -260,7 +260,7 @@ TikhonovResult* tikhonov_smooth(const double *x, const double *y, int n, double 
         fprintf(stderr, "ERROR: LAPACK dpbsv failed (info=%d)\n", info);
         if (info > 0) {
             fprintf(stderr, "Leading minor of order %d not positive definite. "
-                            "Unexpected: I + lambda*(D2)^T D2 is SPD for lambda>=0, "
+                            "Unexpected: I + lambda*(D2)^T W D2 is SPD for lambda>=0, "
                             "so this points to numerical ill-conditioning.\n", info);
         }
         goto error;
@@ -384,7 +384,18 @@ double find_optimal_lambda_gcv(const double *x, const double *y, int n, const Gr
                grid_info->ratio_max_min);
     }
     
-    /* Log-spaced GCV search over [lambda_min, lambda_max] */
+    /* Log-spaced GCV search over [lambda_min, lambda_max].
+     *
+     * This sweep is the whole search. A sub-grid refinement pass used to run
+     * on top of it, gated on n <= 5000 -- a threshold left over from the trace
+     * shortcut removed in v5.11.39 (TK1), which made identical data land on a
+     * lambda differing by ~28% either side of n = 5000. Measured before
+     * removing it: refinement cost 16% (n=8k) to 36% (n=100k) of total runtime
+     * and moved the smoothed output by at most 0.21-0.33% of the data range
+     * (RMS 0.03-0.05%), because the GCV curve is flat near its minimum -- the
+     * objective itself improved by under 0.1%. That is well below the noise
+     * being smoothed, so the sweep grid is resolution enough and every n now
+     * follows the same path. Audit TK8. */
     int n_points = 13;
 
     for (int i = 0; i < n_points; i++) {
@@ -398,25 +409,6 @@ double find_optimal_lambda_gcv(const double *x, const double *y, int n, const Gr
             best_lambda = lambda_test;
         }
     }
-
-    /* Refinement around best_lambda (skipped for large n: each score is a full
-     * O(n) solve, so the extra 8 evaluations are not worth the sub-grid gain) */
-    if (n <= 5000) {
-        fprintf(stderr, "# Refinement around lambda=%.6e\n", best_lambda);
-        for (int i = 0; i < 8; i++) {
-            double factor = 0.3 + 1.4 * i / 7.0;
-            double lambda_test = best_lambda * factor;
-
-            if (lambda_test > lambda_min && lambda_test < lambda_max) {
-                double gcv = compute_gcv_score_robust(x, y, n, lambda_test, grid_info);
-                if (gcv < best_gcv) {
-                    best_gcv = gcv;
-                    best_lambda = lambda_test;
-                }
-            }
-        }
-    }
-
 
     /* Lambda is dimensional (scales with h^3 and the y amplitude), so a fixed
      * search range cannot fit every data scale. Flag a result pinned to the

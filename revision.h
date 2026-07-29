@@ -3,7 +3,33 @@
  *
  * Version History
  * ---------------
- * v5.11.54 (current): Validate CLI numeric arguments instead of letting
+ * v5.11.55 (current): Close audit TK8 — the dpbsv error message and the
+ *           GCV refinement gate.
+ *           (1) The failure message for dpbsv described the matrix as
+ *           "I + lambda*(D2)^T D2", omitting the weight matrix W that the
+ *           builder at tikhonov.c:33 has applied since v5.11. Text only.
+ *           (2) BEHAVIOUR CHANGE: the 8-point sub-grid refinement around the
+ *           GCV scan minimum is removed. It ran only for n <= 5000 — a
+ *           threshold left over from the trace shortcut deleted in v5.11.39
+ *           (TK1), which never had a rationale of its own afterwards. The
+ *           cost note added in v5.11.44 was written post-hoc; measuring it
+ *           settles the question. Refinement cost 16% (n=8000) to 36%
+ *           (n=100000) of total runtime and moved the smoothed output by at
+ *           most 0.21-0.33% of the data range (RMS 0.03-0.05%), because the
+ *           GCV curve is flat near its minimum — the objective itself
+ *           improved by under 0.1%. That is far below the noise being
+ *           smoothed, so the 13-point scan grid is resolution enough.
+ *           The gate's real defect was the discontinuity: measured on one
+ *           generator, n=4999 selected lambda=1.540e-01 and n=5001 selected
+ *           2.154e-01 — a 40% jump from two extra data rows. Both now select
+ *           2.154e-01. Every n follows one path.
+ *           `-l auto` on datasets of 5000 or fewer points will select a
+ *           slightly different lambda than v5.11.54; larger datasets are
+ *           unaffected. Explicit `-l <value>` is untouched, as is every other
+ *           method. README's size-dependent-refinement table and tikhonov.h's
+ *           note both described the old rule and are corrected. 138 tests
+ *           pass; -15 lines.
+ * v5.11.54: Validate CLI numeric arguments instead of letting
  *           atoi()/atof() swallow bad input (audit B2, first recorded as B13
  *           in code-audit-v5.11.8 — the oldest open finding in the tree).
  *           Both functions return 0 for anything they cannot parse and report
@@ -662,5 +688,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.54"
+#define VERSION "5.11.55"
 #define REVDATE "2026-07-29"

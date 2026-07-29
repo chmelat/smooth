@@ -1172,16 +1172,21 @@ The null space of $D^2$ is 2-dimensional (constants and linear functions), so tr
 
 **Note:** This approximation is exact for uniform grids but approximate for non-uniform grids. For highly non-uniform grids (CV > 0.2), the program issues a warning.
 
-**Size-dependent refinement:**
+**One search for every size:**
 
-One log-spaced GCV scan serves every dataset size; only the refinement step depends on $n$:
+A single 13-point log-spaced scan over $[10^{-8}, 10^0]$ selects $\lambda$, for
+every dataset size. The eigenvalue sum is $O(n)$ per $\lambda$ candidate — the
+same order as the band solve itself — so it is used for all sizes too.
 
-| Size | Trace estimator | Lambda search |
-|------|-----------------|---------------|
-| $n \leq 5000$ | Eigenvalue sum above | 13-point log scan over $[10^{-8}, 10^0]$ + 8-point refinement around the minimum |
-| $n > 5000$ | Eigenvalue sum above | 13-point log scan only (no refinement) |
-
-The eigenvalue sum is $O(n)$ per $\lambda$ candidate — the same order as the band solve itself — so it is used for all dataset sizes. The refinement step at $n \leq 5000$ adds 8 extra $\lambda$ evaluations clustered around the coarse-scan minimum (factors $0.3 \ldots 1.7$). Datasets that straddle the threshold may therefore receive slightly different optimal $\lambda$ from otherwise-identical inputs.
+An 8-point sub-grid refinement around the scan minimum used to run as well, but
+only for $n \leq 5000$, which meant two otherwise-identical datasets could
+receive different $\lambda$ depending only on which side of that threshold they
+fell. It was removed in v5.11.55 after measurement: refinement cost 16% ($n$ =
+8000) to 36% ($n$ = 100000) of total runtime, while moving the smoothed output
+by at most $0.21$–$0.33\%$ of the data range (RMS $0.03$–$0.05\%$). The GCV
+curve is flat near its minimum — the objective improved by under $0.1\%$ — so
+the scan grid is resolution enough, and the change is far below the noise being
+smoothed.
 
 Because $\lambda$ is dimensional (it scales with $h^3$ and the squared amplitude of $y$), the fixed search range $[10^{-8}, 10^0]$ may not match the scale of every dataset. If the selected optimum lies at the edge of the range, a warning is printed and $\lambda$ should be set manually with `-l`.
 

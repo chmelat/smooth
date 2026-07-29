@@ -113,12 +113,26 @@ I/O. Nestojí to za zásah do auto-lambda cesty.
 
 Vše O(n), prakticky neznatelné mimo největší datasety.
 
-### TK8. Drobné nekonzistence — **OPEN** (kosmetika)
+### TK8. ~~Drobné nekonzistence~~ — **FIXED v5.11.55** (kosmetika)
+
+Obojí, co ještě žilo:
+
+- ~~Chybová hláška u `dpbsv` říká "I + lambda*(D2)^T D2" bez W~~ — doplněno W.
+- ~~Selhání mallocu v `find_lambda_lcurve` mlčky vrátí default 0.01~~ — zaniklo
+  s TK3 (v5.11.44).
+- ~~Refinement gate `if (n <= 5000)`~~ — refinement **smazán celý**, ne jen
+  sjednocen. Změřeno: stál 16 % (n=8000) až 36 % (n=100000) celkového času
+  a posunul vyhlazený výstup nejvýš o 0.21–0.33 % rozsahu dat (RMS
+  0.03–0.05 %), protože GCV křivka je u minima plochá — samotný účel se
+  zlepšil o méně než 0.1 %. To je hluboko pod šumem, který se vyhlazuje, takže
+  13-bodová mřížka scanu stačí. Skutečná vada brány byla diskontinuita:
+  na jednom generátoru vybralo n=4999 lambdu 1.540e-01 a n=5001 hodnotu
+  2.154e-01 — skok o 40 % ze dvou řádků dat navíc. Nově obojí 2.154e-01.
+
+Původní text nálezu:
 
 - Chybová hláška u `dpbsv` říká "I + lambda*(D2)^T D2" bez W
   (`tikhonov.c:263`).
-- ~~Selhání mallocu v `find_lambda_lcurve` mlčky vrátí default 0.01~~ — zaniklo
-  s TK3 (v5.11.44).
 - Refinement gate `if (n <= 5000)` (`:404`) ztratil po TK1 opodstatnění —
   původně kryl hranici, za níž byl trace jen hrubá aproximace; teď je trace
   stejně přesný pro všechna n, ale pro 5000 < n <= 20000 se refinement pořád
@@ -126,7 +140,7 @@ Vše O(n), prakticky neznatelné mimo největší datasety.
 
 ## Stav nálezů
 
-Aktualizováno 2026-07-29 proti v5.11.53.
+Aktualizováno 2026-07-29 proti v5.11.55.
 
 | ID  | Místo                          | Závažnost | Stav           |
 |-----|--------------------------------|-----------|----------------|
@@ -137,15 +151,19 @@ Aktualizováno 2026-07-29 proti v5.11.53.
 | TK5 | derivace na non-uniform mřížce | nízká     | FIXED v5.11.49 |
 | TK6 | doc drift v tikhonov.h         | nízká     | FIXED `d57a778` |
 | TK7 | redundantní solvery/průchody   | kosmetika | OPEN (zamítnuto) |
-| TK8 | hláška, refine gate            | kosmetika | OPEN           |
+| TK8 | hláška, refine gate            | kosmetika | FIXED v5.11.55 |
 
-Zbývá jen kosmetika. TK4 a TK7 byly při plánování (2026-07-27) posouzeny a
-**zamítnuty**, ne odloženy: TK4 (přesný trace přes Hutchinsona nebo pásovou
-faktorizaci) je velký zásah opodstatněný jen tehdy, kdyby na přesnosti
+**Audit je uzavřen.** Zbývají jen TK4 a TK7, obojí při plánování (2026-07-27)
+posouzeno a **zamítnuto**, ne odloženo: TK4 (přesný trace přes Hutchinsona nebo
+pásovou faktorizaci) je velký zásah opodstatněný jen tehdy, kdyby na přesnosti
 auto-lambda reálně něco záviselo — nezávisí; TK7 změřeno na 100k bodech,
 `-m 2 -l auto` 0.465 s vs. 0.210 s pro `-l 0.1`, tedy ~0.25 s redundantní práce
-v úloze jinak dominované I/O. Z TK8 zbývají dvě jednořádkovky: chybějící W
-v chybové hlášce a refinement gate `n <= 5000`, který po TK1 nemá důvod.
+v úloze jinak dominované I/O.
+
+Poznámka k TK8: hlavička `tikhonov.h:75` popisovala starou refinement bránu
+i po jejím smazání a musela se opravit ve stejné změně — třetí výskyt téže
+třídy driftu po TK6 a plánu 003. Postup, jak jí předcházet, je v sekci
+"Changing a public signature" ve skillu `smooth-dev-tasks`.
 
 Průřezové poučení, které přežilo jednotlivé nálezy: **žádná politika se nemá
 věšet na `GridAnalysis.cv`** — TK5 ukázal, že pro derivace rozhoduje lokální
