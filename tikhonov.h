@@ -77,7 +77,8 @@ TikhonovResult* tikhonov_smooth(const double *x, const double *y, int n, double 
  *   - The per-lambda search trace is written to stderr as "# ..." (progress
  *     output, not data); the selected lambda and the warnings qualifying its
  *     reliability go to stdout as "# ..."
- *   - Search range: 1e-8 to 1e0 (tikhonov.c is the source of truth)
+ *   - Search range: 1e-8*h_avg^3 to 1e6*h_avg^3, i.e. scaled by the grid so it
+ *     is invariant to grid scale (tikhonov.c is the source of truth)
  *   - For small datasets (n < 3), returns conservative default
  *   - Warns if the chosen lambda lands on the edge of the search range
  */

@@ -101,7 +101,7 @@ int main(int argc, char **argv)
   int dp = DP;
   int method = METHOD_POLYFIT;
   double lambda = LAMBDA_DEFAULT;
-  int auto_lambda = 0;
+  int auto_lambda = 1;
   double cutoff_freq = CUTOFF_DEFAULT;
   int auto_cutoff = 1;
   int show_derivative = 0;
@@ -159,6 +159,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "Lambda must be non-negative!\n");
             exit(EXIT_FAILURE);
           }
+          auto_lambda = 0;
         }
         break;
       case 'f':
@@ -465,8 +466,9 @@ static void help(void)
     "-n\tPoints in moving window, default 5 (not used for Tikhonov or Butterworth)",
     "-p\tDegree of approx. polynom, default 2 (not used for Butterworth)",
     "-m\tMethod: 0 (polyfit, default), 1 (savgol), 2 (tikhonov), or 3 (butterworth)",
-    "-l\tLambda regularization parameter for Tikhonov method, default 0.1",
-    "\tUse '-l auto' for automatic lambda selection using GCV",
+    "-l\tLambda regularization parameter for Tikhonov method",
+    "\tDefault is automatic selection via GCV (same as '-l auto')",
+    "\tGive a number to set it manually, e.g. '-l 0.1'",
     "-f\tNormalized cutoff frequency for Butterworth filter",
     "\tDefault: auto (Morozov's discrepancy principle, see '-f auto' below)",
     "\tRange: 0 < fc < 1, where fc = f_cutoff / f_Nyquist",

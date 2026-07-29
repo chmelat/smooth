@@ -499,9 +499,19 @@ void test_gcv_optimal_lambda_constant_with_noise(void) {
     double optimal_lambda = find_optimal_lambda_gcv(x, y_noisy, N, grid);
 
     /* ASSERT */
-    /* Lambda by měla být v rozumném rozsahu */
-    TEST_ASSERT_GREATER_THAN_DOUBLE(1e-8, optimal_lambda);
-    TEST_ASSERT_LESS_THAN_DOUBLE(10.0, optimal_lambda);
+    /* Lambda musí ležet uvnitř prohledávaného rozsahu, který od v5.11.56
+     * škáluje s h^3 (h = 0.05 zde, tedy [1.25e-12, 1.25e+02]).
+     *
+     * Horní mez tu záměrně NENÍ malá konstanta. Pravda je konstanta, takže její
+     * druhá derivace je nula a penalizace ji nikdy netrestá — čím víc se
+     * vyhladí, tím blíž se výsledek dostane. Změřeno na těchto datech: RMSE
+     * proti pravdě klesá monotónně 0.090 (lambda=1e-2) -> 0.023 (lambda=1e4),
+     * takže volba u horního kraje je správná odpověď, ne selhání. Dřívější
+     * `< 10.0` procházelo jen proto, že starý rozsah končil na 1e0, a
+     * vynucovalo by teď horší výsledek než jaký GCV umí najít. */
+    const double h3 = grid->h_avg * grid->h_avg * grid->h_avg;
+    TEST_ASSERT_GREATER_THAN_DOUBLE(1e-8 * h3, optimal_lambda);
+    TEST_ASSERT_LESS_OR_EQUAL_DOUBLE(1e6 * h3, optimal_lambda);
 
     /* Použij optimální lambda pro smoothing */
     TikhonovResult *result = tikhonov_smooth(x, y_noisy, N, optimal_lambda, grid);

@@ -43,6 +43,15 @@ kraji rozsahu, vypíše se `# WARNING` s doporučením zadat lambda ručně pře
 datech s h = 10 (optimum na horní mezi → varování se vypíše; vnitřní optimum →
 nevypíše).
 
+**Dohra ve v5.11.56.** TK2 přidalo diagnostiku, ale příčinu nechalo být: rozsah
+zůstal pevný, takže varování hlásilo běžná data. Změřeno na 9 syntetických
+sadách se známou pravdou — 7 z nich skončilo na horní mezi, skutečná optima až
+~7e4. Rozsah proto škáluje mřížkou, `[1e-8*h_avg^3, 1e6*h_avg^3]`: vlastní čísla
+penalizace jsou `16 sin^4(theta/2)/h^3` a vyhlazovač vidí jen součin
+`lambda*eigenval`, který je bezrozměrný právě když lambda nese `h^3`. Po této
+změně nenarazí na kraj ani jedna z 8 testovacích sad. Jediná škála, kterou
+rozsah nemodeluje, je amplituda `y` — na to zůstává varování a ruční `-l`.
+
 ## Opravené nálezy (později)
 
 ### TK5. ~~Výstupní derivace jen 1. řádu na non-uniformní mřížce~~ — **FIXED v5.11.49**

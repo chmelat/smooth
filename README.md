@@ -232,20 +232,34 @@ Note: Degrees > 6 may cause numerical instability warnings.
 
 ### Lambda for TIKHONOV
 
-**Automatic selection (recommended):**
+**Automatic selection (default):**
 ```bash
-./smooth -m 2 -l auto data.txt
+./smooth -m 2 data.txt            # GCV selection, no flag needed
+./smooth -m 2 -l auto data.txt    # the same thing, written explicitly
 ```
-Uses Generalized Cross Validation (GCV) to find optimal lambda.
+Uses Generalized Cross Validation (GCV) to find the optimal lambda. This is the
+default because lambda is **dimensional** — it scales with $h^3$ and with the
+squared amplitude of $y$ — so no single fixed value can suit datasets of
+different scales. Measured against a known clean signal on eight synthetic
+datasets, GCV selection reduced RMSE by 5–90% compared with the fixed
+`lambda = 0.1` that used to be the default; in the worst mismatch (a grid 100x
+finer than the value assumed) the fixed default smoothed the data to an RMSE
+three times *worse* than leaving the noise untouched.
 
 **Manual selection:**
 
-| Data Characteristics | Recommended lambda | Reasoning |
+Give `-l` a number to override the automatic choice. Because lambda is
+dimensional, the useful magnitude depends on your grid spacing: the values below
+assume $h \approx 1$, and scale roughly with $h^3$.
+
+| Data Characteristics | Recommended lambda ($h \approx 1$) | Reasoning |
 |---------------------|---------------|-----------|
 | Low noise, important details | 0.001 - 0.01 | Preserve features |
-| Moderate noise | 0.01 - 0.1 | Balanced (default: 0.1) |
+| Moderate noise | 0.01 - 0.1 | Balanced |
 | High noise | 0.1 - 1.0 | Strong smoothing |
 | Very noisy, global trends | 1.0 - 10.0 | Maximum smoothing |
+
+If you need the pre-v5.11.56 behaviour exactly, pass `-l 0.1`.
 
 **Iterative refinement:**
 ```bash
@@ -1174,9 +1188,9 @@ The null space of $D^2$ is 2-dimensional (constants and linear functions), so tr
 
 **One search for every size:**
 
-A single 13-point log-spaced scan over $[10^{-8}, 10^0]$ selects $\lambda$, for
-every dataset size. The eigenvalue sum is $O(n)$ per $\lambda$ candidate — the
-same order as the band solve itself — so it is used for all sizes too.
+A single 21-point log-spaced scan selects $\lambda$, for every dataset size. The
+eigenvalue sum is $O(n)$ per $\lambda$ candidate — the same order as the band
+solve itself — so it is used for all sizes too.
 
 An 8-point sub-grid refinement around the scan minimum used to run as well, but
 only for $n \leq 5000$, which meant two otherwise-identical datasets could
@@ -1188,7 +1202,29 @@ curve is flat near its minimum — the objective improved by under $0.1\%$ — s
 the scan grid is resolution enough, and the change is far below the noise being
 smoothed.
 
-Because $\lambda$ is dimensional (it scales with $h^3$ and the squared amplitude of $y$), the fixed search range $[10^{-8}, 10^0]$ may not match the scale of every dataset. If the selected optimum lies at the edge of the range, a warning is printed and $\lambda$ should be set manually with `-l`.
+**Search range:**
+
+The scan runs over $[10^{-8} h_{avg}^3,\ 10^6 h_{avg}^3]$. The $h^3$ factor is not
+a fudge — the penalty eigenvalues below are $16 \sin^4(\theta_k/2) / h^3$, and the
+smoother only ever sees the product $\lambda \mu_k$, which is dimensionless
+exactly when $\lambda$ carries $h^3$. Scaling the bounds this way makes the
+search invariant to grid scale rather than merely wide.
+
+Until v5.11.56 the range was the fixed $[10^{-8}, 10^0]$, which was far too low:
+on nine synthetic datasets with known ground truth, seven pinned the optimum at
+the upper edge, with true optima as high as $\lambda \approx 7 \times 10^4$. With
+the $h^3$ scaling none of eight test datasets pins, so the edge warning now means
+what it says instead of firing on ordinary data.
+
+The one scale the range does not model is the amplitude of $y$. If the selected
+optimum still lands on an edge, a warning is printed and $\lambda$ should be set
+manually with `-l`.
+
+The scan uses 21 points. Over the 14 decades of the range that is $\approx 0.7$
+decades per step, the same sampling density the previous 13 points gave over 8
+decades. Measured on eight datasets with known truth, going from 13 to 21 points
+cut RMSE by 5–11%; going from 21 to 29 gained a further 1–2% for 22% more
+runtime, so 21 is where the curve flattens.
 
 #### Characteristics
 

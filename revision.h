@@ -3,7 +3,46 @@
  *
  * Version History
  * ---------------
- * v5.11.55 (current): Close audit TK8 — the dpbsv error message and the
+ * v5.11.56 (current): Make GCV lambda selection the default for Tikhonov,
+ *           and give the search a grid-invariant range.
+ *           BEHAVIOUR CHANGE, and a large one: `-m 2` without `-l` no longer
+ *           uses a fixed lambda = 0.1. It now runs the GCV search, the same
+ *           thing `-l auto` has always done. `-l <value>` is unchanged and
+ *           still disables the search, so `-l 0.1` reproduces the old output
+ *           exactly; `-l auto` remains valid and is now a no-op spelling of
+ *           the default, mirroring how `-f auto` already worked for
+ *           Butterworth. The other three methods are untouched.
+ *           Why: lambda is dimensional — it scales with h^3 and with the
+ *           squared y amplitude — so one fixed value cannot fit datasets of
+ *           different scale. Measured on 8 synthetic datasets against a known
+ *           clean signal, the new default cut RMSE by 5% to 90% (median
+ *           ~65%). The old default was not merely suboptimal: on a grid 100x
+ *           finer than the one lambda=0.1 implicitly assumes, it smoothed the
+ *           data to an RMSE of 0.297 against raw noise of 0.098 — three times
+ *           worse than not smoothing at all, silently.
+ *           The search range moves from a fixed [1e-8, 1e0] to
+ *           [1e-8*h_avg^3, 1e6*h_avg^3]. The h^3 factor is derived, not
+ *           tuned: the penalty eigenvalues are 16 sin^4(theta/2)/h^3 and the
+ *           smoother only sees the product lambda*eigenvalue, which is
+ *           dimensionless exactly when lambda carries h^3. The old range was
+ *           also simply too low — 7 of 9 datasets pinned their optimum at its
+ *           upper edge, with true optima up to ~7e4 — so switching the
+ *           default without widening would have fired the edge warning, which
+ *           prints to stdout, into most users' data headers. With the scaling,
+ *           0 of 8 datasets pin.
+ *           Sweep points go 13 -> 21, keeping ~0.7 decades per step across
+ *           the now-14-decade range (the old 13 points over 8 decades gave
+ *           0.67). Measured: 13 -> 21 cut RMSE 5-11%, 21 -> 29 gained 1-2%
+ *           for 22% more runtime. Auto selection costs 1.5-2.6x a fixed-lambda
+ *           run, which is the price of the default now doing real work.
+ *           test_gcv_optimal_lambda_constant_with_noise asserted
+ *           `lambda < 10.0`. That bound was an artefact of the old range cap,
+ *           not a property: the truth in that test is a constant, whose second
+ *           derivative is zero, so more smoothing is strictly better — RMSE
+ *           against truth falls monotonically 0.090 (lambda=1e-2) to 0.023
+ *           (lambda=1e4). The assertion now bounds lambda by the search range
+ *           itself and the reconstruction check is unchanged. 138 tests pass.
+ * v5.11.55: Close audit TK8 — the dpbsv error message and the
  *           GCV refinement gate.
  *           (1) The failure message for dpbsv described the matrix as
  *           "I + lambda*(D2)^T D2", omitting the weight matrix W that the
@@ -688,5 +727,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.55"
+#define VERSION "5.11.56"
 #define REVDATE "2026-07-29"
