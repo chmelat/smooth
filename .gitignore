@@ -3,3 +3,15 @@
 *.swp
 /smooth
 /tests/test_runner
+
+# Scratch data and helper scripts that sit outside the build (audit B3).
+# Named individually, not by glob: plot_data.py, md2pdf.sh and
+# .claude/skills/run-smooth/driver.py are tracked and must stay visible.
+*.dat
+/benchmark*.py
+/benchmark_lib.c
+/filter*.py
+/plot_benchmark.py
+/plot_data_t.py
+/pdf_from_md_tmp.sh
+/tests/generate_*.py

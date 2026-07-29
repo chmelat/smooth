@@ -373,8 +373,9 @@ void test_parser_ts_y_before_timestamp(void) {
 }
 
 /* Regression guard for plan 001's silent-data-loss fix: a row whose timestamp
- * field fails to parse must be dropped and reported via "# Skipped N ...
- * malformed timestamp", not silently included with garbage x. */
+ * field fails to parse must be dropped *and reported* via "# Skipped N ...
+ * malformed timestamp". Before 001 it was dropped silently, so the count is
+ * what this guards -- the drop itself already worked. */
 void test_parser_ts_malformed_row_is_reported(void) {
     const char *path = "/tmp/test_parser_ts_malformed.dat";
     write_fixture(path,

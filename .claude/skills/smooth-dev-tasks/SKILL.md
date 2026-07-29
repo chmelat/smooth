@@ -37,6 +37,28 @@ Test best practices:
 8. Add `tests/test_newmethod.c` and wire it into `tests/test_main.c` and the
    `Makefile`.
 
+## Changing a public signature
+
+Headers are prose and the compiler never reads their usage examples, so they rot
+silently. This has been caught twice (audit TK6, then plan 003 — which found the
+same defect class in `savgol.h`, including a call to `analyze_grid()` with an
+argument that had been removed two versions earlier).
+
+After changing any signature in a `*.h`, grep **all** headers for the name, not
+just the one you edited — `grep -n '<funcname>' *.h`. Cross-references are the
+usual casualty: `savgol.h` documents Tikhonov's API, and `tikhonov.h` documents
+its own.
+
+If you touch a header's example block, extract and compile it:
+
+```sh
+# paste the example into /tmp/ex.c, then:
+clang -I. /tmp/ex.c <module>.c grid_analysis.c -llapack -lblas -lm -o /tmp/ex
+```
+
+Note `grid_analysis.c` in that line — the examples need it, and the compile line
+printed in `tikhonov.h` omitted it for several versions.
+
 ## Modifying grid analysis
 
 `GridAnalysis` is shared state — every change ripples to all methods.

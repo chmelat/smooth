@@ -167,11 +167,11 @@ Consequences worth carrying forward:
   and has nothing to do with non-uniformity.
 
 **007** — executed on branch `advisor/007-gcv-trace-off-stdout` as `6227f4d`,
-2026-07-28, **not yet merged or reviewed**. Every measured expectation in the
-plan was hit exactly: stdout comment lines 28 -> 7 on `test_data.dat` and 62 -> 17
-on the alternating mesh, stderr 21 and 25, the `Trace(H)` note 21 -> 1, zero
-non-ASCII bytes on either stream, `-l auto` data rows byte-identical. 138 tests,
-valgrind clean, no compiler warnings.
+2026-07-28, and **merged into `main` as `4655024`** (v5.11.53). Every measured
+expectation in the plan was hit exactly: stdout comment lines 28 -> 7 on
+`test_data.dat` and 62 -> 17 on the alternating mesh, stderr 21 and 25, the
+`Trace(H)` note 21 -> 1, zero non-ASCII bytes on either stream, `-l auto` data
+rows byte-identical. 138 tests, valgrind clean, no compiler warnings.
 
 **Executed with verification descoped at the user's instruction.** Steps 1, 5, 6
 and 7 of the plan were skipped: no baseline-capture harness, no byte-identity
