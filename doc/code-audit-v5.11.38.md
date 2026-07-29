@@ -67,7 +67,7 @@ selhal), uvolněný v `lcurve_cleanup`. Cyklus křivosti testuje `!valid[...]`
 místo porovnání s `0.0`. L-curve se používá jen pro `n > 20000`, takže dopad na
 běžný vstup je nulový.
 
-### B2. CLI číselné argumenty přes `atoi`/`atof` tiše polykají nečíselný vstup — `smooth.c:81,84,116,127,139,142` — **OPEN** (souvisí s B13 v `code-audit-v5.11.22.md`)
+### B2. ~~CLI číselné argumenty přes `atoi`/`atof` tiše polykají nečíselný vstup~~ — **FIXED v5.11.54** (= B13 v `code-audit-v5.11.22.md`, viz `code-audit-v5.11.41.md` pro popis opravy)
 
 `-n abc` → `sp = 0` (chyceno až `sp < 3`), `-p abc` → `dp = 0` (tiše degree 0),
 `-l xyz` → `lambda = 0.0`, `-f xyz` → `cutoff = 0.0` (chyceno range-checkem).
@@ -109,6 +109,6 @@ Build artefakty (`tests/test_runner`, `test_debug_edge`) a scratch soubory
 |-----|--------------|-----------|------------------|
 | S3  | smooth.c     | nízká     | FIXED v5.11.38   |
 | T1  | tikhonov.c   | nízká     | FIXED v5.11.38   |
-| A2  | timestamp.c  | nízká     | OPEN (= v5.11.22 A2) |
-| B2  | smooth.c     | nízká     | OPEN             |
-| B3  | repo         | kosmetika | OPEN             |
+| A2  | timestamp.c  | nízká     | FIXED v5.11.43   |
+| B2  | smooth.c     | nízká     | FIXED v5.11.54   |
+| B3  | repo         | kosmetika | FIXED `c42056e`  |

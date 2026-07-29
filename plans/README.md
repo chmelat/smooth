@@ -77,7 +77,7 @@ Verified and ranked, but no plan written. Listed so they are not re-derived.
 | Finding | Category | Effort | Note |
 |---|---|---|---|
 | ~~`tikhonov.h` header documentation is actively wrong (TK6)~~ | docs | S | **Planned as 003.** Re-verification found 7 defects, not the 4 originally recorded — see below. |
-| CLI numeric args parsed with `atoi`/`atof` (B2) | bug | S | `-p abc` silently yields degree 0; `-n 99999999999999` is signed-overflow UB (observed: 276447231). `parser.c` already uses `strtod` + `endptr` correctly — the CLI does not. Open since v5.11.22. |
+| ~~CLI numeric args parsed with `atoi`/`atof` (B2)~~ | bug | S | **Fixed in v5.11.54**, no plan needed. Open since the v5.11.8 audit (as B13) — the oldest finding in the tree. `arg_int()`/`arg_double()` in `smooth.c` reuse the `parser.c:230-238` predicate. Fixing it turned up three cases the audits never had: `-l nan` passed `lambda < 0` and `-f nan` passed the `(0,1)` band, because ordered comparisons against NaN are all false, and `-l 1e400` became inf. Valid runs byte-identical across 12 flag combinations plus 3 in `-T` mode. |
 | No CI configuration | dx | S | No `.github/`, `.gitlab-ci`, or `.travis`. The `CLAUDE.md` hard rule "do not commit without `make test` passing and no new valgrind leaks" is enforced only by discipline. |
 | ~~Tikhonov output derivative is 1st-order on non-uniform grids (TK5)~~ | bug | S | **Planned as 004.** Re-analysis sharpened it — see below. |
 | ~~`-l auto` writes 26 diagnostic lines into the data stream, 19 with UTF-8 `λ` (B8+B9)~~ | tech-debt | S–M | **Planned as 007.** Re-measured at `fbf4130` and found wider — see below. |

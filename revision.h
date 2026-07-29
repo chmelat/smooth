@@ -3,7 +3,38 @@
  *
  * Version History
  * ---------------
- * v5.11.53 (current): Keep the GCV sweep trace out of the data stream, and
+ * v5.11.54 (current): Validate CLI numeric arguments instead of letting
+ *           atoi()/atof() swallow bad input (audit B2, first recorded as B13
+ *           in code-audit-v5.11.8 — the oldest open finding in the tree).
+ *           Both functions return 0 for anything they cannot parse and report
+ *           nothing, so a typo became a legal value: `-p abc` ran a silent
+ *           degree-0 fit, `-l xyz` a silent lambda=0. Two static helpers in
+ *           smooth.c, arg_int() and arg_double(), replace all eight call
+ *           sites. The predicate is the one parser.c:230-238 already applies
+ *           to data tokens — full consumption of the string, errno clear,
+ *           result finite — so the CLI and the parser now agree on what
+ *           counts as a number. Only the policy differs: parser.c skips a bad
+ *           row, the CLI exits 1.
+ *           BEHAVIOUR CHANGE: input that used to be silently accepted is now
+ *           rejected with `Invalid value for -X: '...'` on stderr — `-p abc`,
+ *           `-l xyz`, `-m 2abc`, `-k 3x`, `-k 1:2:3` (third field was
+ *           ignored), `-p 2.5` (truncated to 2). Three cases were reaching
+ *           past checks that looked like they covered them: `-l nan` passed
+ *           `lambda < 0` and `-f nan` passed the `(0,1)` band, because ordered
+ *           comparisons against NaN are all false; `-l 1e400` became inf.
+ *           `-n 99999999999999` was undefined behaviour via atoi (observed:
+ *           276447231) and is now caught by errno, with a separate INT_MIN/
+ *           INT_MAX guard for values that fit long but not int.
+ *           Arguments that already failed now say why: `-n abc` no longer
+ *           reports "Incorrect number points in moving windows", `-f xyz` no
+ *           longer reports "Cutoff frequency must be in range (0, 1)".
+ *           Every existing range check is kept — this adds a layer in front
+ *           of them. `-l auto`, `-f auto` and the method names are matched by
+ *           strcmp before any conversion and are unaffected. Valid runs are
+ *           byte-identical across six method/flag combinations. 138 tests
+ *           pass; no test added (the helpers are static in smooth.c and the
+ *           suite has no CLI-layer coverage).
+ * v5.11.53: Keep the GCV sweep trace out of the data stream, and
  *           make all program output ASCII (audit findings B8+B9; plan 007).
  *           Three separable defects sharing one set of lines.
  *           (1) BEHAVIOUR CHANGE: the per-lambda GCV search trace moved from
@@ -631,5 +662,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.53"
-#define REVDATE "2026-07-28"
+#define VERSION "5.11.54"
+#define REVDATE "2026-07-29"

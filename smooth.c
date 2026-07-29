@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
+#include <math.h>
 #include <libgen.h>
 #include <unistd.h>
 
@@ -45,6 +47,45 @@ static void print_result(const double *x,
                          const double *y_deriv,
                          int n, int show_derivative, int timestamp_mode);
 
+/* CLI numeric argument parsing.
+ *
+ * The predicate mirrors parser.c:230-238, the repo's established shape for
+ * "is this token a fully numeric finite value": the conversion must consume
+ * the whole string, errno must stay clear, and the result must be finite.
+ * Only the policy differs -- parser.c skips a bad data row, the CLI rejects a
+ * bad argument outright, because a mistyped option is never what the user
+ * meant. (parser.c compares endptr against an explicit token end because its
+ * tokens sit inside a larger buffer; an argv string is NUL-terminated, so
+ * *end == '\0' is the same test.)
+ *
+ * Before this, atoi()/atof() returned 0 for unparseable input: `-p abc` ran a
+ * silent degree-0 fit and `-l xyz` a silent lambda=0. Audit B2 / B13. */
+static double arg_double(const char *s, char opt)
+{
+  char *end;
+  errno = 0;
+  double v = strtod(s, &end);
+  if (end == s || *end != '\0' || errno != 0 || isnan(v) || isinf(v)) {
+    fprintf(stderr, "Invalid value for -%c: '%s'!\n", opt, s);
+    exit(EXIT_FAILURE);
+  }
+  return v;
+}
+
+static int arg_int(const char *s, char opt)
+{
+  char *end;
+  errno = 0;
+  long v = strtol(s, &end, 10);
+  /* errno only catches values outside long; the INT range must be checked
+   * separately or the narrowing below is implementation-defined. */
+  if (end == s || *end != '\0' || errno != 0 || v < INT_MIN || v > INT_MAX) {
+    fprintf(stderr, "Invalid value for -%c: '%s'!\n", opt, s);
+    exit(EXIT_FAILURE);
+  }
+  return (int)v;
+}
+
 /* Global variables */
 char *progname;
 
@@ -78,14 +119,14 @@ int main(int argc, char **argv)
   while ( (ch = getopt(argc, argv, "n:p:m:l:f:k:dgTh?")) != -1 ) {
     switch (ch) {
       case 'n':
-        sp = atoi(optarg);
+        sp = arg_int(optarg, 'n');
         break;
       case 'p':
-        dp = atoi(optarg);
+        dp = arg_int(optarg, 'p');
         break;
       case 'm':
         if (optarg[0] >= '0' && optarg[0] <= '9') {
-          int method_num = atoi(optarg);
+          int method_num = arg_int(optarg, 'm');
           if (method_num >= METHOD_POLYFIT && method_num <= METHOD_BUTTERWORTH) {
             method = method_num;
           } else {
@@ -113,7 +154,7 @@ int main(int argc, char **argv)
         if (strcmp(optarg, "auto") == 0) {
           auto_lambda = 1;
         } else {
-          lambda = atof(optarg);
+          lambda = arg_double(optarg, 'l');
           if (lambda < 0) {
             fprintf(stderr, "Lambda must be non-negative!\n");
             exit(EXIT_FAILURE);
@@ -124,7 +165,7 @@ int main(int argc, char **argv)
         if (strcmp(optarg, "auto") == 0) {
           auto_cutoff = 1;
         } else {
-          cutoff_freq = atof(optarg);
+          cutoff_freq = arg_double(optarg, 'f');
           if (cutoff_freq <= 0.0 || cutoff_freq >= 1.0) {
             fprintf(stderr, "Cutoff frequency must be in range (0, 1)!\n");
             fprintf(stderr, "where fc = 1 corresponds to Nyquist frequency (fs/2)\n");
@@ -134,12 +175,14 @@ int main(int argc, char **argv)
         }
         break;
       case 'k': {
-        const char *sep = strchr(optarg, ':');
+        char *sep = strchr(optarg, ':');
         if (sep == NULL) {
-          y_column = atoi(optarg);
+          y_column = arg_int(optarg, 'k');
         } else {
-          x_column = atoi(optarg);
-          y_column = atoi(sep + 1);
+          *sep = '\0';            /* argv strings are writable; split in place */
+          x_column = arg_int(optarg, 'k');
+          y_column = arg_int(sep + 1, 'k');
+          *sep = ':';             /* restore so argv stays intact */
         }
         if (x_column < 1 || y_column < 1) {
           fprintf(stderr, "Column number must be >= 1!\n");

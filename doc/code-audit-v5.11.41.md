@@ -100,14 +100,30 @@ zarovnané s `x`.
 
 ## B. Designová / robustnostní rozhodnutí (otevřené, přenesené)
 
-### B2. CLI číselné argumenty přes `atoi`/`atof` tiše polykají nečíselný vstup — `smooth.c:82,85,117,128,140,143` — **OPEN** (= B2 v5.11.38 / B13 v5.11.22)
+### B2. ~~CLI číselné argumenty přes `atoi`/`atof` tiše polykají nečíselný vstup~~ — **FIXED v5.11.54**
 
 `-n abc` → `sp=0` (chyceno až `sp<3`), `-p abc` → `dp=0` (tiše degree 0),
 `-l xyz` → `lambda=0.0`, `-f xyz` → `cutoff=0.0` (chyceno range-checkem),
 `-k abc` → sloupec 0 (chyceno `<1`). Funkční, ale bez diagnostiky chybného
-vstupu. **Fix:** `strtod`/`strtol` + kontrola `endptr`, hlásit
-`ERROR: invalid value for -X: '...'`. Parser už tenhle vzorec používá správně
-(`strtod` + `endptr`), CLI ne — nekonzistence.
+vstupu.
+
+**Fix:** dva statické helpery `arg_int()` / `arg_double()` v `smooth.c`
+nahradily všech osm `atoi`/`atof` volání. Predikát je ten, který `parser.c`
+už používá na datové tokeny (`parser.c:230-238`): úplné zkonzumování řetězce,
+čisté `errno`, konečný výsledek. Liší se jen politika — parser vadný řádek
+přeskočí, CLI skončí s kódem 1. Hláška `Invalid value for -X: '...'` (bez
+prefixu `ERROR:`, aby seděla ke zbytku CLI bloku).
+
+Při opravě se ukázaly tři případy, které audit neměl a které prolézaly
+kontrolami, jež vypadaly, že je pokrývají: `-l nan` prošlo přes `lambda < 0`
+a `-f nan` přes pásmo `(0,1)`, protože uspořádaná porovnání s NaN jsou vždy
+nepravdivá; `-l 1e400` dalo `inf`. Nově se odmítá i posun za konec čísla
+(`-m 2abc`, `-k 3x`, `-k 1:2:3`, `-p 2.5`) a přetečení `-n 99999999999999`,
+což bylo UB (naměřeno 276447231). Kontrola `INT_MIN`/`INT_MAX` je nutná
+zvlášť — `errno` chytí jen přetečení mimo `long`.
+
+Platné běhy ověřeny jako byte-identické proti v5.11.53 na 12 kombinacích
+metod a přepínačů plus 3 v `-T` módu.
 
 ### B8. Tikhonov per-lambda GCV log jde vždy na stdout — `tikhonov.c:324,456,479,495` — **OPEN** (= B8 v5.11.22)
 
@@ -210,26 +226,35 @@ Znovu ověřeno, že stav odpovídá `audit-tikhonov.md` (z v5.11.39). Stručně
 
 ## Stav nálezů
 
+Aktualizováno 2026-07-29 proti v5.11.54.
+
 | ID  | Modul                 | Závažnost    | Stav                         |
 |-----|-----------------------|--------------|------------------------------|
-| A1  | parser.c/timestamp.c  | střední–vys. | **FIXED v5.11.42 (NOVÝ)**    |
+| A1  | parser.c/timestamp.c  | střední–vys. | **FIXED v5.11.42**           |
 | A2  | timestamp.c           | nízká        | **FIXED v5.11.43**           |
-| B2  | smooth.c              | nízká        | OPEN (= v5.11.38 B2)         |
-| B3  | repo                  | kosmetika    | OPEN (= v5.11.38 B3)         |
-| B8  | tikhonov.c            | nízká        | OPEN (= v5.11.22 B8)         |
-| B9  | tikhonov.c            | nízká        | OPEN (= v5.11.22 B9)         |
-| TK3 | tikhonov.c (L-curve)  | střední      | OPEN (viz audit-tikhonov.md) |
-| TK4 | tikhonov.c (trace)    | nízká        | OPEN                         |
-| TK5 | tikhonov.c (derivace) | nízká        | OPEN                         |
-| TK6 | tikhonov.h (doc)      | nízká        | OPEN                         |
-| TK7 | tikhonov.c (redund.)  | kosmetika    | OPEN                         |
+| B2  | smooth.c              | nízká        | **FIXED v5.11.54**           |
+| B3  | repo                  | kosmetika    | **FIXED `c42056e`** (.gitignore) |
+| B8  | tikhonov.c            | nízká        | **FIXED v5.11.53** (plán 007) |
+| B9  | tikhonov.c            | nízká        | **FIXED v5.11.53** (plán 007) |
+| TK3 | tikhonov.c (L-curve)  | střední      | DEAD v5.11.44 (kód smazán)   |
+| TK4 | tikhonov.c (trace)    | nízká        | OPEN, zamítnuto              |
+| TK5 | tikhonov.c (derivace) | nízká        | **FIXED v5.11.49** (plán 004) |
+| TK6 | tikhonov.h (doc)      | nízká        | **FIXED `d57a778`** (plán 003) |
+| TK7 | tikhonov.c (redund.)  | kosmetika    | OPEN, zamítnuto              |
 | TK8 | tikhonov.c (gate)     | kosmetika    | OPEN                         |
 | C1–C4 | smooth.c            | kosmetika    | OPEN                         |
 
-**Doporučené pořadí oprav:** ~~A1~~ (opraveno v5.11.42), ~~A2~~ (opraveno
-v5.11.43), pak TK6 (triviální, hlavička lže), pak B2 (jednotný strtod/strtol
-helper v CLI). Zbytek je tech-debt / kosmetika beze změny korektnosti na platném
-vstupu.
+Podrobnosti k TK-řadě jsou v `audit-tikhonov.md`; TK4 a TK7 tam mají zapsané
+zdůvodnění zamítnutí (nic nezávisí na přesnosti auto-lambda; TK7 změřen na
+~0.25 s z 0.465 s v úloze dominované I/O).
+
+**Zbývá:** TK8 (dvě jednořádkovky — chybějící W v chybové hlášce `dpbsv`
+a refinement gate `n <= 5000`, který po TK1 nemá důvod) a kosmetická řada
+C1–C4. Nic z toho nemění korektnost na platném vstupu.
+
+Mimo tento audit zůstávají dvě věci evidované v `plans/README.md`: chybějící CI
+konfigurace a descoped verifikace plánu 007 (neexistuje `tests/test_output.c`,
+takže stream contract nic nehlídá).
 
 **Závěr.** Po sérii kol (v5.11.8 → v5.11.41) je numerické jádro velmi pevné a
 butterworth/tikhonov audity vyčerpaly své moduly. Tento audit posouvá pozornost

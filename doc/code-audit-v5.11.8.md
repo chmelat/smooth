@@ -138,9 +138,11 @@ Fix: konvence zdokumentována v hlavičce `butterworth.c` (stdout `#` = info ovl
 
 (`polyfit.c:330–338` z původního auditu byl false positive — slouží jako fallback při `dgelss info != 0`, kdy `continue` na řádku 276 přeskočí nastavení `left_boundary_done`.)
 
-### B13. Nezkontrolovaná `atoi` na CLI argumenty — `smooth.c:83–87`
+### B13. ~~Nezkontrolovaná `atoi` na CLI argumenty~~ — `smooth.c:83–87` — **FIXED v5.11.54**
 
 `-n abc` silently → sp=0, pak "odd >= 3" error. Uživatel netuší, že předal blbost. Přejít na `strtol` s kontrolou `endptr`.
+
+Opraveno až po pěti kolech auditů (B13 → B2 v5.11.38 → B2 v5.11.41): helpery `arg_int()`/`arg_double()` v `smooth.c` s predikátem z `parser.c:230-238`. Popis v `code-audit-v5.11.41.md`.
 
 ### B14. Pracovní soubory v repu
 
