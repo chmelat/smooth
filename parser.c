@@ -54,15 +54,19 @@ int parse_input(FILE *fp,
   while (fgets(line, sizeof(line), fp) != NULL) {
     line_number++;
 
-    /* Detect line overflow: buffer filled without trailing newline AND
-     * stream still has data — line was truncated mid-content (audit B9).
+    /* Detect line overflow: buffer filled without trailing newline AND the
+     * next character is not the line's terminator — line was truncated
+     * mid-content (audit B9). A line of exactly sizeof(line)-1 bytes leaves
+     * only its LF (or CR LF) unread; that is consumed here, not an overflow.
      * Must run before the comment strip below, which changes strlen(line). */
     int truncated = 0;
     {
       size_t llen = strlen(line);
       if (llen == sizeof(line) - 1 && line[llen-1] != '\n') {
         int c = fgetc(fp);
-        if (c != EOF) {
+        if (c == '\r')
+          c = fgetc(fp);
+        if (c != '\n' && c != EOF) {
           ungetc(c, fp);
           truncated = 1;
         }

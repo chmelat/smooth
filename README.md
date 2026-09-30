@@ -1,6 +1,6 @@
 # smooth - Experimental Data Smoothing
 
-**Version 5.11.61** | September 30, 2026
+**Version 5.11.62** | September 30, 2026
 
 A command-line tool for smoothing noisy experimental data and computing derivatives. Implements four methods: polynomial fitting, Savitzky-Golay filtering, Tikhonov regularization, and Butterworth low-pass filtering. Reads two-column ASCII data, outputs smoothed results. Works as a Unix filter.
 
@@ -50,7 +50,7 @@ make                                    # Compile
 ```bash
 make                  # Standard compilation (clang, -O2)
 make debug            # Debug build (-g -O0)
-make test             # Build and run 149 unit tests
+make test             # Build and run 150 unit tests
 make test-valgrind    # Run tests with memory leak detection
 make clean            # Clean build artifacts
 make install-user     # Install to ~/bin
@@ -1657,14 +1657,14 @@ smooth/
 +--- tests/             # Unit testing framework (Unity)
     |--- unity.c/h                # Unity testing framework
     |--- unity_internals.h        # Unity internals
-    |--- test_main.c              # Test runner (149 tests)
+    |--- test_main.c              # Test runner (150 tests)
     |--- test_grid_analysis.c     # Grid analysis tests (17 tests)
     |--- test_polyfit.c           # Polyfit module tests (22 tests)
     |--- test_savgol.c            # Savgol module tests (18 tests)
     |--- test_tikhonov.c          # Tikhonov module tests (31 tests)
     |--- test_butterworth.c       # Butterworth module tests (22 tests)
     |--- test_timestamp.c         # Timestamp module tests (18 tests)
-    +--- test_parser.c            # Input parser tests (21 tests, end-to-end)
+    +--- test_parser.c            # Input parser tests (22 tests, end-to-end)
 ```
 
 ---

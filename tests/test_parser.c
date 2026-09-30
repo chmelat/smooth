@@ -563,3 +563,22 @@ void test_parser_ts_line_numbers_follow_dropped_rows(void) {
                                      "at line 5 (previous data row: line 3)"));
     remove(path);
 }
+
+/* A line of exactly MAX_LINE-1 = 4095 bytes fills the read buffer but loses
+ * nothing: the next character is its terminator (LF, or CR LF). Only a line
+ * one byte longer is truncated. */
+void test_parser_line_filling_buffer_is_not_truncated(void) {
+    const char *path = "/tmp/test_parser_longline.dat";
+    static char buf[3 * 4200];
+    const char *ends[] = { "\n", "\r\n" };
+    for (int k = 0; k < 2; k++) {
+        snprintf(buf, sizeof(buf), "1 1\n2 2\n3 3%4092s%s4 4\n5 5\n", "", ends[k]);
+        write_fixture(path, buf);
+        SmoothRun r = run_smooth("-m0 -n3 -p1", path);
+        TEST_ASSERT_EQUAL_INT(5, r.data_rows);
+    }
+    snprintf(buf, sizeof(buf), "1 1\n2 2\n3 3%4093s\n4 4\n5 5\n", "");
+    write_fixture(path, buf);
+    TEST_ASSERT_TRUE(output_contains("-m0 -n3 -p1", path, "Line 3 exceeds"));
+    remove(path);
+}

@@ -3,7 +3,12 @@
  *
  * Version History
  * ---------------
- * v5.11.61 (current): Error messages name the input-file line, not the index
+ * v5.11.62 (current): A line of exactly MAX_LINE-1 = 4095 bytes (LF or CR LF
+ *           terminated) was rejected as "exceeds 4096-byte read buffer":
+ *           fgets filled the buffer and the unread terminator counted as
+ *           more content. The terminator is now consumed; only a line with
+ *           real content past the buffer is an overflow.
+ * v5.11.61: Error messages name the input-file line, not the index
  *           among accepted rows (comments, blank and skipped lines shifted
  *           it). The parser records each row's line; the invalid-timestamp
  *           warning uses it via the new line_inout argument of
@@ -757,5 +762,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.61"
+#define VERSION "5.11.62"
 #define REVDATE "2026-09-30"
