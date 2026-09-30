@@ -3,7 +3,15 @@
  *
  * Version History
  * ---------------
- * v5.11.58 (current): Scale the local fits of polyfit (t = (x-x_i)/s,
+ * v5.11.59 (current): Tikhonov GCV range 1e6*h^3 -> 1e14*h^3 (32 points):
+ *           the optimum grows as P^4 (P = samples per period) and every signal
+ *           slower than ~500 samples pinned. The solve runs on y minus its LS
+ *           line, so the dpbsv error no longer scales with the y offset.
+ *           Candidates dpbsv cannot factor are skipped and counted; failure is
+ *           a status flag, not a 1e20 score. Lower-edge minimum on a
+ *           near-uniform grid is a note. Near-duplicate x warns. Audit B1,
+ *           C1, C2.
+ * v5.11.58: Scale the local fits of polyfit (t = (x-x_i)/s,
  *           s = window half-width) and savgol (positions centred and scaled
  *           to [-1,1]); results no longer depend on the units of x and
  *           savgol's boundary windows no longer break at large w/p. Dropped
@@ -735,5 +743,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.58"
+#define VERSION "5.11.59"
 #define REVDATE "2026-09-30"

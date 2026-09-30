@@ -52,6 +52,10 @@ typedef struct {
  *   - Uses natural boundary conditions (second derivative = 0 at ends)
  *   - Efficient pentadiagonal band matrix (bandwidth 2) for O(n) memory
  *   - Correct discretization for both uniform and non-uniform grids
+ *   - Solves for y minus its least-squares line (same result; keeps the solve
+ *     accurate for y with a large offset)
+ *   - Prints a stdout "# WARNING" if the smallest spacing is below
+ *     1e-4 * h_avg (near-duplicate x): the solve loses accuracy there
  *   - Memory must be freed using free_tikhonov_result()
  */
 TikhonovResult* tikhonov_smooth(const double *x, const double *y, int n, double lambda,
@@ -72,15 +76,21 @@ TikhonovResult* tikhonov_smooth(const double *x, const double *y, int n, double 
  *   Optimal lambda value minimizing GCV criterion
  * 
  * Notes:
- *   - Uses a single 13-point log-spaced grid search for every n (the n <= 5000
+ *   - Uses a single 32-point log-spaced grid search for every n (the n <= 5000
  *     sub-grid refinement was removed in v5.11.55; tikhonov.c has the details)
  *   - The per-lambda search trace is written to stderr as "# ..." (progress
  *     output, not data); the selected lambda and the warnings qualifying its
  *     reliability go to stdout as "# ..."
- *   - Search range: 1e-8*h_avg^3 to 1e6*h_avg^3, i.e. scaled by the grid so it
- *     is invariant to grid scale (tikhonov.c is the source of truth)
+ *   - Search range: 1e-8*h_avg^3 to 1e14*h_avg^3, i.e. scaled by the grid so it
+ *     is invariant to grid scale; the upper bound is the dpbsv conditioning
+ *     limit. Candidates the solver cannot factor (possible on non-uniform
+ *     grids) are skipped and counted (tikhonov.c is the source of truth)
  *   - For small datasets (n < 3), returns conservative default
- *   - Warns if the chosen lambda lands on the edge of the search range
+ *   - Warns (stdout "# WARNING") if the chosen lambda lands on the upper edge,
+ *     or on the lower edge of a non-uniform grid (CV > 0.2 or ratio > 2); a
+ *     lower-edge minimum on a near-uniform grid means "no smoothing" and
+ *     prints a "# Note". If every candidate fails it warns and returns the
+ *     lower bound.
  */
 double find_optimal_lambda_gcv(const double *x, const double *y, int n, const GridAnalysis *grid_info);
 

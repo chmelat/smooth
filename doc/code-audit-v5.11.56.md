@@ -16,7 +16,7 @@ Hlavní nálezy: **tichá ztráta přesnosti na výstupu** (A1) a **numericky
 neškálované polynomiální fity** v polyfit i savgol (A2, A3). Žádnou z chyb
 A1–A6 současná testovací sada nezachytí.
 
-**Status:** A1 FIXED v5.11.57; A2, A3 FIXED v5.11.58; ostatní OPEN.
+**Status:** A1 FIXED v5.11.57; A2, A3 FIXED v5.11.58; B1, C1, C2 FIXED v5.11.59; ostatní OPEN.
 
 ---
 
@@ -30,11 +30,11 @@ A1–A6 současná testovací sada nezachytí.
 | A4 | střední   | `timestamp.c:28-42`                     | offset časového pásma i koncové smetí tiše ignorovány |
 | A5 | střední   | `timestamp.c:149`, `grid_analysis.c:93` | chybová hlášení uvádějí index, ne řádek souboru |
 | A6 | střední   | `parser.c:148-169`                      | hlavička v `-T` módu je fatální chyba |
-| B1 | střední   | `tikhonov.c:374-376`                    | rozsah GCV hledání λ nezávisí na n |
+| B1 | střední   | `tikhonov.c:374-376`                    | ~~horní mez GCV `1e6·h³` zastaví každý signál s periodou ≳ 500 vzorků~~ **FIXED v5.11.59** |
 | B2 | nízká     | `butterworth.c:471`                     | auto-cutoff má pevné minimum 0.02, bez varování |
 | B3 | —         | `tikhonov.c:316-329`                    | aproximace stopy na nerovnoměrné mřížce — **vyvráceno** |
-| C1 | doc       | README:241-242, 1219; `tikhonov.c:372,434` | nepravdivé „λ škáluje s amplitudou y" |
-| C2 | doc       | `tikhonov.h:75`                         | „13-point" sweep, kód má 21 |
+| C1 | doc       | README:241-242, 1219; `tikhonov.c:372,434` | ~~nepravdivé „λ škáluje s amplitudou y"~~ **FIXED v5.11.59** |
+| C2 | doc       | `tikhonov.h:75`                         | ~~„13-point" sweep, kód má 21~~ **FIXED v5.11.59** |
 | C3 | nízká     | `smooth.c:225-237`                      | `-n`/`-p` validace i pro metody, které je nepoužívají |
 | D1 | testy     | `tests/`                                | chybějící regresní testy pro A1–A6 |
 | D2 | testy     | `tests/test_parser.c:141 ...`           | pevné cesty v `/tmp` |
@@ -223,31 +223,86 @@ pro y.
 
 ## B. Numerika a návrh
 
-### B1. Rozsah GCV hledání λ nezávisí na n — `tikhonov.c:374-376`
+### B1. ~~Rozsah GCV hledání λ~~ — `tikhonov.c:374-376` — **FIXED v5.11.59**
 
-Rozsah `[1e-8, 1e6] · h³` je invariantní vůči měřítku mřížky, ale ne vůči
-délce záznamu. Mód s úhlovou frekvencí θ je potlačen, když
-`λ · 16 sin⁴(θ/2) / h³ ≈ 1`:
+**Korekce původního popisu.** Původně uvedená příčina („rozsah nezávisí na n“)
+byla nepřesná a navržená mez `c·(n/π)⁴·h³` by narazila na podmíněnost. Podrobné
+měření (numpy replika C algoritmu — stejná pásová matice, stejná analytická
+stopa, `solveh_banded` = LAPACK `dpbsv`; reference mpmath 60 číslic):
 
-- horní mez `1e6·h³` → perioda řezu ≈ 200 vzorků; pomalejší signál už
-  vyhladit nejde,
-- `λ/h³ ≲ 1e-2` → nevyhlazuje vůbec nic (řez nad Nyquistem), tj. spodních
-  ~6 dekád (~9 z 21 bodů sweepu) je zbytečných.
+1. **GCV sám funguje** — kde ho rozsah pustí, trefí oracle (λ s minimální
+   RMSE proti pravdě) prakticky přesně; 30 konfigurací, n ∈ {1000, 20000},
+   perioda P ∈ {20 … 40000} vzorků, σ ∈ {0.03, 0.3, 1}.
+2. **Optimum roste ≈ P⁴, nezávisle na n:**
 
-Reprodukce: n=20000, `y = sin(2πi/10000) + 0.3·N(0,1)` (perioda 10000 vzorků).
+   | P (vzorků) | λ_opt/h³ (σ 0.03 … 1) | RMSE při mezi 1e6·h³ | RMSE v optimu |
+   |------------|-----------------------|----------------------|---------------|
+   | 20         | 0.7 … 18              | stejné               | stejné        |
+   | 100        | 2e2 … 5e3             | stejné               | stejné        |
+   | 500        | 6e4 … 1.4e6           | 0.097 (σ=1)          | 0.090         |
+   | 2000       | 7e6 … 4e8             | 0.029 (σ=0.3)        | 0.016         |
+   | 10000      | 2e9 … 5e10            | 0.029 (σ=0.3)        | 0.0083        |
+   | 40000      | 1e11 … 1e13           | 0.030 (σ=0.3)        | 0.0048        |
 
-```
-# WARNING: optimal lambda = 1.000e+06 lies at the edge of the search range
-RMSE vs. pravda:  GCV (λ=1e6) 0.029   |  -l 1e8  0.016  |  -l 1e10  0.0093
-```
+   Mez `1e6·h³` tedy zastaví **každý signál s periodou ≳ 500 vzorků**
+   (RMSE 2–7× horší), varování o hraně se vypsalo.
+3. **Reálná data v repu mez netrefí:** `all.dat -T -k 5` λ/h³ ≈ 64,
+   `pt.dat -T` ≈ 0.1, `data.txt` a `test_data.txt` uvnitř rozsahu.
+4. **Strop podmíněnosti:** `dpbsv` selže (ztráta PD) od λ/h³ ≈ 1e16 pro
+   všechna n; chyba řešení roste ≈ 1.6e-15·(λ/h³)·|y| **včetně offsetu y**.
+   S offsetem 1e5 (reference mpmath): chyba 9e-4 při λ/h³ = 1e8, 2.9e-2 při
+   1e10, 4.5 při 1e12. Rozšíření rozsahu bez opravy by rozbilo data s
+   offsetem (tlak v Pa, teploty v K).
+5. **Dolní hrana — falešné varování:** `test_data.dat` (data bez šumu) skončilo
+   na `λ = 1e-8·h³` s WARNING. GCV má pro λ → 0 plochou limitu (RSS i
+   (1 − tr/n)² ∝ λ²); minimum na dolní hraně znamená „nevyhlazovat“ a výstup
+   je už shodný se vstupem.
+6. Analytická stopa drží i při velkém λ na nerovnoměrné mřížce (CV 0.3 i dva
+   režimy 1:4, P = 800: aproximované GCV = přesné GCV ≈ oracle).
 
-Varování se vypíše (správně), ale výchozí výsledek je 3× horší, než je
-dosažitelné.
-
-**Návrh:** `λ ∈ [1e-3, c · (n/π)⁴] · h³` — horní mez odpovídá potlačení i
-nejnižšího netriviálního módu θ = π/n. **Pozor:** pro n=20000 dosahuje λK
-~1e15 a `dpbsv` na `I + λK` ztrácí přesnost (κ·ε); před rozšířením ověřit
-podmíněnost, případně horní mez omezit.
+**Fix (v5.11.59):**
+- `tikhonov_smooth()` řeší soustavu pro `y − přímka LS` a přímku přičte zpět.
+  Přímky leží v nulovém prostoru D² (3bodová D² je přesná pro kvadratiky na
+  libovolné mřížce), takže jde o tentýž vyhlazovač; x se pro přímku centruje.
+  Chyba proti referenci se 40 číslicemi (offset 1e5, n = 1500) na rovnoměrné
+  mřížce ≤ 3e-8 až do 1e14·h³.
+- Rozsah `[1e-8, 1e14]·h_avg³`, 32 bodů (≈ 0.7 dekády/krok jako dřív).
+  Na nerovnoměrné mřížce určuje podmíněnost nejmenší *lokální* rozestup, takže
+  nejvyšší kandidáti mohou v `dpbsv` selhat (od poměru rozestupů ~20). Ty se
+  **tiše přeskočí a spočítají** (`# Note: k of 32 GCV candidates skipped`),
+  selhání je stavový příznak místo skóre 1e20 (to je u y ~ 1e11 skutečná
+  hodnota GCV), varování o horní hraně se vztahuje k nejvyššímu řešitelnému
+  kandidátovi. GCV běh n = 20000: 0.17 → 0.21 s.
+- **Slepá ulička (zaznamenáno, ať se neopakuje):** první verze po review
+  škálovala horní mez `h_min³`. Druhé review ukázalo, že jediný téměř
+  duplicitní vzorek pak zúží rozsah pro celý záznam o (h_avg/h_min)³: 4000
+  vzorků + 1 vzorek 1e-6 za x = 1000 → rozsah do 1e-4, λ zaseknuté na hraně,
+  RMSE 0.30 (v5.11.58: 0.045), při h_avg/h_min > 4.6e7 dokonce obrácený
+  rozsah. Proto zpět `h_avg` + přeskakování.
+- Minimum na dolní hraně → poznámka `# Note: GCV prefers no smoothing ...`;
+  na nerovnoměrné mřížce (CV > 0.2 nebo h_max/h_min > 2) zůstává WARNING
+  (tam může volbu způsobit aproximace stopy), bez opakování textu výhrady.
+  Selžou-li všechny kandidáty, WARNING a vrácena dolní mez (dřív tiše 0.01).
+- **Téměř duplicitní x (nový nález, existoval i ve v5.11.58):** při mezeře g
+  rostou koeficienty penalizace jako 1/g a řešení ztrácí přesnost i při
+  běžném λ. Proti referenci s 50 číslicemi (g v jednotkách h): 1e-3 → ≤ 5e-5
+  do λ/h³ = 1e8; 1e-4 → 3e-6 … 5e-3; 1e-5 → 2e-4 … 4e-2; 1e-6 → 3e-2 … 0.8
+  už při 1e4 … 1e6. `tikhonov_smooth()` vypíše WARNING, je-li
+  h_min < 1e-4·h_avg (práh podle měření; odhad 1e-3 v návrhu byl zbytečně
+  přísný). Data se neslučují — to je na uživateli.
+- Testy: `test_gcv_long_period_not_pinned` (P = 2000: λ > 1e6·h³ a menší RMSE
+  než při 1e6·h³), `test_tikhonov_offset_invariant` (offset 1e5 při
+  λ = 1e10·h³: shoda do 1e-6), `test_gcv_clustered_grid_smooths_well`
+  (rozestupy 0.05 / 1: vyhlazení aspoň na polovinu RMSE šumu),
+  `test_gcv_near_duplicate_sample_keeps_range` (4000 vzorků + 1 vzorek 1e-3
+  vedle: λ > 1e6 a vyhlazení aspoň na polovinu). První dva selhaly na
+  v5.11.58, čtvrtý na verzi s mezí `h_min³` (λ = 1e5).
+- Repro výše: λ = 2.8e10, RMSE 0.0089 (dřív 0.029); s offsetem 1e5 shodný
+  výstup do 5e-10 (starý kód při stejném λ: 0.08). Data s mezerou 1e-6:
+  RMSE 0.035 (v5.11.58: 0.045) + varování.
+- Reálná data: λ se posunulo nejvýš o jeden krok sweepu (jiná mřížka bodů);
+  `data.txt` 0.065 → 0.016 — GCV tam má plochou kotlinu (1.457e-2 vs
+  1.493e-2 v sousedních bodech), rozlišení sweepu, ne regrese.
 
 ### B2. Auto-cutoff Butterwortha nikdy nejde pod 0.02 — `butterworth.c:471`
 
@@ -288,7 +343,7 @@ s přesným GCV. Beze změny.
 
 ## C. Dokumentace
 
-### C1. „λ škáluje s amplitudou y" je nepravda
+### C1. ~~„λ škáluje s amplitudou y" je nepravda~~ — **FIXED v5.11.59**
 
 README:241-242 („it scales with $h^3$ and with the squared amplitude of $y$"),
 README:1219 („The one scale the range does not model is the amplitude of $y$"),
@@ -299,7 +354,7 @@ takže λ na amplitudě nezávisí. Ověřeno: y·1000 → GCV zvolí stejné
 λ = 316.2. λ závisí na h³ a na poměru signál/šum a spektru signálu, ne na
 amplitudě. Tvrzení svádí k ručnímu ladění λ podle amplitudy dat.
 
-### C2. `tikhonov.h:75` — „13-point log-spaced grid search"
+### C2. ~~`tikhonov.h:75` — „13-point log-spaced grid search"~~ — **FIXED v5.11.59**
 
 Kód (`tikhonov.c:420`) i README:1191 mají 21 bodů.
 
@@ -353,5 +408,5 @@ nebo cesta s PID.
 1. ~~A1 — jeden řádek, největší dopad.~~ Hotovo ve v5.11.57.
 2. ~~A2 + A3 společně, se vzájemným testem D1.3.~~ Hotovo ve v5.11.58.
 3. A4, A5, A6 — timestamp/parser vrstva, jedna série.
-4. B1 (s ověřením podmíněnosti), B2.
-5. C1–C3, D2.
+4. ~~B1 (s ověřením podmíněnosti)~~ hotovo ve v5.11.59 (spolu s C1, C2); B2.
+5. C3, D2.

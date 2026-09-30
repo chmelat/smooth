@@ -113,6 +113,15 @@ that):
 - **Tikhonov:** True 2nd-order penalty $(D^2)^T W D^2$ (pentadiagonal Gram
   matrix), corrected in v5.11. Single integral-measure discretization (no CV
   switch; unified in v5.11.34). GCV trace uses 2D null space (constants and linear functions are unpenalized).
+  The solve runs on y minus its least-squares line (same smoother, since lines
+  are in the null space): dpbsv error scales with $\lambda |b|$, and without it
+  an offset in y cost accuracy. That is what lets the GCV range reach
+  $10^{14} h_{avg}^3$ (v5.11.59). Keep the bound on **h_avg**: on non-uniform
+  grids the top candidates may fail `dpbsv` (conditioning follows the smallest
+  local spacing) and are skipped and counted; an h_min-scaled bound was tried
+  and let one near-duplicate sample shrink the range for the whole record.
+  Near-duplicate x (h_min < 1e-4 h_avg) loses accuracy at any lambda and only
+  warns.
 - **Butterworth:** 4th-order low-pass split into a biquad cascade for numerical
   stability. Filtfilt (forward-backward) gives zero phase. Per-biquad analytical
   IC via Cramer's rule avoids LAPACK and `complex.h`. Auto-cutoff via Morozov's
@@ -125,7 +134,7 @@ that):
 
 Uses the **Unity** framework (vendored in `tests/`).
 
-- 141 tests total: grid_analysis (17), polyfit (22), savgol (17), tikhonov (27),
+- 145 tests total: grid_analysis (17), polyfit (22), savgol (17), tikhonov (31),
   butterworth (22), timestamp (18), parser (18). Source of truth is `tests/test_main.c`.
 - Zero leaks. `make test-valgrind` exits 1 on any definite/indirect leak or
   memory error — keep it that way.

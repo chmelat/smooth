@@ -129,6 +129,10 @@ void test_tikhonov_linear_exact_null_space(void);
 void test_tikhonov_average_branch_integral_measure(void);
 void test_tikhonov_derivative_exact_for_quadratic_nonuniform(void);
 void test_tikhonov_derivative_uniform_grid_still_exact(void);
+void test_gcv_long_period_not_pinned(void);
+void test_tikhonov_offset_invariant(void);
+void test_gcv_clustered_grid_smooths_well(void);
+void test_gcv_near_duplicate_sample_keeps_range(void);
 
 // Testy pro butterworth.c - Basic functionality
 void test_butterworth_returns_valid_result(void);
@@ -384,6 +388,10 @@ int main(void) {
     RUN_TEST(test_tikhonov_average_branch_integral_measure);
     RUN_TEST(test_tikhonov_derivative_exact_for_quadratic_nonuniform);
     RUN_TEST(test_tikhonov_derivative_uniform_grid_still_exact);
+    RUN_TEST(test_gcv_long_period_not_pinned);
+    RUN_TEST(test_tikhonov_offset_invariant);
+    RUN_TEST(test_gcv_clustered_grid_smooths_well);
+    RUN_TEST(test_gcv_near_duplicate_sample_keeps_range);
 
     printf("\n");
     printf("========================================\n");

@@ -500,7 +500,7 @@ void test_gcv_optimal_lambda_constant_with_noise(void) {
 
     /* ASSERT */
     /* Lambda musí ležet uvnitř prohledávaného rozsahu, který od v5.11.56
-     * škáluje s h^3 (h = 0.05 zde, tedy [1.25e-12, 1.25e+02]).
+     * škáluje s h^3 (h = 0.05 zde, od v5.11.59 tedy [1.25e-12, 1.25e+10]).
      *
      * Horní mez tu záměrně NENÍ malá konstanta. Pravda je konstanta, takže její
      * druhá derivace je nula a penalizace ji nikdy netrestá — čím víc se
@@ -511,7 +511,7 @@ void test_gcv_optimal_lambda_constant_with_noise(void) {
      * vynucovalo by teď horší výsledek než jaký GCV umí najít. */
     const double h3 = grid->h_avg * grid->h_avg * grid->h_avg;
     TEST_ASSERT_GREATER_THAN_DOUBLE(1e-8 * h3, optimal_lambda);
-    TEST_ASSERT_LESS_OR_EQUAL_DOUBLE(1e6 * h3, optimal_lambda);
+    TEST_ASSERT_LESS_OR_EQUAL_DOUBLE(1e14 * h3, optimal_lambda);
 
     /* Použij optimální lambda pro smoothing */
     TikhonovResult *result = tikhonov_smooth(x, y_noisy, N, optimal_lambda, grid);
@@ -1262,3 +1262,102 @@ void test_tikhonov_derivative_uniform_grid_still_exact(void) {
  * - Každý test má jasnou strukturu ARRANGE-ACT-ASSERT-CLEANUP
  * - Memory management je důsledně testován
  */
+
+
+/* Signál s periodou 2000 vzorků má optimum λ/h³ ≈ 1e8 (audit B1): GCV nesmí
+ * uváznout na horní mezi rozsahu a musí vyhladit lépe než λ = 1e6·h³. */
+void test_gcv_long_period_not_pinned(void) {
+    enum { NP = 4000 };
+    static double x[NP], truth[NP], y[NP];
+    create_uniform_grid(x, NP, 0.0, 1.0);
+    for (int i = 0; i < NP; i++) truth[i] = sin(2.0 * M_PI * x[i] / 2000.0);
+    add_noise(truth, y, NP, 0.3, 4242);
+    GridAnalysis *grid = analyze_grid(x, NP);
+    TEST_ASSERT_NOT_NULL(grid);
+
+    double lambda = find_optimal_lambda_gcv(x, y, NP, grid);
+    TEST_ASSERT_GREATER_THAN_DOUBLE(1e6, lambda);
+    TEST_ASSERT_LESS_THAN_DOUBLE(1e14, lambda);
+
+    TikhonovResult *gcv = tikhonov_smooth(x, y, NP, lambda, grid);
+    TikhonovResult *cap = tikhonov_smooth(x, y, NP, 1e6, grid);
+    TEST_ASSERT_NOT_NULL(gcv);
+    TEST_ASSERT_NOT_NULL(cap);
+    TEST_ASSERT_LESS_THAN_DOUBLE(calculate_rmse(truth, cap->y_smooth, NP),
+                                 calculate_rmse(truth, gcv->y_smooth, NP));
+
+    free_tikhonov_result(gcv);
+    free_tikhonov_result(cap);
+    free_grid_analysis(grid);
+}
+
+/* Offset y nesmí měnit výsledek (audit B1): chyba dpbsv roste s λ·|y|,
+ * takže bez odečtení přímky data typu 1e5 Pa ztrácela přesnost. */
+void test_tikhonov_offset_invariant(void) {
+    enum { NP = 2000 };
+    static double x[NP], y[NP], y_off[NP];
+    create_uniform_grid(x, NP, 0.0, 1.0);
+    for (int i = 0; i < NP; i++) y[i] = sin(2.0 * M_PI * x[i] / 1000.0);
+    add_noise(y, y, NP, 0.3, 777);
+    for (int i = 0; i < NP; i++) y_off[i] = y[i] + 1e5;
+    GridAnalysis *grid = analyze_grid(x, NP);
+    TEST_ASSERT_NOT_NULL(grid);
+
+    TikhonovResult *r = tikhonov_smooth(x, y, NP, 1e10, grid);
+    TikhonovResult *r_off = tikhonov_smooth(x, y_off, NP, 1e10, grid);
+    TEST_ASSERT_NOT_NULL(r);
+    TEST_ASSERT_NOT_NULL(r_off);
+    for (int i = 0; i < NP; i++)
+        TEST_ASSERT_DOUBLE_WITHIN(1e-6, r->y_smooth[i], r_off->y_smooth[i] - 1e5);
+
+    free_tikhonov_result(r);
+    free_tikhonov_result(r_off);
+    free_grid_analysis(grid);
+}
+
+/* Shluková mřížka (rozestupy 0.05 / 1, poměr 20): GCV musí proběhnout a
+ * vyhladit šum aspoň na polovinu, i když horní kandidáti dpbsv neprojdou
+ * (audit B1). */
+void test_gcv_clustered_grid_smooths_well(void) {
+    enum { NP = 3000 };
+    static double x[NP], truth[NP], y[NP];
+    x[0] = 0.0;
+    for (int i = 1; i < NP; i++) x[i] = x[i-1] + ((i % 2) ? 0.05 : 1.0);
+    for (int i = 0; i < NP; i++) truth[i] = sin(2.0 * M_PI * x[i] / 200.0);
+    add_noise(truth, y, NP, 0.3, 99);
+    GridAnalysis *grid = analyze_grid(x, NP);
+    TEST_ASSERT_NOT_NULL(grid);
+
+    double lambda = find_optimal_lambda_gcv(x, y, NP, grid);
+    TikhonovResult *r = tikhonov_smooth(x, y, NP, lambda, grid);
+    TEST_ASSERT_NOT_NULL(r);
+    TEST_ASSERT_LESS_THAN_DOUBLE(0.5 * calculate_rmse(truth, y, NP),
+                                 calculate_rmse(truth, r->y_smooth, NP));
+    free_tikhonov_result(r);
+    free_grid_analysis(grid);
+}
+
+/* Jeden téměř duplicitní vzorek nesmí zúžit rozsah hledání pro celý záznam:
+ * mez škálovaná h_min^3 ho stáhla pod 1e6*h^3 a GCV pak skoro nevyhlazoval
+ * (audit B1, druhé kolo review). Perioda 2000 vzorků -> optimum ~1e7-1e8. */
+void test_gcv_near_duplicate_sample_keeps_range(void) {
+    enum { NP = 4001 };
+    static double x[NP], truth[NP], y[NP];
+    for (int i = 0, j = 0; i < NP; i++, j++) {
+        x[i] = j;
+        if (j == 1000) x[++i] = 1000.001;  /* the near-duplicate */
+    }
+    for (int i = 0; i < NP; i++) truth[i] = sin(2.0 * M_PI * x[i] / 2000.0);
+    add_noise(truth, y, NP, 0.3, 4242);
+    GridAnalysis *grid = analyze_grid(x, NP);
+    TEST_ASSERT_NOT_NULL(grid);
+
+    double lambda = find_optimal_lambda_gcv(x, y, NP, grid);
+    TEST_ASSERT_GREATER_THAN_DOUBLE(1e6, lambda);
+    TikhonovResult *r = tikhonov_smooth(x, y, NP, lambda, grid);
+    TEST_ASSERT_NOT_NULL(r);
+    TEST_ASSERT_LESS_THAN_DOUBLE(0.5 * calculate_rmse(truth, y, NP),
+                                 calculate_rmse(truth, r->y_smooth, NP));
+    free_tikhonov_result(r);
+    free_grid_analysis(grid);
+}

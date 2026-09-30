@@ -1,5 +1,9 @@
 /* Tikhonov regularization for data smoothing
  * Second derivative penalty via (D²)ᵀ W D² (pentadiagonal Gram matrix)
+ * V5.5/2026-09-30/ GCV range 1e14*h_avg^3 (32 points); solve on y minus its LS
+ *                  line (offset-proof); failed sweep candidates skipped quietly
+ *                  with one note; valid flag instead of a 1e20 sentinel;
+ *                  near-duplicate x warning (audit B1)
  * V5.4/2026-07-26/ Removed the L-curve method and the n>20000 branch it was
  *                  reachable from; one log-spaced GCV sweep for all n
  * V5.3/2026-06-10/ GCV: analytical trace for all n (removed n>5000 shortcut with
@@ -175,9 +179,11 @@ static void compute_functional(const double *x, const double *y, const double *y
     *total_functional = *data_term + *reg_term;
 }
 
-/* Main function with IMPROVED Memory Management */
-TikhonovResult* tikhonov_smooth(const double *x, const double *y, int n, double lambda,
-                                const GridAnalysis *grid_info)
+/* Solver behind tikhonov_smooth(). quiet = 1 suppresses the dpbsv failure
+ * message: inside the GCV sweep a failure at large lambda is an expected,
+ * counted outcome, not an error. */
+static TikhonovResult* smooth_impl(const double *x, const double *y, int n, double lambda,
+                                   const GridAnalysis *grid_info, int quiet)
 {
     /* Initialize pointers to NULL for safe cleanup */
     TikhonovResult *result = NULL;
@@ -243,8 +249,23 @@ TikhonovResult* tikhonov_smooth(const double *x, const double *y, int n, double 
 
     /* --- CALCULATION --- */
 
-    /* Prepare RHS vector (copy y to b) */
-    memcpy(b, y, (size_t)n * sizeof(double));
+    /* Prepare RHS: y minus its least-squares line. Lines are in the null
+     * space of D2 (the 3-point stencil is exact for quadratics on any grid),
+     * so smoothing y - line and adding the line back is the same smoother.
+     * It keeps dpbsv accurate: its error grows ~1.6e-15 * (lambda/h^3) * |b|,
+     * and |y| includes any offset (1e5 Pa lost 3e-2 at lambda/h^3 = 1e10;
+     * detrended <= 1e-7 up to 1e14). x is centred for epoch-sized values. */
+    double x_mean = 0.0, y_mean = 0.0, sxx = 0.0, sxy = 0.0, slope = 0.0;
+    for (int i = 0; i < n; i++) { x_mean += x[i]; y_mean += y[i]; }
+    x_mean /= n;
+    y_mean /= n;
+    for (int i = 0; i < n; i++) {
+        sxx += (x[i] - x_mean) * (x[i] - x_mean);
+        sxy += (x[i] - x_mean) * (y[i] - y_mean);
+    }
+    if (sxx > 0.0) slope = sxy / sxx;  /* n == 1: sxx = 0, subtract the mean only */
+    for (int i = 0; i < n; i++)
+        b[i] = y[i] - (y_mean + slope * (x[i] - x_mean));
 
     /* Build System Matrix */
     build_band_matrix(x, n, lambda, AB, ldab, kd);
@@ -257,17 +278,20 @@ TikhonovResult* tikhonov_smooth(const double *x, const double *y, int n, double 
     dpbsv_(&uplo, &n, &kd, &nrhs, AB, &ldab, b, &n, &info);
     
     if (info != 0) {
-        fprintf(stderr, "ERROR: LAPACK dpbsv failed (info=%d)\n", info);
-        if (info > 0) {
-            fprintf(stderr, "Leading minor of order %d not positive definite. "
-                            "Unexpected: I + lambda*(D2)^T W D2 is SPD for lambda>=0, "
-                            "so this points to numerical ill-conditioning.\n", info);
+        if (!quiet) {
+            fprintf(stderr, "ERROR: LAPACK dpbsv failed (info=%d)\n", info);
+            if (info > 0) {
+                fprintf(stderr, "Leading minor of order %d not positive definite. "
+                                "I + lambda*(D2)^T W D2 is SPD in exact arithmetic; this is "
+                                "numerical ill-conditioning (lambda too large for this grid).\n", info);
+            }
         }
         goto error;
     }
     
-    /* Copy result back to struct */
-    memcpy(result->y_smooth, b, (size_t)n * sizeof(double));
+    /* Add the line back */
+    for (int i = 0; i < n; i++)
+        result->y_smooth[i] = b[i] + y_mean + slope * (x[i] - x_mean);
     
     /* Post-processing */
     compute_derivatives(x, result->y_smooth, n, result->y_deriv);
@@ -290,20 +314,39 @@ error:
     return NULL;
 }
 
-/* Standard Generalized Cross Validation score for a single lambda */
-static double compute_gcv_score_robust(const double *x, const double *y, int n, double lambda,
-                                       const GridAnalysis *grid_info)
+TikhonovResult* tikhonov_smooth(const double *x, const double *y, int n, double lambda,
+                                const GridAnalysis *grid_info)
+{
+    /* Near-duplicate x: at a gap g the penalty coefficients grow as 1/g and the
+     * solve loses accuracy. Measured against 50-digit arithmetic (gap in units
+     * of h): 1e-3 -> <= 5e-5 up to lambda/h^3 = 1e8; 1e-4 -> 3e-6 .. 5e-3;
+     * 1e-5 -> 2e-4 .. 4e-2. Hence the 1e-4 threshold. ponytail: a warning, not
+     * a fix -- merging such samples would change the data, so that is left to
+     * the user. */
+    if (grid_info != NULL && grid_info->h_min < 1e-4 * grid_info->h_avg) {
+        printf("# WARNING: near-duplicate x: smallest spacing %.3e is %.1e x h_avg; the Tikhonov\n"
+               "#          solve loses accuracy near it. Merge or drop near-duplicate samples.\n",
+               grid_info->h_min, grid_info->h_min / grid_info->h_avg);
+    }
+    return smooth_impl(x, y, n, lambda, grid_info, 0);
+}
+
+/* GCV score for a single lambda. Returns 0 and sets *score on success, 1 if
+ * the solve failed (ill-conditioned at this lambda), 2 if the GCV denominator
+ * collapsed (tr(H) ~ n). A status flag, not a sentinel score: a finite marker
+ * such as 1e20 is a real GCV value once y is large enough. */
+static int gcv_score(const double *x, const double *y, int n, double lambda,
+                     const GridAnalysis *grid_info, double *score)
 {
     TikhonovResult *result;
     double rss = 0.0;
     double trace_H;
-    double gcv_score;
-    
-    /* FIX: Pass grid_info for consistent discretization */
-    result = tikhonov_smooth(x, y, n, lambda, grid_info);
-    
+
+    result = smooth_impl(x, y, n, lambda, grid_info, 1);
+
     if (result == NULL) {
-        return 1e20;
+        fprintf(stderr, "# lambda=%9.3e: solve failed (ill-conditioned), skipped\n", lambda);
+        return 1;
     }
     
     for (int i = 0; i < n; i++) {
@@ -330,25 +373,23 @@ static double compute_gcv_score_robust(const double *x, const double *y, int n, 
 
     /* Standard GCV */
     double denom = 1.0 - trace_H / n;
+    int status = 2;
     if (denom > 1e-8) {
-        gcv_score = (rss / n) / (denom * denom);
-    } else {
-        gcv_score = 1e20;
+        *score = (rss / n) / (denom * denom);
+        status = 0;
+        fprintf(stderr, "# lambda=%9.3e: J=%9.3e, RSS=%9.3e, tr(H)=%6.1f (%.2f), GCV=%9.3e\n",
+                lambda, result->total_functional, rss, trace_H, trace_H / n, *score);
     }
-    
-    fprintf(stderr, "# lambda=%9.3e: J=%9.3e, RSS=%9.3e, tr(H)=%6.1f (%.2f), GCV=%9.3e\n",
-            lambda, result->total_functional, rss, trace_H, trace_H / n, gcv_score);
-
 
     free_tikhonov_result(result);
-    return gcv_score;
+    return status;
 }
 
 /* Enhanced lambda selection with multiple methods */
 double find_optimal_lambda_gcv(const double *x, const double *y, int n, const GridAnalysis *grid_info)
 {
     double best_lambda = 0.01;
-    double best_gcv = 1e20;
+    double best_gcv = 0.0;
     if (grid_info == NULL) {
         fprintf(stderr, "ERROR: Grid info not available\n");
         return best_lambda;
@@ -363,17 +404,26 @@ double find_optimal_lambda_gcv(const double *x, const double *y, int n, const Gr
      * carries h^3. Scaling the bounds that way makes the search grid-scale
      * invariant instead of merely wide.
      *
-     * The old fixed range [1e-8, 1e0] was far too low: measured against a
-     * known clean signal, 7 of 9 synthetic datasets pinned the optimum at the
-     * upper edge, and on one of them (h = 0.01) the default lambda smoothed
-     * the data to an RMSE three times worse than leaving the noise alone.
-     * With the h^3 scaling, none of 8 test datasets pins -- so the edge
-     * warning below now means what it says instead of firing on ordinary
-     * data. The remaining dimension it does not model is the y amplitude;
-     * that is what the warning plus manual `-l` are still for. */
+     * Lambda does not depend on the y amplitude (the minimizer is linear in
+     * y). What sets it is how many samples a signal feature spans: measured,
+     * the optimum grows as P^4 for a period of P samples -- lambda/h^3 ~ 8 at
+     * P = 20, 6e5 at P = 500, 2e10 at P = 10000 -- and GCV tracks that
+     * optimum closely wherever the range lets it. The old upper bound 1e6*h^3
+     * pinned every signal slower than ~500 samples per period (audit B1).
+     *
+     * ponytail: the upper bound 1e14*h^3 is set by dpbsv, not by the data.
+     * On a uniform grid the factorization fails near 1e16*h^3 and, with the
+     * detrended RHS (tikhonov_smooth), the error stays <= 3e-8 up to 1e14
+     * (measured against 40-digit arithmetic). On non-uniform grids the
+     * conditioning follows the smallest LOCAL spacing, so the top candidates
+     * may fail there; they are skipped and counted instead of shrinking the
+     * range for the whole record -- an h_min-scaled bound let one
+     * near-duplicate sample cut it below the old 1e6*h^3. Signals slower
+     * than ~1e5 samples per period would need another solver. The lower
+     * bound keeps its margin for grids with h_min << h_avg. */
     const double h3 = grid_info->h_avg * grid_info->h_avg * grid_info->h_avg;
     const double lambda_min = 1e-8 * h3;
-    const double lambda_max = 1e6 * h3;
+    const double lambda_max = 1e14 * h3;
 
     if (n < 3) {
         fprintf(stderr, "Warning: Too few points for GCV (n=%d)\n", n);
@@ -391,7 +441,7 @@ double find_optimal_lambda_gcv(const double *x, const double *y, int n, const Gr
 
     /* Both caveats qualify the reliability of the lambda that is saved with the
      * data, so both are stdout — and both print once. The ratio note used to
-     * live in compute_gcv_score_robust(), where the sweep repeated it verbatim
+     * live in the per-lambda GCV score, where the sweep repeated it verbatim
      * once per trial lambda (21 identical lines on a 60-point mesh). */
     if (grid_info->cv > 0.2) {
         printf("# WARNING: Highly non-uniform grid detected. Trace approximation less accurate.\n");
@@ -413,31 +463,63 @@ double find_optimal_lambda_gcv(const double *x, const double *y, int n, const Gr
      * objective itself improved by under 0.1%. That is well below the noise
      * being smoothed, so the sweep grid is resolution enough and every n now
      * follows the same path. Audit TK8. */
-    /* 21 points over 14 decades keeps the sampling density the old 13 points
-     * gave over 8 (~0.7 decades per step). Measured on 8 datasets with known
-     * ground truth: 13 -> 21 points cut RMSE by 5-11%, 21 -> 29 by a further
-     * 1-2% for 22% more runtime, so 21 is where the curve flattens. */
-    int n_points = 21;
+    /* ~0.7 decades per step over the 22 decades. Measured on 8 datasets with
+     * known ground truth: finer than 0.7 gained 1-2% RMSE for 22% more
+     * runtime, coarser (1.1) lost 5-11%. */
+    int n_points = 32;
+    int have_best = 0, n_failed = 0;
+    double top_ok = 0.0;  /* largest candidate the solver handled */
 
     for (int i = 0; i < n_points; i++) {
         double log_lambda = log10(lambda_min) + (log10(lambda_max) - log10(lambda_min)) * i / (n_points - 1);
         double lambda_test = pow(10.0, log_lambda);
+        double gcv;
 
-        double gcv = compute_gcv_score_robust(x, y, n, lambda_test, grid_info);
+        int status = gcv_score(x, y, n, lambda_test, grid_info, &gcv);
+        if (status == 1) n_failed++;
+        if (status != 1) top_ok = lambda_test;
+        if (status != 0) continue;
 
-        if (gcv < best_gcv) {
+        if (!have_best || gcv < best_gcv) {
             best_gcv = gcv;
             best_lambda = lambda_test;
+            have_best = 1;
         }
     }
 
-    /* Lambda is dimensional (scales with h^3 and the y amplitude), so a fixed
-     * search range cannot fit every data scale. Flag a result pinned to the
-     * range edge instead of returning it silently as "optimal". */
-    if (best_lambda <= lambda_min * 1.01 || best_lambda >= lambda_max * 0.99) {
-        printf("# WARNING: optimal lambda = %.3e lies at the edge of the search range [%.0e, %.0e].\n",
-               best_lambda, lambda_min, lambda_max);
-        printf("#          The true optimum may lie outside this range; consider setting lambda manually (-l <value>).\n");
+    if (n_failed > 0) {
+        printf("# Note: %d of %d GCV candidates skipped: the solve is ill-conditioned at large lambda on this grid.\n",
+               n_failed, n_points);
+    }
+
+    /* Every candidate failed (dpbsv or a collapsed GCV denominator): there is
+     * no GCV answer. Return the least-smoothing lambda, which cannot distort
+     * the data, and say so. */
+    if (!have_best) {
+        printf("# WARNING: GCV failed for every candidate lambda; returning lambda = %.3e (no smoothing).\n",
+               lambda_min);
+        printf("#          Set lambda manually (-l <value>).\n");
+        return lambda_min;
+    }
+
+    /* Upper edge: the optimum may lie beyond it, so say so. Lower edge: GCV
+     * has a flat limit as lambda -> 0 (RSS and (1 - tr/n)^2 both go as
+     * lambda^2), so on a near-uniform grid a minimum there means "do not
+     * smooth" -- noise-free data, output already equal to the input -- and is
+     * a note. On a non-uniform grid (the trace caveats above were printed)
+     * the h_avg trace model may be what drove GCV there, so it stays a
+     * warning. The upper edge is the largest candidate the solver handled. */
+    if (best_lambda >= top_ok * 0.99) {
+        printf("# WARNING: optimal lambda = %.3e lies at the upper edge of the %s [%.0e, %.0e].\n",
+               best_lambda, n_failed ? "solvable search range" : "search range", lambda_min, top_ok);
+        printf("#          The true optimum may lie beyond it; consider setting lambda manually (-l <value>).\n");
+    } else if (best_lambda <= lambda_min * 1.01) {
+        if (grid_info->cv > 0.2 || grid_info->ratio_max_min > 2.0)
+            printf("# WARNING: optimal lambda = %.3e lies at the lower edge of the search range;\n"
+                   "#          on this grid that may reflect the trace approximation (see above). Consider -l <value>.\n",
+                   best_lambda);
+        else
+            printf("# Note: GCV prefers no smoothing (lambda at the lower search edge); output ~ input.\n");
     }
 
     fprintf(stderr, "# Optimal lambda: %.6e (GCV=%.3e)\n", best_lambda, best_gcv);

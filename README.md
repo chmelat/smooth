@@ -238,9 +238,10 @@ Note: Degrees > 6 may cause numerical instability warnings.
 ./smooth -m 2 -l auto data.txt    # the same thing, written explicitly
 ```
 Uses Generalized Cross Validation (GCV) to find the optimal lambda. This is the
-default because lambda is **dimensional** — it scales with $h^3$ and with the
-squared amplitude of $y$ — so no single fixed value can suit datasets of
-different scales. Measured against a known clean signal on eight synthetic
+default because lambda is **dimensional** — it scales with $h^3$ and with how
+many samples a feature of the signal spans (it does *not* depend on the
+amplitude of $y$: the smoother is linear in $y$) — so no single fixed value can
+suit datasets of different scales. Measured against a known clean signal on eight synthetic
 datasets, GCV selection reduced RMSE by 5–90% compared with the fixed
 `lambda = 0.1` that used to be the default; in the worst mismatch (a grid 100x
 finer than the value assumed) the fixed default smoothed the data to an RMSE
@@ -249,15 +250,18 @@ three times *worse* than leaving the noise untouched.
 **Manual selection:**
 
 Give `-l` a number to override the automatic choice. Because lambda is
-dimensional, the useful magnitude depends on your grid spacing: the values below
-assume $h \approx 1$, and scale roughly with $h^3$.
+dimensional, the useful magnitude depends on your grid spacing and on how slow
+the signal is: the optimum grows roughly as $P^4$, where $P$ is the period of
+the features to keep, in samples. Measured optima (GCV and ground truth agree),
+to be multiplied by $h^3$:
 
-| Data Characteristics | Recommended lambda ($h \approx 1$) | Reasoning |
-|---------------------|---------------|-----------|
-| Low noise, important details | 0.001 - 0.01 | Preserve features |
-| Moderate noise | 0.01 - 0.1 | Balanced |
-| High noise | 0.1 - 1.0 | Strong smoothing |
-| Very noisy, global trends | 1.0 - 10.0 | Maximum smoothing |
+| Feature period $P$ (samples) | $\lambda / h^3$, low noise | $\lambda / h^3$, high noise |
+|-----------------------------|---------------------------|----------------------------|
+| 20                          | $\sim 1$                  | $\sim 20$                  |
+| 100                         | $\sim 2 \times 10^2$       | $\sim 5 \times 10^3$        |
+| 500                         | $\sim 6 \times 10^4$       | $\sim 10^6$                |
+| 2000                        | $\sim 10^7$                | $\sim 2 \times 10^8$        |
+| 10000                       | $\sim 2 \times 10^9$       | $\sim 5 \times 10^{10}$     |
 
 If you need the pre-v5.11.56 behaviour exactly, pass `-l 0.1`.
 
@@ -1198,7 +1202,7 @@ The null space of $D^2$ is 2-dimensional (constants and linear functions), so tr
 
 **One search for every size:**
 
-A single 21-point log-spaced scan selects $\lambda$, for every dataset size. The
+A single 32-point log-spaced scan selects $\lambda$, for every dataset size. The
 eigenvalue sum is $O(n)$ per $\lambda$ candidate — the same order as the band
 solve itself — so it is used for all sizes too.
 
@@ -1214,7 +1218,7 @@ smoothed.
 
 **Search range:**
 
-The scan runs over $[10^{-8} h_{avg}^3,\ 10^6 h_{avg}^3]$. The $h^3$ factor is not
+The scan runs over $[10^{-8} h_{avg}^3,\ 10^{14} h_{avg}^3]$. The $h^3$ factor is not
 a fudge — the penalty eigenvalues below are $16 \sin^4(\theta_k/2) / h^3$, and the
 smoother only ever sees the product $\lambda \mu_k$, which is dimensionless
 exactly when $\lambda$ carries $h^3$. Scaling the bounds this way makes the
@@ -1223,18 +1227,49 @@ search invariant to grid scale rather than merely wide.
 Until v5.11.56 the range was the fixed $[10^{-8}, 10^0]$, which was far too low:
 on nine synthetic datasets with known ground truth, seven pinned the optimum at
 the upper edge, with true optima as high as $\lambda \approx 7 \times 10^4$. With
-the $h^3$ scaling none of eight test datasets pins, so the edge warning now means
-what it says instead of firing on ordinary data.
+the $h^3$ scaling the grid scale no longer matters.
 
-The one scale the range does not model is the amplitude of $y$. If the selected
-optimum still lands on an edge, a warning is printed and $\lambda$ should be set
-manually with `-l`.
+What remains is the signal: the optimum grows as $P^4$ (see the table under
+*Manual selection*), so the v5.11.56 upper bound $10^6 h^3$ pinned every signal
+slower than about 500 samples per period, at an RMSE 2–7 times worse than the
+true optimum. Since v5.11.59 the bound is $10^{14} h_{avg}^3$. It is set by the
+solver, not the data: the banded Cholesky factorization of $I + \lambda K$
+loses positive definiteness near $10^{16} h^3$ on a uniform grid, and its error
+grows as $\approx 1.6 \cdot 10^{-15} (\lambda / h^3) \, |b|$. To keep $|b|$
+small the right-hand side is the data **minus its least-squares line**; lines
+lie in the null space of $D^2$, so this is the same smoother, but a large
+offset in $y$ (e.g. pressure in Pa) no longer costs accuracy. Measured against
+40-digit arithmetic with an offset of $10^5$: error $\le 3 \cdot 10^{-8}$ on a
+uniform grid up to the bound. Signals slower than about $10^5$ samples per
+period would need a different solver.
 
-The scan uses 21 points. Over the 14 decades of the range that is $\approx 0.7$
-decades per step, the same sampling density the previous 13 points gave over 8
-decades. Measured on eight datasets with known truth, going from 13 to 21 points
-cut RMSE by 5–11%; going from 21 to 29 gained a further 1–2% for 22% more
-runtime, so 21 is where the curve flattens.
+On a non-uniform grid the conditioning follows the smallest *local* spacing,
+so the largest candidates may fail to factorize (from a spacing ratio of about
+20). They are skipped, and a note reports how many; the upper-edge warning then
+refers to the largest candidate that could be solved. The bound deliberately
+stays with $h_{avg}$: scaling it by $h_{min}$ would let a single near-duplicate
+sample shrink the range for the whole record.
+
+**Near-duplicate $x$:** at a gap $g$ the penalty coefficients grow as $1/g$ and
+the solve loses accuracy even at ordinary $\lambda$. Measured against 50-digit
+arithmetic (gap in units of $h$): $10^{-3}$ gives $\le 5 \cdot 10^{-5}$ up to
+$\lambda / h^3 = 10^8$; $10^{-4}$ gives $3 \cdot 10^{-6}$ to $5 \cdot 10^{-3}$;
+$10^{-5}$ gives $2 \cdot 10^{-4}$ to $4 \cdot 10^{-2}$. When the smallest spacing
+is below $10^{-4} h_{avg}$ a warning is printed; merge or drop such samples.
+
+If the optimum lands on the upper edge, a warning is printed and $\lambda$
+should be set manually with `-l`. A minimum on the lower edge means GCV prefers
+no smoothing (typically noise-free data): GCV has a flat limit as
+$\lambda \to 0$, the output already equals the input, and only a note is
+printed — except on a non-uniform grid (CV > 0.2 or $h_{max}/h_{min} > 2$),
+where the trace approximation may be what drove GCV there, so it stays a
+warning. If every
+candidate fails, a warning is printed and the lower bound (no smoothing) is
+returned.
+
+The scan uses 32 points, $\approx 0.7$ decades per step over the 22 decades.
+Measured on eight datasets with known truth, a coarser step (1.1 decades) cost
+5–11% RMSE; a finer one gained 1–2% for 22% more runtime.
 
 #### Characteristics
 
