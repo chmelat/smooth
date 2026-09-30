@@ -27,7 +27,7 @@ A1–A6 současná testovací sada nezachytí.
 | A1 | vysoká    | `smooth.c:447-455`                      | ~~výstup `%12.8lG` ořezává x i y na 8 platných číslic~~ **FIXED v5.11.57** |
 | A2 | vysoká    | `polyfit.c:79-95`                       | ~~výsledek závisí na jednotkách x (neškálovaná Vandermondova matice)~~ **FIXED v5.11.58** |
 | A3 | vysoká    | `savgol.c:120-134`                      | ~~okrajová (asymetrická) okna při velkém okně / stupni → chybné koeficienty~~ **FIXED v5.11.58** |
-| A4 | střední   | `timestamp.c:28-42`                     | offset časového pásma i koncové smetí tiše ignorovány |
+| A4 | střední   | `timestamp.c:28-42`                     | offset časového pásma i koncové smetí tiše ignorovány — **NEBUDE ŘEŠENO** (okrajová záležitost) |
 | A5 | střední   | `timestamp.c:149`, `grid_analysis.c:93` | ~~chybová hlášení uvádějí index, ne řádek souboru~~ **FIXED v5.11.61** |
 | A6 | střední   | `parser.c:148-169`                      | hlavička v `-T` módu je fatální chyba |
 | B1 | střední   | `tikhonov.c:374-376`                    | ~~horní mez GCV `1e6·h³` zastaví každý signál s periodou ≳ 500 vzorků~~ **FIXED v5.11.59** |
@@ -156,7 +156,10 @@ vzájemný test (viz D1). Zavedeno ve v5.11.58 jako
 `test_savgol_polyfit_exact_on_cubic_wide_window` (okno 101, p=12, kubika
 reprodukovaná oběma metodami ve všech bodech včetně okrajů).
 
-### A4. Offsety časových pásem a koncové smetí tiše ignorovány — `timestamp.c:28-42`
+### A4. Offsety časových pásem a koncové smetí tiše ignorovány — `timestamp.c:28-42` — **NEBUDE ŘEŠENO**
+
+**Rozhodnutí (2026-09-30):** neřešit, okrajová záležitost. Popis níže
+zůstává pro případ, že by se k tomu bylo potřeba vrátit.
 
 `sscanf("%d-%d-%d%c%d:%d:%d%n")` skončí za sekundami a zbytek řetězce se
 kontroluje jen na `.` (zlomky sekund). Všechno ostatní projde.
@@ -394,7 +397,7 @@ nestabilitu. Úvodní řádek `help()` popisuje jen polyfit.
 2. **A2:** polyfit na x a na 60·x dává stejné `y_smooth` (a derivaci /60).
 3. **A3 + A2:** polyfit == savgol na uniformní mřížce pro `(51, 10)` a
    `(101, 12)`.
-4. **A4:** `parse_timestamp("...+02:00")` buď aplikuje offset, nebo vrátí -1;
+4. ~~**A4:**~~ (nebude řešeno) `parse_timestamp("...+02:00")` buď aplikuje offset, nebo vrátí -1;
    `"...00garbage"` vrátí -1.
 5. **A5:** `-T` s komentáři před vadným řádkem hlásí řádek souboru.
 6. **A6:** hlavička `date value` v `-T` módu se přeskočí.
@@ -422,6 +425,6 @@ nebo cesta s PID.
 
 1. ~~A1 — jeden řádek, největší dopad.~~ Hotovo ve v5.11.57.
 2. ~~A2 + A3 společně, se vzájemným testem D1.3.~~ Hotovo ve v5.11.58.
-3. A4, A5, A6 — timestamp/parser vrstva, jedna série.
+3. ~~A5~~ hotovo ve v5.11.61; A6. A4 se řešit nebude.
 4. ~~B1 (s ověřením podmíněnosti)~~ hotovo ve v5.11.59 (spolu s C1, C2); B2.
 5. C3, D2.
