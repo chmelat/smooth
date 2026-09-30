@@ -1,6 +1,6 @@
 # smooth - Experimental Data Smoothing
 
-**Version 5.11.41** | June 11, 2026
+**Version 5.11.60** | September 30, 2026
 
 A command-line tool for smoothing noisy experimental data and computing derivatives. Implements four methods: polynomial fitting, Savitzky-Golay filtering, Tikhonov regularization, and Butterworth low-pass filtering. Reads two-column ASCII data, outputs smoothed results. Works as a Unix filter.
 
@@ -50,7 +50,7 @@ make                                    # Compile
 ```bash
 make                  # Standard compilation (clang, -O2)
 make debug            # Debug build (-g -O0)
-make test             # Build and run 116 unit tests
+make test             # Build and run 146 unit tests
 make test-valgrind    # Run tests with memory leak detection
 make clean            # Clean build artifacts
 make install-user     # Install to ~/bin
@@ -85,7 +85,7 @@ gcc -o smooth smooth.c polyfit.c savgol.c tikhonov.c butterworth.c \
 | `-m {0\|1\|2\|3}` | Method: polyfit \| savgol \| tikhonov \| butterworth |
 | `-n N` | Smoothing window size (polyfit, savgol) |
 | `-p P` | Polynomial degree (polyfit, savgol, max 12) |
-| `-l λ` | Regularization parameter (tikhonov), use `-l auto` for GCV |
+| `-l λ` | Regularization parameter (tikhonov). Default: `auto` (GCV selection); pass a numeric `λ` to override |
 | `-f fc` | Normalized cutoff frequency (butterworth, 0 < fc < 1.0). Default: `auto` (Morozov's discrepancy principle); pass a numeric `fc` to override |
 | `-T` | Timestamp mode: a column holds an RFC3339 timestamp (default position 1, y at position 2; both adjustable via `-k`) |
 | `-k M` or `-k N:M` | Column selection: `M` sets the y-data column (x defaults to column 1); `N:M` sets x at column N and y at column M. Default: `1:2`. Columns are 1-indexed; N and M must differ. In `-T` mode, N is the **timestamp** column (still column 1 by default), and the timestamp counts as a single logical column even when its space-separated form spans two whitespace tokens. |
@@ -94,7 +94,6 @@ gcc -o smooth smooth.c polyfit.c savgol.c tikhonov.c butterworth.c \
 | `-h`, `-?` | Show help (options, methods, examples) and exit |
 
 **Notes:**
-- Polynomial degrees > 6 may generate numerical stability warnings.
 - First derivative output is optional. Without `-d`, only smoothed values are output.
 - In timestamp mode (`-T`), timestamps are converted to relative time in seconds for smoothing but preserved in output. Derivatives are dy/dt where t is in seconds.
 
@@ -172,7 +171,7 @@ Need frequency-domain control?
 | Boundary behavior | ** | *** | **** | *** |
 | Non-uniform grids | *** | [X] | ***** | ** |
 | Ease of use | **** | **** | ***** | **** |
-| Parameter selection | Manual | Manual | Auto (GCV) | Manual |
+| Parameter selection | Manual | Manual | Auto (GCV) | Auto (Morozov) |
 | Frequency control | No | No | No | Yes |
 | Phase distortion | N/A | N/A | N/A | Zero |
 
@@ -193,8 +192,8 @@ Need frequency-domain control?
 
 | Method | Time | Memory | Scalability |
 |--------|------|--------|-------------|
-| POLYFIT | O(n·p³) | O(p²) | Good for small p |
-| SAVGOL | O(p³) + O(n·w) | O(w) | Excellent for large n |
+| POLYFIT | O(n·w·p²) | O(w·p) | Good for small w, p |
+| SAVGOL | O(w²·p²) + O(n·w) | O(w·p) | Excellent for large n |
 | TIKHONOV | O(n) | O(n) | Excellent |
 | BUTTERWORTH | O(n) | O(n) | Excellent |
 
@@ -226,9 +225,9 @@ Rule of thumb: n >= 2p + 3
 - Advanced applications: p = 5-8
 - Maximum: p <= 12
 - Recommended maximum: p < n/2
-
-Note: Degrees > 6 may cause numerical instability warnings.
 ```
+
+High degrees are numerically safe: both methods agree with a 60-digit reference to about $10^{-12}$ up to $p = 12$. But as $p$ approaches $n - 1$ the fit approaches interpolation. It removes little noise, and SAVGOL becomes sensitive even to small spacing jitter (see [A.2](#grid-uniformity-requirement)).
 
 ### Lambda for TIKHONOV
 
@@ -414,8 +413,7 @@ sensorA  2025-09-25 14:06:06.391  25.6  100.3  980.0
 ./smooth -m 2 -l auto nonuniform_data.txt
 
 # For highly non-uniform grids (CV > 0.2), you may see:
-# "WARNING: Highly non-uniform grid detected!"
-# "GCV trace approximation may be less accurate."
+# "# WARNING: Highly non-uniform grid detected. Trace approximation less accurate."
 # In this case, try manual lambda or check results visually.
 ```
 
@@ -671,42 +669,43 @@ never change a method's behaviour, its parameters, or its output values.
 
 ## Output Format
 
-**Without `-d` flag:**
+**Without `-d` flag** (`./smooth -m 2 -l 0.1 data.txt`):
 ```
-# Data smooth - Tikhonov regularization with lambda = 1e-01
-# Functional J = 1.234e+02 (Data: 5.67e+01 + Regularization: 6.67e+01)
-# Data/Total ratio = 0.460, Regularization/Total ratio = 0.540
+# Data smooth - Tikhonov regularization with lambda = 0.1
+# Functional J = 2.77322 (Data: 0.507107 + Regularization: 2.26612)
+# Data/Total ratio = 0.183, Regularization/Total ratio = 0.817
 #    x          y
-  0.00000E+00  1.00000E+00
-  1.00000E+00  2.71828E+00
+           0 0.101382848362114
+        0.51 0.521467988604433
+        1.01 0.866761577334278
   ...
 ```
 
-**With `-d` flag:**
+**With `-d` flag** (`./smooth -m 2 -l 0.1 -d data.txt`):
 ```
-# Data smooth - Tikhonov regularization with lambda = 1e-01
-# Functional J = 1.234e+02 (Data: 5.67e+01 + Regularization: 6.67e+01)
-# Data/Total ratio = 0.460, Regularization/Total ratio = 0.540
+# Data smooth - Tikhonov regularization with lambda = 0.1
+# Functional J = 2.77322 (Data: 0.507107 + Regularization: 2.26612)
+# Data/Total ratio = 0.183, Regularization/Total ratio = 0.817
 #    x          y          y'
-  0.00000E+00  1.00000E+00  1.00000E+00
-  1.00000E+00  2.71828E+00  2.71828E+00
+           0 0.101382848362114 0.890909897711242
+        0.51 0.521467988604433 0.756482809121384
   ...
 ```
 
 **Timestamp mode output (with `-T` flag):**
 ```
-# Data smooth - Tikhonov regularization with lambda = 1e-02
-# Functional J = 1.07e-03 (Data: 8.33e-04 + Regularization: 2.39e-04)
-# Data/Total ratio = 0.777, Regularization/Total ratio = 0.223
+# Data smooth - Tikhonov regularization with lambda = 0.01
+# Functional J = 2.12492E-05 (Data: 1.51182E-05 + Regularization: 6.13094E-06)
+# Data/Total ratio = 0.711, Regularization/Total ratio = 0.289
 # Derivative units: dy/dt (t in seconds)
 #    timestamp          y          y'
-2025-09-25 14:06:06.390 0.000816394 -0.00204621
-2025-09-25 14:06:06.391 0.000814348  0.0542818
-2025-09-25 14:06:06.763  0.0210635  0.0284901
+2025-09-25 14:06:06.000 0.0201119412841199 0.0099828969595344
+2025-09-25 14:06:06.250 0.0225202113957848 0.00928326393378499
+2025-09-25 14:06:06.500 0.0247535732510124 0.00863940378333329
   ...
 ```
 
-In timestamp mode, the original timestamp format from input is preserved exactly in output. Values use general format (`%10.6lG`) for numeric data.
+Data rows use `%12.15lG`: 15 significant digits (`DBL_DIG`), so large $x$ such as unix-epoch seconds survive a round trip. Before v5.11.57 rows were truncated to 8 digits. Header values use `%.6lG`. In timestamp mode, the original timestamp format from input is preserved exactly in output.
 
 ---
 
@@ -777,9 +776,9 @@ $$f(x_i) = a_0, \qquad f'(x_i) = \frac{a_1}{s}, \qquad f''(x_i) = \frac{2a_2}{s^
 
 #### Edge Handling
 
-At edges, asymmetric windows are used with extrapolation of the fitted polynomial:
+The first $n/2$ and last $n/2$ points have no full window centred on them. Their values are extrapolated from the polynomial fitted to the first (last) full window, centred at $x_c$ with half-width $s$:
 
-$$f(x_k) = \sum_{m=0}^{p} a_m \cdot (x_k - x_{n/2})^m$$
+$$f(x_k) = \sum_{m=0}^{p} a_m \, t_k^{\,m}, \qquad f'(x_k) = \frac{1}{s} \sum_{m=1}^{p} m \, a_m \, t_k^{\,m-1}, \qquad t_k = \frac{x_k - x_c}{s}$$
 
 #### Characteristics
 
@@ -797,8 +796,7 @@ $$f(x_k) = \sum_{m=0}^{p} a_m \cdot (x_k - x_{n/2})^m$$
 - Sensitive to outliers
 - Boundary effects at edges
 - Possible Runge oscillations for high polynomial degrees (p > 6)
-- Numerical instability warnings for degrees > 6 (but handled gracefully by SVD)
-- Computationally expensive: O(n·p³) due to per-point SVD
+- Computationally expensive: O(n·w·p²) due to per-point SVD
 
 ---
 
@@ -820,14 +818,14 @@ While both SAVGOL and POLYFIT use polynomial approximation, they differ fundamen
 - For each data point, fits a new polynomial to the surrounding window
 - Solves the least squares problem individually for each point
 - Coefficients of the polynomial change with each window position
-- Computationally intensive: O(n·p³)
+- Computationally intensive: O(n·w·p²)
 
 **SAVGOL approach (Method of Undetermined Coefficients):**
 - Recognizes that for equidistant grids, the filter coefficients are translation-invariant
 - Uses the **method of undetermined coefficients** to pre-compute universal weights
 - These weights depend only on the window geometry, not on the actual data values
 - Applies the same weights as a linear convolution across all data points
-- Computationally efficient: O(p³) once, then O(n·w) for application
+- Computationally efficient: O(w²·p²) for the central and boundary coefficients, then O(n·w) for application
 
 #### Grid Uniformity Requirement
 
@@ -849,8 +847,13 @@ $$CV = \frac{\sigma(h)}{h_{\text{avg}}}$$
 ERROR: Savitzky-Golay method not suitable for non-uniform grid!
 ========================================
 Grid analysis:
-  Coefficient of variation (CV) = 0.2341
+  Coefficient of variation (CV) = 0.2875
   Threshold for uniformity = 0.0500
+  h_min = 1.000000e+00, h_max = 2.000000e+00, h_avg = 1.100000e+00
+  Ratio h_max/h_min = 2.00
+
+The Savitzky-Golay filter assumes uniformly spaced data points.
+Your data has significant spacing variation.
 
 RECOMMENDED ALTERNATIVES:
   1. Use Tikhonov method: -m 2 -l auto
@@ -859,6 +862,16 @@ RECOMMENDED ALTERNATIVES:
      (Local fitting, less sensitive to spacing)
   3. Resample your data to uniform grid before smoothing
 ```
+
+**[WARNING] High degree amplifies spacing jitter.** SAVGOL uses the positions $x_0 + k \cdot h_{\text{avg}}$ in place of the real $x$. On a grid that passes the check, the error this causes grows sharply as $p$ approaches the window size. Measured on `data.txt` (CV = 0.0099, i.e. rated uniform) against a least-squares fit on the real $x$:
+
+| `-n`, `-p` | max error in $y$ | max error in $y'$ |
+|------------|------------------|-------------------|
+| 13, 2      | 0.2%             | 0.2%              |
+| 13, 12     | $< 10^{-12}$     | **47%** at the last point, 0.4% in the interior |
+| 25, 12     | 0.3%             | 2.5% at the first point, 0.14% in the interior |
+
+Errors are relative to $\max|y|$ and $\max|y'|$. At 13/12 the window has only 13 points, so the fit interpolates them exactly. The smoothed values are therefore unaffected, while the derivative, which depends on the positions, is not. If you need a high degree on a grid that is not exactly uniform, use POLYFIT. It fits on the real $x$.
 
 #### The Method of Undetermined Coefficients
 
@@ -907,12 +920,13 @@ which is the moment condition above written in matrix form. For a symmetric wind
 #### Computational Efficiency
 
 **Example for 10,000 data points, window size 21, polynomial degree 4:**
-- **POLYFIT:** Must solve 10,000 separate 5x5 linear systems
+- **POLYFIT:** Must solve 9,980 separate 21x5 least-squares problems (one SVD per interior point)
 - **SAVGOL:**
-  - Solves ONE 5x5 system for central points (pre-computed coefficients)
+  - Computes the central coefficients ONCE, from one QR of a 21x5 Vandermonde matrix
   - Performs 9,980 simple weighted sums (fast convolution)
-  - Solves 20 boundary systems (asymmetric windows at edges)
-  - **Net result:** ~500x faster for large datasets
+  - Computes coefficients for 20 boundary points (asymmetric windows at edges)
+
+Measured on 100,000 points (ARM RK3588, total run time including I/O): `-n 21 -p 4` takes 1.06 s with POLYFIT and 0.22 s with SAVGOL; `-n 101 -p 12` takes 5.0 s and 0.21 s. SAVGOL's time is almost entirely reading and writing the data (0.20 s at `-n 5 -p 2`).
 
 #### Derivative Scaling
 
@@ -962,7 +976,7 @@ At data boundaries where a full symmetric window cannot be used, the method empl
 - Fixed coefficients for entire window
 - May introduce oscillations at sharp edges
 - Limited adaptability
-- Numerical warnings for degrees > 6
+- At high degree, sensitive to spacing jitter even on grids that pass the uniformity check
 
 ---
 
@@ -1005,8 +1019,8 @@ The minimization of $J[\mathbf{u}]$ leads to:
 $$(I + \lambda (D^2)^T W D^2) \, \mathbf{u} = \mathbf{y}$$
 
 **Effect of $\lambda$ on the solution:**
-- **Small $\lambda$ (< 0.01):** Matrix $\approx I$ → solution $\mathbf{u} \approx \mathbf{y}$ (minimal smoothing)
-- **Large $\lambda$ (> 1.0):** Matrix $\approx \lambda (D^2)^T W D^2$ → strong curvature penalty (heavy smoothing)
+- **Small $\lambda$ ($\lambda / h_{\text{avg}}^3 \ll 1$):** Matrix $\approx I$ → solution $\mathbf{u} \approx \mathbf{y}$ (minimal smoothing)
+- **Large $\lambda$ ($\lambda / h_{\text{avg}}^3 \gg 1$):** Matrix $\approx \lambda (D^2)^T W D^2$ → strong curvature penalty (heavy smoothing)
 - **Optimal lambda:** Matrix components balanced → noise removed, signal preserved
 
 **Frequency Domain Interpretation:**
@@ -1160,7 +1174,7 @@ This structure allows efficient solution using LAPACK's banded solver `dpbsv`.
 
 #### Generalized Cross Validation (GCV)
 
-For automatic $\lambda$ selection (`-l auto`), we minimize the GCV criterion:
+For automatic $\lambda$ selection (the default, or explicitly `-l auto`), we minimize the GCV criterion:
 
 $$\text{GCV}(\lambda) = \frac{n \cdot \text{RSS}(\lambda)}{(n - \text{tr}(H_\lambda))^2}$$
 
@@ -1265,7 +1279,6 @@ Measured on eight datasets with known truth, a coarser step (1.1 decades) cost
 **Advantages:**
 - Global optimization with theoretical foundation
 - Flexible balance between data fidelity and smoothness (controlled by lambda)
-- Robust to outliers (quadratic penalty less sensitive than least squares)
 - Efficient for large datasets (O(n) memory and time)
 - **Automatic lambda selection via GCV** - no guessing needed
 - **Excellent for non-uniform grids** - correct discretization automatic
@@ -1274,6 +1287,7 @@ Measured on eight datasets with known truth, a coarser step (1.1 decades) cost
 
 **Disadvantages:**
 - Single global parameter lambda (cannot vary locally)
+- Sensitive to outliers (the data term is a plain sum of squares)
 - May suppress local details if lambda too large
 - GCV may fail for some data types (especially highly non-uniform grids)
 - Requires LAPACK library
@@ -1352,7 +1366,7 @@ This approach provides better numerical stability than direct 4th-order implemen
 The **filtfilt** (forward-backward filtering) eliminates phase distortion:
 
 **Algorithm:**
-1. **Pad signal:** Reflect signal at boundaries; the padding length is sized to absorb the filter transient ($\sim 5/(1 - r_{\max})$, where $r_{\max}$ is the slowest pole radius, floored at 14 and capped at $n-1$), so it grows automatically as $f_c$ shrinks
+1. **Pad signal:** Reflect signal at boundaries; the padding length is sized to absorb the filter transient ($\sim 5/(1 - r_{\max})$, where $r_{\max}$ is the slowest pole radius, floored at 14 and capped at $n-1$), so it grows automatically as $f_c$ shrinks. When the cap engages, the data is too short to absorb the transient and a `# WARNING` is printed
 2. **Forward filter:** Apply H(z) from left to right → y_fwd
 3. **Reverse:** y_rev = reverse(y_fwd)
 4. **Backward filter:** Apply H(z) to y_rev → y_bwd
@@ -1643,14 +1657,14 @@ smooth/
 +--- tests/             # Unit testing framework (Unity)
     |--- unity.c/h                # Unity testing framework
     |--- unity_internals.h        # Unity internals
-    |--- test_main.c              # Test runner (116 tests)
-    |--- test_grid_analysis.c     # Grid analysis tests (7 tests)
-    |--- test_polyfit.c           # Polyfit module tests (21 tests)
-    |--- test_savgol.c            # Savgol module tests (16 tests)
-    |--- test_tikhonov.c          # Tikhonov module tests (25 tests)
+    |--- test_main.c              # Test runner (146 tests)
+    |--- test_grid_analysis.c     # Grid analysis tests (17 tests)
+    |--- test_polyfit.c           # Polyfit module tests (22 tests)
+    |--- test_savgol.c            # Savgol module tests (18 tests)
+    |--- test_tikhonov.c          # Tikhonov module tests (31 tests)
     |--- test_butterworth.c       # Butterworth module tests (22 tests)
     |--- test_timestamp.c         # Timestamp module tests (18 tests)
-    +--- test_parser.c            # Input parser tests (7 tests, end-to-end)
+    +--- test_parser.c            # Input parser tests (18 tests, end-to-end)
 ```
 
 ---
@@ -1670,7 +1684,7 @@ head -n 60 revision.h        # most recent releases
 
 ---
 
-**Document revision:** 2026-07-26
+**Document revision:** 2026-09-30
 **Program version:** see `revision.h` (or `./smooth -h`)
 **Dependencies:** LAPACK, BLAS
 **Testing framework:** Unity (included in tests/)

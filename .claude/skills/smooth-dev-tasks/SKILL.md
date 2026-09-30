@@ -5,9 +5,10 @@ description: Step-by-step recipes for developing on the `smooth` codebase — ad
 
 # smooth development tasks
 
-Recipes for common changes to the `smooth` codebase. Design rationale, LAPACK
-choices, grid-uniformity policy, and hard rules live in the root `CLAUDE.md`;
-these are the how-to steps.
+Recipes for common changes to the `smooth` codebase. Design principles,
+grid-uniformity policy, and hard rules live in the root `CLAUDE.md`;
+implementation details (solver choices, thresholds) in `README.md` Appendix
+A/B; these are the how-to steps.
 
 ## Adding a test
 

@@ -1,8 +1,8 @@
 # CLAUDE.md
 
-Design and maintenance notes for working on `smooth`. User-facing documentation
-(installation, CLI options, method tutorials, examples) lives in `README.md` —
-do not duplicate it here.
+How the `smooth` project is run: principles, rules, and where things live.
+Implementation details (algorithms, solver choices, thresholds, complexity) are
+in `README.md` (Appendix A/B) and must not be duplicated here.
 
 **Current version:** see `revision.h`. The full version history is the comment
 block at the top of `revision.h`.
@@ -43,7 +43,7 @@ smooth.c              # Main program, CLI parsing, I/O, output formatting
 ├─ tikhonov.c/h       # Tikhonov regularization (global variational)
 ├─ butterworth.c/h    # Butterworth filter (frequency-domain)
 ├─ grid_analysis.c/h  # Grid uniformity analysis (shared utility)
-├─ timestamp.c/h      # Timestamp parsing for `-T` mode (UTC via timegm())
+├─ timestamp.c/h      # Timestamp parsing for `-T` mode
 └─ parser.c/h         # Input table parsing, `#` comment stripping, column selection
 ```
 
@@ -63,79 +63,24 @@ smooth.c              # Main program, CLI parsing, I/O, output formatting
 5. **No cross-method dependencies.** Method modules never include each other;
    shared logic belongs in `grid_analysis.c` or `smooth.c`.
 
-### LAPACK choices
-
-| Method      | Routine  | Why |
-|-------------|----------|-----|
-| polyfit     | `dgelss` | SVD; tolerates rank-deficient Vandermonde near boundaries |
-| savgol      | `dgels`  | Coefficients are the min-norm solution of $V^T c = b$; QR of $V$ keeps the error at cond($V$), normal equations squared it (v5.11.60) |
-| tikhonov    | `dpbsv`  | $(D^2)^T W D^2 + I$ is pentadiagonal SPD (kd=2); $O(n)$ solve |
-| butterworth | (none)   | Biquad cascade with analytical IC via Cramer's rule |
-
 ### Grid uniformity philosophy
 
-`grid_analysis.c` computes the coefficient of variation $CV = \sigma(h)/h_{avg}$.
-Each method uses CV to make a policy decision:
+Each method decides for itself what a non-uniform grid means for it: adapt,
+tolerate, or reject. Where uniformity is a mathematical requirement of the
+method, it is enforced, not an implementation choice to relax. When changing a
+threshold or adding a method, update **all** policy points consistently
+(and the README grid tables).
 
-| CV          | Behaviour |
-|-------------|-----------|
-| $\le 0.01$  | `is_uniform = 1` |
-| $> 0.05$    | Savgol **rejects** with detailed error (uniformity is a mathematical requirement, not implementation choice) |
-| any         | Tikhonov uses one integral-measure scheme: weighted Gram matrix $\sum w_k \mathbf{d}_k^T \mathbf{d}_k$ (uniform stencil $[1,-4,6,-4,1]/h^3$ on uniform grids; no CV switch) |
-| $> 0.15$    | Butterworth **rejects** (frequency analysis assumes uniform sampling) |
-
-Polyfit tolerates any grid (local fit per window). When changing CV thresholds
-or adding a new method, update **all** policy points consistently.
-
-**Dropout detection is independent of CV** (v5.11.51). A regular grid with
-missing samples leaves gaps of $k \cdot h_{base}$ for integer $k \ge 2$ — a
-signature neither CV nor the cluster detector can see. It is keyed on the
-**median** spacing, not `h_avg`, because the mean is contaminated by the gaps
-being looked for. Purely advisory: no method reads `has_dropouts`, `n_missing`,
-`h_base`, `n_gaps`, `max_run` or `integer_fit`, and `reliability_warning` is
-deliberately not set from it. Keep it that way unless you intend to change what
-every normal run prints.
-
-### Per-method design notes
-
-These are the load-bearing design choices, not user-facing math (see README for
-that):
-
-- **Polyfit:** SVD per window with `rcond = 1e-10` to truncate small singular
-  values, on a Vandermonde scaled to the window half-width ($t \in [-1,1]$) —
-  without the scaling the fit depended on the units of x (v5.11.58). Asymmetric windows + polynomial extrapolation at boundaries.
-  $O(n \cdot p^3)$.
-- **Savgol:** Universal convolution coefficients pre-computed once from a QR of the
-  Vandermonde on centred, scaled positions ($u \in [-1,1]$; raw integer
-  positions broke the asymmetric boundary windows, v5.11.58). Translation invariance is the whole point — same coefficients
-  applied at every interior point. Uniform-grid requirement enforced by CV
-  check, not silently degraded.
-- **Tikhonov:** True 2nd-order penalty $(D^2)^T W D^2$ (pentadiagonal Gram
-  matrix), corrected in v5.11. Single integral-measure discretization (no CV
-  switch; unified in v5.11.34). GCV trace uses 2D null space (constants and linear functions are unpenalized).
-  The solve runs on y minus its least-squares line (same smoother, since lines
-  are in the null space): dpbsv error scales with $\lambda |b|$, and without it
-  an offset in y cost accuracy. That is what lets the GCV range reach
-  $10^{14} h_{avg}^3$ (v5.11.59). Keep the bound on **h_avg**: on non-uniform
-  grids the top candidates may fail `dpbsv` (conditioning follows the smallest
-  local spacing) and are skipped and counted; an h_min-scaled bound was tried
-  and let one near-duplicate sample shrink the range for the whole record.
-  Near-duplicate x (h_min < 1e-4 h_avg) loses accuracy at any lambda and only
-  warns.
-- **Butterworth:** 4th-order low-pass split into a biquad cascade for numerical
-  stability. Filtfilt (forward-backward) gives zero phase. Per-biquad analytical
-  IC via Cramer's rule avoids LAPACK and `complex.h`. Auto-cutoff via Morozov's
-  discrepancy principle (v5.11.3). Padding length is fc-adaptive
-  (`PAD_DECAY_FACTOR/(1-r_max)`, floored at 14, capped at n-1) so the transient
-  is absorbed even for small fc (v5.11.41); a `# WARNING` is emitted when the cap
-  engages.
+Grid diagnostics that no method consumes (dropout / sampling-regime detection)
+are **advisory only**: they never change a method's behaviour or set
+`reliability_warning`. Keep it that way unless you intend to change what every
+normal run prints.
 
 ## Testing
 
-Uses the **Unity** framework (vendored in `tests/`).
+Uses the **Unity** framework (vendored in `tests/`). The source of truth for
+what runs is `tests/test_main.c`.
 
-- 146 tests total: grid_analysis (17), polyfit (22), savgol (18), tikhonov (31),
-  butterworth (22), timestamp (18), parser (18). Source of truth is `tests/test_main.c`.
 - Zero leaks. `make test-valgrind` exits 1 on any definite/indirect leak or
   memory error — keep it that way.
 
