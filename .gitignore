@@ -15,5 +15,5 @@
 /plot_data_t.py
 /pdf_from_md_tmp.sh
 /md2pdf.sh
-/README.pdf
+*.pdf
 /tests/generate_*.py
