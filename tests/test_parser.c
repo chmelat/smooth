@@ -480,3 +480,24 @@ void test_parser_crlf_numeric_with_comments(void) {
     TEST_ASSERT_EQUAL_INT(0, r.has_skip_msg);
     remove(path);
 }
+
+/* Data rows must carry full double precision (audit A1, v5.11.57). Under the
+ * old %12.8lG every x below printed as 1.7E+09 and y lost its 0.001 steps.
+ * The data is linear, so a degree-1 fit reproduces it exactly. */
+void test_parser_output_keeps_full_precision(void) {
+    const char *path = "/tmp/test_parser_precision.dat";
+    char buf[512] = "";
+    for (int i = 0; i < 10; i++) {
+        char row[64];
+        snprintf(row, sizeof(row), "%d %.3f\n", 1700000000 + i, 101325.123 + 0.001 * i);
+        strcat(buf, row);
+    }
+    write_fixture(path, buf);
+    SmoothRun r = run_smooth("-m0 -n3 -p1", path);
+    TEST_ASSERT_EQUAL_INT(10, r.data_rows);
+    TEST_ASSERT_DOUBLE_WITHIN(0.5, 1700000000.0, r.first_x);
+    TEST_ASSERT_DOUBLE_WITHIN(0.5, 1700000009.0, r.last_x);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-6, 101325.123, r.first_y);
+    TEST_ASSERT_DOUBLE_WITHIN(1e-6, 101325.132, r.last_y);
+    remove(path);
+}

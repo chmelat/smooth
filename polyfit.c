@@ -71,20 +71,22 @@ static void evaluate_polynomial(const double *coeffs, int degree, double dx,
 /* ============================================================================
  * Helper function: Build Vandermonde matrix for least squares
  * 
- * V[i,j] = (x[i] - x_center)^j
+ * V[i,j] = ((x[i] - x_center) / scale)^j
  * 
+ * scale is the window half-width, so the fit does not depend on the units of x.
+ *
  * Matrix is stored column-major for LAPACK.
  * ============================================================================
  */
 static void build_vandermonde(const double *x, int x_start, int x_end, 
-                              double x_center, int degree, 
+                              double x_center, double scale, int degree,
                               double *V, int ldv)
 {
     int nrows = x_end - x_start + 1;
     int ncols = degree + 1;
     
     for (int i = 0; i < nrows; i++) {
-        double dx = x[x_start + i] - x_center;
+        double dx = (x[x_start + i] - x_center) / scale;
         double p_dx = 1.0;
         
         for (int j = 0; j < ncols; j++) {
@@ -217,8 +219,9 @@ PolyfitResult* polyfit_smooth(const double *x, const double *y, int n, int windo
     int rank_deficient_count = 0;
     for (i = offset; i < n - offset; i++) {
         
-        /* Build Vandermonde matrix */
-        build_vandermonde(x, i - offset, i + offset, x[i], poly_degree, V, window_size);
+        /* s > 0: x strictly increasing (checked above) */
+        double s = fmax(x[i] - x[i - offset], x[i + offset] - x[i]);
+        build_vandermonde(x, i - offset, i + offset, x[i], s, poly_degree, V, window_size);
         
         /* Copy y values to RHS vector */
         for (j = 0; j < window_size; j++) {
@@ -249,19 +252,19 @@ PolyfitResult* polyfit_smooth(const double *x, const double *y, int n, int windo
         }
         
         /* Store smoothed value and derivative at center point
-         * rhs[0] = c0 (value at center), rhs[1] = c1 (first derivative)
+         * rhs[0] = c0 (value at center), rhs[1] = c1 = dy/dt, so dy/dx = c1/s
          */
         result->y_smooth[i] = rhs[0];
-        result->y_deriv[i] = (poly_degree > 0) ? rhs[1] : 0.0;
+        result->y_deriv[i] = (poly_degree > 0) ? rhs[1] / s : 0.0;
         
         /* Handle left boundary on first interior point */
         if (i == offset) {
             for (k = 0; k < offset; k++) {
                 double dx = x[k] - x[offset];
                 double fi, dfi;
-                evaluate_polynomial(rhs, poly_degree, dx, &fi, &dfi);
+                evaluate_polynomial(rhs, poly_degree, dx / s, &fi, &dfi);
                 result->y_smooth[k] = fi;
-                result->y_deriv[k] = dfi;
+                result->y_deriv[k] = dfi / s;
             }
             left_boundary_done = 1;
         }
@@ -271,9 +274,9 @@ PolyfitResult* polyfit_smooth(const double *x, const double *y, int n, int windo
             for (k = 0; k < offset; k++) {
                 double dx = x[n - offset + k] - x[n - offset - 1];
                 double fi, dfi;
-                evaluate_polynomial(rhs, poly_degree, dx, &fi, &dfi);
+                evaluate_polynomial(rhs, poly_degree, dx / s, &fi, &dfi);
                 result->y_smooth[n - offset + k] = fi;
-                result->y_deriv[n - offset + k] = dfi;
+                result->y_deriv[n - offset + k] = dfi / s;
             }
             right_boundary_done = 1;
         }

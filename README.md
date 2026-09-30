@@ -736,16 +736,18 @@ The polynomial coefficients are found by solving an **overdetermined linear syst
 
 $$V \cdot \mathbf{a} = \mathbf{y}_{\text{window}}$$
 
-where $V$ is the Vandermonde matrix with $V_{j,k} = (x_j - x_i)^k$:
+where $V$ is the Vandermonde matrix on the **scaled** coordinate $t_j = (x_j - x_i)/s$, with $s = \max(x_i - x_{i-n/2},\ x_{i+n/2} - x_i)$ the window half-width, so that $t_j \in [-1, 1]$ and $V_{j,k} = t_j^k$:
 
 $$
 V = \begin{pmatrix}
-1 & (x_0-x_i) & (x_0-x_i)^2 & \cdots & (x_0-x_i)^p \\
-1 & (x_1-x_i) & (x_1-x_i)^2 & \cdots & (x_1-x_i)^p \\
+1 & t_0 & t_0^2 & \cdots & t_0^p \\
+1 & t_1 & t_1^2 & \cdots & t_1^p \\
 \vdots & \vdots & \vdots & \ddots & \vdots \\
-1 & (x_n-x_i) & (x_n-x_i)^2 & \cdots & (x_n-x_i)^p
+1 & t_n & t_n^2 & \cdots & t_n^p
 \end{pmatrix}
 $$
+
+Without the scaling the columns $(x_j - x_i)^k$ span many decades whenever $x$ is not measured in units of roughly one sample (e.g. timestamps in seconds), and the relative SVD cut-off below then discards genuine directions: the fit would depend on the units of $x$.
 
 $$\mathbf{a} = [a_0, a_1, \ldots, a_p]^T \quad\text{(polynomial coefficients)}, \qquad \mathbf{y}_{\text{window}} = [y_{i-n/2}, \ldots, y_{i+n/2}]^T$$
 
@@ -767,7 +769,7 @@ The implementation uses LAPACK's `dgelss` (SVD decomposition) rather than formin
 
 Derivatives are computed analytically from polynomial coefficients:
 
-$$f(x_i) = a_0, \qquad f'(x_i) = a_1, \qquad f''(x_i) = 2a_2$$
+$$f(x_i) = a_0, \qquad f'(x_i) = \frac{a_1}{s}, \qquad f''(x_i) = \frac{2a_2}{s^2}$$
 
 #### Edge Handling
 
@@ -878,26 +880,34 @@ This leads to a system of linear equations where the unknowns are the filter coe
 
 #### Matrix Formulation
 
-The coefficients are found by solving a **normal equations system** (not a Vandermonde system):
+The coefficients are found by solving a **normal equations system** (not a Vandermonde system). The window positions are first **centred and scaled** to $[-1, 1]$:
+
+$$u_k = \frac{k - \mu}{r}, \qquad \mu = \frac{n_R - n_L}{2}, \qquad r = \frac{n_L + n_R}{2}, \qquad k = -n_L, \ldots, n_R$$
+
+so the target point $k = 0$ sits at $u_0 = -\mu / r$ ($u_0 = 0$ for a symmetric window).
 
 $$A \cdot \boldsymbol{\beta} = \mathbf{b}$$
 
-where $A$ is a symmetric $(p+1) \times (p+1)$ moment matrix with $A_{i,j} = \sum_{k=-n_L}^{n_R} k^{i+j}$:
+where $A$ is a symmetric $(p+1) \times (p+1)$ moment matrix with $A_{i,j} = \sum_{k=-n_L}^{n_R} u_k^{i+j}$:
 
 $$
 A = \begin{pmatrix}
-\sum k^0 & \sum k^1 & \sum k^2 & \cdots & \sum k^p \\
-\sum k^1 & \sum k^2 & \sum k^3 & \cdots & \sum k^{p+1} \\
+\sum u^0 & \sum u^1 & \sum u^2 & \cdots & \sum u^p \\
+\sum u^1 & \sum u^2 & \sum u^3 & \cdots & \sum u^{p+1} \\
 \vdots & \vdots & \vdots & \ddots & \vdots \\
-\sum k^p & \sum k^{p+1} & \cdots & \cdots & \sum k^{2p}
+\sum u^p & \sum u^{p+1} & \cdots & \cdots & \sum u^{2p}
 \end{pmatrix}
 $$
 
-and the right-hand side vector: $b_j = \delta_{j,d} \cdot d!$
+and the right-hand side is the monomial row (for smoothing) or its derivative (for the first derivative) at the target point:
 
-This results in a symmetric positive definite $(p+1) \times (p+1)$ matrix. The filter coefficients are then:
+$$b_j = u_0^{\,j} \quad (d = 0), \qquad b_j = j\, u_0^{\,j-1} \quad (d = 1)$$
 
-$$c_k = \sum_{j=0}^{p} \beta_j \cdot k^j \qquad \text{for } k = -n_L, \ldots, n_R$$
+For a symmetric window ($u_0 = 0$) this reduces to $b_j = \delta_{j,d}$. This results in a symmetric positive definite $(p+1) \times (p+1)$ matrix. The filter coefficients are then:
+
+$$c_k = \sum_{j=0}^{p} \beta_j \cdot u_k^{\,j} \quad (d = 0), \qquad c_k = \frac{1}{r} \sum_{j=0}^{p} \beta_j \cdot u_k^{\,j} \quad (d = 1)$$
+
+The factor $1/r$ converts the derivative from $u$ back to index units, so the coefficients still satisfy the moment conditions above.
 
 **Note:** This formulation through normal equations is mathematically equivalent to least-squares polynomial fitting but more efficient computationally.
 
@@ -913,7 +923,7 @@ $$c_k = \sum_{j=0}^{p} \beta_j \cdot k^j \qquad \text{for } k = -n_L, \ldots, n_
 
 #### Derivative Scaling
 
-The derivative coefficients computed by `savgol_coefficients()` assume **unit spacing** (normalized integer coordinates). For physical derivatives on real grids, the results must be scaled:
+The derivative coefficients computed by `savgol_coefficients()` are per **unit index spacing**. (Internally the fit runs on window positions centred and scaled to $[-1, 1]$ for numerical conditioning, and the result is converted back to index units.) For physical derivatives on real grids, the results must be scaled:
 
 $$\frac{dy}{dx}\bigg|_{\text{physical}} = \frac{1}{h_{\text{avg}}} \cdot \frac{dy}{dx}\bigg|_{\text{normalized}}$$
 
@@ -1562,17 +1572,18 @@ dpbsv_(&uplo, &n, &kd, &nrhs, AB, &ldab, b, &n, &info);
 **POLYFIT SVD solver:**
 
 ```c
-// Build Vandermonde matrix
-build_vandermonde(x, i - offset, i + offset, x[i], poly_degree, V, window_size);
+// Build Vandermonde matrix on t = (x - x[i]) / s, s = window half-width
+double s = fmax(x[i] - x[i - offset], x[i + offset] - x[i]);
+build_vandermonde(x, i - offset, i + offset, x[i], s, poly_degree, V, window_size);
 
 // Solve least squares using SVD decomposition
 dgelss_(&window_size, &matrix_cols, &nrhs, V, &window_size,
         rhs, &rhs_size, sing_vals, &rcond, &effective_rank,
         work, &lwork, &info);
 
-// Extract solution: rhs[0] = a_0 (value), rhs[1] = a_1 (derivative)
+// Extract solution: rhs[0] = a_0 (value), rhs[1]/s = a_1/s (derivative)
 result->y_smooth[i] = rhs[0];
-result->y_deriv[i] = (poly_degree > 0) ? rhs[1] : 0.0;
+result->y_deriv[i] = (poly_degree > 0) ? rhs[1] / s : 0.0;
 ```
 
 **Numerical diagnostics (POLYFIT):**

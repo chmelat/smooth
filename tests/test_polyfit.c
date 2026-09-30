@@ -1024,3 +1024,29 @@ void test_polyfit_nonuniform_grid_quadratic(void) {
  *    Nikdy neporovnáváme floaty pomocí == !
  *
  */
+
+
+/* Jednotky osy x nesmí ovlivnit výsledek (audit A2). */
+void test_polyfit_invariant_to_x_units(void) {
+    enum { NP = 200 };
+    double x1[NP], x60[NP], y_clean[NP], y[NP];
+    for (int i = 0; i < NP; i++) {
+        x1[i] = i;
+        x60[i] = 60.0 * i;
+        y_clean[i] = sin(2.0 * M_PI * i / 80.0);
+    }
+    add_noise(y_clean, y, NP, 0.1, 42);
+
+    PolyfitResult *r1 = polyfit_smooth(x1, y, NP, 15, 6);
+    PolyfitResult *r60 = polyfit_smooth(x60, y, NP, 15, 6);
+    TEST_ASSERT_NOT_NULL(r1);
+    TEST_ASSERT_NOT_NULL(r60);
+
+    for (int i = 0; i < NP; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(1e-9, r1->y_smooth[i], r60->y_smooth[i]);
+        TEST_ASSERT_DOUBLE_WITHIN(1e-9, r1->y_deriv[i], 60.0 * r60->y_deriv[i]);
+    }
+
+    free_polyfit_result(r1);
+    free_polyfit_result(r60);
+}

@@ -55,7 +55,10 @@ static double power(double x, int n)
  * Special case: if deriv_order > poly_degree, returns 0 with zero coefficients
  * (mathematically the derivative of a lower-degree polynomial is zero).
  *
- * Assumes integer spacing (normalized coordinates); for symmetric windows nl=nr.
+ * Assumes uniform spacing. The fit runs on u = (j - m) / d, m = (nr - nl)/2,
+ * d = (nl + nr)/2: u in [-1, 1] keeps the moment matrix well conditioned.
+ * The target point j = 0 is u0 = -m/d. Output coefficients are per index
+ * unit: the derivative is dy/dj, which the caller divides by h.
  */
 static int savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, double *c)
 {
@@ -84,7 +87,7 @@ static int savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order,
     memset(c, 0, n_coeff * sizeof(double));
 
     /* Validate basic parameter constraints. deriv_order is capped at 1: the RHS
-     * below hardcodes deriv_order! = 1, which holds only for orders 0 and 1 —
+     * below is written out for the value and the first derivative only —
      * the only ones savgol_smooth() ever requests. */
     if (poly_degree < 0 || deriv_order < 0 || deriv_order > 1) {
         fprintf(stderr, "ERROR: Invalid parameters for savgol_coefficients\n");
@@ -116,21 +119,31 @@ static int savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order,
     memset(a, 0, sizeof(a));
     
     matrix_size = poly_degree + 1;
-    
+
+    /* Centred, scaled positions (see header comment). d >= 1: window >= 3. */
+    double m = (nr - nl) / 2.0;
+    double d = (nl + nr) / 2.0;
+    double u0 = -m / d;
+
     /* Fill 'a' array with the moments of the data positions */
     for (i = 0; i <= 2 * poly_degree; i++) {
         for (j = -nl; j <= nr; j++)
-            a[i] += power(j, i);
+            a[i] += power((j - m) / d, i);
     }
-    
-    /* Set up the normal equations for the desired polynomial fit */
+
+    /* Set up the normal equations for the desired polynomial fit. The RHS is
+     * the monomial row (or its derivative) at the target point u0, so the
+     * coefficients evaluate the fitted polynomial there. On a symmetric
+     * window u0 = 0 and this is the unit vector e_deriv_order. */
     for (j = 0; j <= poly_degree; j++) {
         for (i = 0; i <= j; i++) {
             A[i + j*matrix_size] = a[i + j];
         }
-        
-        if (j == deriv_order)
-            B[j] = 1.0;  /* deriv_order! — 1 for both allowed orders (0 and 1) */
+
+        if (deriv_order == 0)
+            B[j] = power(u0, j);
+        else
+            B[j] = (j == 0) ? 0.0 : j * power(u0, j - 1);
     }
     
     /* Solve the linear system using LAPACK */
@@ -145,12 +158,13 @@ static int savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order,
     /* Compute the filter coefficients using the solution */
     for (i = 0; i <= nl + nr; i++) {
         double sum = B[0];
-        double pos = i - nl;
-        
+        double pos = (i - nl - m) / d;
+
         for (j = 1; j <= poly_degree; j++)
             sum += B[j] * power(pos, j);
-        
-        c[i] = sum;
+
+        /* dy/du -> dy/dj */
+        c[i] = (deriv_order == 1) ? sum / d : sum;
     }
     
     return 0;  /* Success */
@@ -183,10 +197,6 @@ SavgolResult* savgol_smooth(const double *x, const double *y, int n, int window_
     if (poly_degree < 0 || poly_degree > DPMAX) {
         fprintf(stderr, "ERROR: Polynomial degree must be between 0 and %d\n", DPMAX);
         return NULL;
-    }
-   
-    if (poly_degree > 6) {
-        fprintf(stderr, "Warning: High polynomial degree (%d) may cause numerical instability\n", poly_degree);
     }
 
     if (poly_degree >= window_size) {

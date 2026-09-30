@@ -102,10 +102,12 @@ These are the load-bearing design choices, not user-facing math (see README for
 that):
 
 - **Polyfit:** SVD per window with `rcond = 1e-10` to truncate small singular
-  values. Asymmetric windows + polynomial extrapolation at boundaries.
+  values, on a Vandermonde scaled to the window half-width ($t \in [-1,1]$) —
+  without the scaling the fit depended on the units of x (v5.11.58). Asymmetric windows + polynomial extrapolation at boundaries.
   $O(n \cdot p^3)$.
 - **Savgol:** Universal convolution coefficients pre-computed once via moment
-  conditions. Translation invariance is the whole point — same coefficients
+  conditions on centred, scaled positions ($u \in [-1,1]$; raw integer
+  positions broke the asymmetric boundary windows, v5.11.58). Translation invariance is the whole point — same coefficients
   applied at every interior point. Uniform-grid requirement enforced by CV
   check, not silently degraded.
 - **Tikhonov:** True 2nd-order penalty $(D^2)^T W D^2$ (pentadiagonal Gram
@@ -123,8 +125,8 @@ that):
 
 Uses the **Unity** framework (vendored in `tests/`).
 
-- 138 tests total: grid_analysis (17), polyfit (21), savgol (16), tikhonov (27),
-  butterworth (22), timestamp (18), parser (17). Source of truth is `tests/test_main.c`.
+- 141 tests total: grid_analysis (17), polyfit (22), savgol (17), tikhonov (27),
+  butterworth (22), timestamp (18), parser (18). Source of truth is `tests/test_main.c`.
 - Zero leaks. `make test-valgrind` exits 1 on any definite/indirect leak or
   memory error — keep it that way.
 

@@ -232,10 +232,6 @@ int main(int argc, char **argv)
     exit (EXIT_FAILURE);
   }
 
-  if (dp > 6) {
-    fprintf(stderr, "Warning: High polynomial degree (%d) may cause numerical instability\n", dp);
-  }
-
 /* Argument - filename or stdin. parse_input() strips '#' comments and blank
  * lines itself, so the stream is handed over as-is. */
   if (argv[optind] == NULL || strcmp(argv[optind], "-") == 0) {
@@ -444,15 +440,15 @@ static void print_result(const double *x,
   for (int i = 0; i < n; i++) {
     if (timestamp_mode) {
       if (show_derivative) {
-        printf("%s %12.8lG %12.8lG\n", ts_ctx->original_timestamps[i], y_smooth[i], y_deriv[i]);
+        printf("%s %12.15lG %12.15lG\n", ts_ctx->original_timestamps[i], y_smooth[i], y_deriv[i]);
       } else {
-        printf("%s %12.8lG\n", ts_ctx->original_timestamps[i], y_smooth[i]);
+        printf("%s %12.15lG\n", ts_ctx->original_timestamps[i], y_smooth[i]);
       }
     } else {
       if (show_derivative) {
-        printf("%12.8lG %12.8lG %12.8lG\n", x[i], y_smooth[i], y_deriv[i]);
+        printf("%12.15lG %12.15lG %12.15lG\n", x[i], y_smooth[i], y_deriv[i]);
       } else {
-        printf("%12.8lG %12.8lG\n", x[i], y_smooth[i]);
+        printf("%12.15lG %12.15lG\n", x[i], y_smooth[i]);
       }
     }
   }

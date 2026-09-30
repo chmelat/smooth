@@ -3,7 +3,15 @@
  *
  * Version History
  * ---------------
- * v5.11.56 (current): Make GCV lambda selection the default for Tikhonov,
+ * v5.11.58 (current): Scale the local fits of polyfit (t = (x-x_i)/s,
+ *           s = window half-width) and savgol (positions centred and scaled
+ *           to [-1,1]); results no longer depend on the units of x and
+ *           savgol's boundary windows no longer break at large w/p. Dropped
+ *           the obsolete "High polynomial degree" warning. Audit A2 + A3.
+ * v5.11.57: Print data rows with `%12.15lG` instead of `%12.8lG`; 8 digits
+ *           printed unix-epoch x as `1.7E+09` for every row. Audit A1
+ *           (both: doc/code-audit-v5.11.56.md).
+ * v5.11.56: Make GCV lambda selection the default for Tikhonov,
  *           and give the search a grid-invariant range.
  *           BEHAVIOUR CHANGE, and a large one: `-m 2` without `-l` no longer
  *           uses a fixed lambda = 0.1. It now runs the GCV search, the same
@@ -727,5 +735,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.56"
-#define REVDATE "2026-07-29"
+#define VERSION "5.11.58"
+#define REVDATE "2026-09-30"

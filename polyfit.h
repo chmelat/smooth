@@ -43,9 +43,11 @@ typedef struct {
  *   - Reports condition number and effective rank for diagnostics
  * 
  * Algorithm:
- *   For each interior point i, fits polynomial p(x) = sum_{k=0}^{d} c_k (x - x_i)^k
- *   by minimizing sum_{j in window} (y_j - p(x_j))^2 using SVD decomposition
- *   of the Vandermonde matrix. The smoothed value is c_0, derivative is c_1.
+ *   For each interior point i, fits polynomial p(t) = sum_{k=0}^{d} c_k t^k,
+ *   t = (x - x_i) / s with s the window half-width (so t in [-1, 1]), by
+ *   minimizing sum_{j in window} (y_j - p(t_j))^2 using SVD decomposition
+ *   of the Vandermonde matrix. The smoothed value is c_0, derivative is c_1/s.
+ *   The scaling makes the fit independent of the units of x.
  *   
  *   SVD provides implicit regularization: if the Vandermonde matrix is 
  *   ill-conditioned, small singular values are truncated, yielding a stable

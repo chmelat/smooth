@@ -60,6 +60,7 @@ void test_polyfit_noise_reduction_quality(void);
 void test_polyfit_nonuniform_grid_constant(void);
 void test_polyfit_nonuniform_grid_linear(void);
 void test_polyfit_nonuniform_grid_quadratic(void);
+void test_polyfit_invariant_to_x_units(void);
 
 // Testy pro savgol.c - Basic functionality
 void test_savgol_smooth_constant_data(void);
@@ -84,6 +85,7 @@ void test_savgol_quadratic_with_noise(void);
 
 // Testy pro savgol.c - Grid uniformity
 void test_savgol_rejects_nonuniform_grid(void);
+void test_savgol_polyfit_exact_on_cubic_wide_window(void);
 
 // Testy pro tikhonov.c - Mathematical correctness
 void test_tikhonov_constant_function(void);
@@ -184,6 +186,7 @@ void test_parser_ts_nonnumeric_y_is_reported(void);
 void test_parser_crlf_timestamp_space_format(void);
 void test_parser_crlf_timestamp_t_format(void);
 void test_parser_crlf_numeric_with_comments(void);
+void test_parser_output_keeps_full_precision(void);
 
 // Testy pro timestamp.c
 void test_parse_timestamp_space_separator(void);
@@ -300,6 +303,7 @@ int main(void) {
     RUN_TEST(test_polyfit_nonuniform_grid_constant);
     RUN_TEST(test_polyfit_nonuniform_grid_linear);
     RUN_TEST(test_polyfit_nonuniform_grid_quadratic);
+    RUN_TEST(test_polyfit_invariant_to_x_units);
 
     printf("\n");
     printf("========================================\n");
@@ -321,6 +325,7 @@ int main(void) {
     RUN_TEST(test_savgol_edge_case_large_n);
     RUN_TEST(test_savgol_edge_case_high_poly_degree);
     RUN_TEST(test_savgol_edge_case_large_window);
+    RUN_TEST(test_savgol_polyfit_exact_on_cubic_wide_window);
     RUN_TEST(test_savgol_edge_case_min_window);
     RUN_TEST(test_savgol_edge_case_null_pointers);
     RUN_TEST(test_savgol_edge_case_even_window);
@@ -477,6 +482,7 @@ int main(void) {
     RUN_TEST(test_parser_crlf_timestamp_space_format);
     RUN_TEST(test_parser_crlf_timestamp_t_format);
     RUN_TEST(test_parser_crlf_numeric_with_comments);
+    RUN_TEST(test_parser_output_keeps_full_precision);
 
     /* UNITY_END() ukončí Unity framework a vrátí výsledek
      * Návratová hodnota:

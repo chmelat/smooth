@@ -56,7 +56,7 @@ typedef struct {
  * 
  * Algorithm:
  *   - Computes convolution coefficients for polynomial fitting
- *   - Assumes uniform spacing (integer indices)
+ *   - Assumes uniform spacing; fits on centred positions scaled to [-1, 1]
  *   - Applies filter to each point with appropriate window
  *   - Derivative scaling assumes uniform grid
  * 

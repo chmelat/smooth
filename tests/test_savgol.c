@@ -5,6 +5,7 @@
 
 #include "unity.h"           // Unity testing framework
 #include "../savgol.h"       // Modul který testujeme
+#include "../polyfit.h"      // Křížová kontrola savgol == polyfit (audit A2/A3)
 #include "../grid_analysis.h" // Pro analýzu mřížky
 #include "grid_helpers.h"    // Helper functions for grid creation
 #include "test_helpers.h"    // Helper functions for statistics and signal processing
@@ -789,3 +790,35 @@ void test_savgol_rejects_nonuniform_grid(void) {
  *    Nikdy neporovnáváme floaty pomocí == !
  *
  */
+
+
+/* Kubiku musí savgol i polyfit reprodukovat přesně, i na okrajích (audit A2/A3). */
+void test_savgol_polyfit_exact_on_cubic_wide_window(void) {
+    enum { NP = 200 };
+    double x[NP], y[NP];
+    create_uniform_grid(x, NP, 0.0, 1.0);
+    for (int i = 0; i < NP; i++) {
+        double t = x[i] / 100.0;
+        y[i] = 1.0 - 2.0 * t + 0.5 * t * t + 0.3 * t * t * t;
+    }
+    GridAnalysis *grid = analyze_grid(x, NP);
+    TEST_ASSERT_NOT_NULL(grid);
+
+    SavgolResult *sg = savgol_smooth(x, y, NP, 101, 12, grid);
+    PolyfitResult *pf = polyfit_smooth(x, y, NP, 101, 12);
+    TEST_ASSERT_NOT_NULL(sg);
+    TEST_ASSERT_NOT_NULL(pf);
+
+    for (int i = 0; i < NP; i++) {
+        double t = x[i] / 100.0;
+        double dy = (-2.0 + t + 0.9 * t * t) / 100.0;
+        TEST_ASSERT_DOUBLE_WITHIN(1e-7, y[i], sg->y_smooth[i]);
+        TEST_ASSERT_DOUBLE_WITHIN(1e-7, y[i], pf->y_smooth[i]);
+        TEST_ASSERT_DOUBLE_WITHIN(1e-7, dy, sg->y_deriv[i]);
+        TEST_ASSERT_DOUBLE_WITHIN(1e-7, dy, pf->y_deriv[i]);
+    }
+
+    free_savgol_result(sg);
+    free_polyfit_result(pf);
+    free_grid_analysis(grid);
+}
