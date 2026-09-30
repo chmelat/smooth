@@ -86,6 +86,7 @@ void test_savgol_quadratic_with_noise(void);
 // Testy pro savgol.c - Grid uniformity
 void test_savgol_rejects_nonuniform_grid(void);
 void test_savgol_polyfit_exact_on_cubic_wide_window(void);
+void test_savgol_matches_polyfit_small_window_p12(void);
 
 // Testy pro tikhonov.c - Mathematical correctness
 void test_tikhonov_constant_function(void);
@@ -330,6 +331,7 @@ int main(void) {
     RUN_TEST(test_savgol_edge_case_high_poly_degree);
     RUN_TEST(test_savgol_edge_case_large_window);
     RUN_TEST(test_savgol_polyfit_exact_on_cubic_wide_window);
+    RUN_TEST(test_savgol_matches_polyfit_small_window_p12);
     RUN_TEST(test_savgol_edge_case_min_window);
     RUN_TEST(test_savgol_edge_case_null_pointers);
     RUN_TEST(test_savgol_edge_case_even_window);

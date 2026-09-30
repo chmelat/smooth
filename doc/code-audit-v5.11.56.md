@@ -141,6 +141,14 @@ jednotkového vektoru; derivační koeficienty děleny `d` (zpět na jednotky
 indexu, takže `/ h_avg` v `savgol_smooth()` platí dál). `dposv` a normální
 rovnice zůstávají. Chyba výstupu proti referenci: ≤ 5e-10 až do 201/12.
 
+**Korekce (v5.11.60):** tvrzení „≤ 5e-10“ platilo jen pro velká okna. Proti
+60místné referenci (mpmath) při p = 12 byla chyba savgol 4e-8 v y a 2e-7 v y'
+pro `-n 13`, 2e-10 / 2e-9 pro `-n 25`; polyfit ve všech případech ≤ 2e-12.
+Příčina: normální rovnice (`dposv` na VᵀV) umocní podmíněnost V na druhou.
+Koeficienty se nyní počítají jako řešení s minimální normou soustavy Vᵀc = b
+(`dgels`, QR matice V); chyba savgol je teď ≤ 2e-12 pro všechna testovaná
+w/p, stejně jako polyfit.
+
 **Poznámka k A2 + A3:** na uniformní mřížce jsou polyfit a savgol
 matematicky totožné (asymetrické SG okno na okraji = extrapolace polynomu
 prvního okna). Po opravě obou musí dávat stejný výstup — přirozený

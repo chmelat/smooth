@@ -3,7 +3,14 @@
  *
  * Version History
  * ---------------
- * v5.11.59 (current): Tikhonov GCV range 1e6*h^3 -> 1e14*h^3 (32 points):
+ * v5.11.60 (current): Savgol coefficients via dgels (min-norm solution of
+ *           V^T c = b, QR of the scaled Vandermonde V) instead of dposv on
+ *           the normal equations V^T V, which squared cond(V). Error vs a
+ *           60-digit reference at -n 13 -p 12 was 4e-8 in y, 2e-7 in y'; now
+ *           <= 2e-12, same as polyfit, for every w/p tested. The v5.11.58
+ *           claim "<= 5e-10 up to 201/12" held only for large windows. Also
+ *           cuts the y' error under a large y offset (1e6: 7e-5 -> 1e-8).
+ * v5.11.59: Tikhonov GCV range 1e6*h^3 -> 1e14*h^3 (32 points):
  *           the optimum grows as P^4 (P = samples per period) and every signal
  *           slower than ~500 samples pinned. The solve runs on y minus its LS
  *           line, so the dpbsv error no longer scales with the y offset.
@@ -743,5 +750,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.59"
+#define VERSION "5.11.60"
 #define REVDATE "2026-09-30"

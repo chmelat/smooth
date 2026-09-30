@@ -68,7 +68,7 @@ smooth.c              # Main program, CLI parsing, I/O, output formatting
 | Method      | Routine  | Why |
 |-------------|----------|-----|
 | polyfit     | `dgelss` | SVD; tolerates rank-deficient Vandermonde near boundaries |
-| savgol      | `dposv`  | Coefficient system is symmetric positive definite |
+| savgol      | `dgels`  | Coefficients are the min-norm solution of $V^T c = b$; QR of $V$ keeps the error at cond($V$), normal equations squared it (v5.11.60) |
 | tikhonov    | `dpbsv`  | $(D^2)^T W D^2 + I$ is pentadiagonal SPD (kd=2); $O(n)$ solve |
 | butterworth | (none)   | Biquad cascade with analytical IC via Cramer's rule |
 
@@ -105,8 +105,8 @@ that):
   values, on a Vandermonde scaled to the window half-width ($t \in [-1,1]$) —
   without the scaling the fit depended on the units of x (v5.11.58). Asymmetric windows + polynomial extrapolation at boundaries.
   $O(n \cdot p^3)$.
-- **Savgol:** Universal convolution coefficients pre-computed once via moment
-  conditions on centred, scaled positions ($u \in [-1,1]$; raw integer
+- **Savgol:** Universal convolution coefficients pre-computed once from a QR of the
+  Vandermonde on centred, scaled positions ($u \in [-1,1]$; raw integer
   positions broke the asymmetric boundary windows, v5.11.58). Translation invariance is the whole point — same coefficients
   applied at every interior point. Uniform-grid requirement enforced by CV
   check, not silently degraded.
@@ -134,7 +134,7 @@ that):
 
 Uses the **Unity** framework (vendored in `tests/`).
 
-- 145 tests total: grid_analysis (17), polyfit (22), savgol (17), tikhonov (31),
+- 146 tests total: grid_analysis (17), polyfit (22), savgol (18), tikhonov (31),
   butterworth (22), timestamp (18), parser (18). Source of truth is `tests/test_main.c`.
 - Zero leaks. `make test-valgrind` exits 1 on any definite/indirect leak or
   memory error — keep it that way.

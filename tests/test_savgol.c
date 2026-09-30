@@ -822,3 +822,29 @@ void test_savgol_polyfit_exact_on_cubic_wide_window(void) {
     free_polyfit_result(pf);
     free_grid_analysis(grid);
 }
+
+/* Malé okno, p = 12: normální rovnice (dposv) umocnily podmíněnost na druhou
+ * a savgol se od polyfitu lišil o 4e-8 v y a 2e-7 v y' (v5.11.60). */
+void test_savgol_matches_polyfit_small_window_p12(void) {
+    enum { NP = 100 };
+    double x[NP], y[NP];
+    create_uniform_grid(x, NP, 0.0, 1.0);
+    for (int i = 0; i < NP; i++)
+        y[i] = sin(x[i] / 15.0) + 0.1 * sin(7.3 * x[i]);
+    GridAnalysis *grid = analyze_grid(x, NP);
+    TEST_ASSERT_NOT_NULL(grid);
+
+    SavgolResult *sg = savgol_smooth(x, y, NP, 13, 12, grid);
+    PolyfitResult *pf = polyfit_smooth(x, y, NP, 13, 12);
+    TEST_ASSERT_NOT_NULL(sg);
+    TEST_ASSERT_NOT_NULL(pf);
+
+    for (int i = 0; i < NP; i++) {
+        TEST_ASSERT_DOUBLE_WITHIN(1e-10, pf->y_smooth[i], sg->y_smooth[i]);
+        TEST_ASSERT_DOUBLE_WITHIN(1e-10, pf->y_deriv[i], sg->y_deriv[i]);
+    }
+
+    free_savgol_result(sg);
+    free_polyfit_result(pf);
+    free_grid_analysis(grid);
+}

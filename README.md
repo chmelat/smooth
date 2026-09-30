@@ -884,36 +884,25 @@ This leads to a system of linear equations where the unknowns are the filter coe
 
 #### Matrix Formulation
 
-The coefficients are found by solving a **normal equations system** (not a Vandermonde system). The window positions are first **centred and scaled** to $[-1, 1]$:
+The window positions are first **centred and scaled** to $[-1, 1]$:
 
 $$u_k = \frac{k - \mu}{r}, \qquad \mu = \frac{n_R - n_L}{2}, \qquad r = \frac{n_L + n_R}{2}, \qquad k = -n_L, \ldots, n_R$$
 
-so the target point $k = 0$ sits at $u_0 = -\mu / r$ ($u_0 = 0$ for a symmetric window).
-
-$$A \cdot \boldsymbol{\beta} = \mathbf{b}$$
-
-where $A$ is a symmetric $(p+1) \times (p+1)$ moment matrix with $A_{i,j} = \sum_{k=-n_L}^{n_R} u_k^{i+j}$:
-
-$$
-A = \begin{pmatrix}
-\sum u^0 & \sum u^1 & \sum u^2 & \cdots & \sum u^p \\
-\sum u^1 & \sum u^2 & \sum u^3 & \cdots & \sum u^{p+1} \\
-\vdots & \vdots & \vdots & \ddots & \vdots \\
-\sum u^p & \sum u^{p+1} & \cdots & \cdots & \sum u^{2p}
-\end{pmatrix}
-$$
-
-and the right-hand side is the monomial row (for smoothing) or its derivative (for the first derivative) at the target point:
+so the target point $k = 0$ sits at $u_0 = -\mu / r$ ($u_0 = 0$ for a symmetric window). With the $(n_L + n_R + 1) \times (p+1)$ Vandermonde matrix $V_{k,j} = u_k^{\,j}$ and the right-hand side equal to the monomial row (for smoothing) or its derivative (for the first derivative) at the target point:
 
 $$b_j = u_0^{\,j} \quad (d = 0), \qquad b_j = j\, u_0^{\,j-1} \quad (d = 1)$$
 
-For a symmetric window ($u_0 = 0$) this reduces to $b_j = \delta_{j,d}$. This results in a symmetric positive definite $(p+1) \times (p+1)$ matrix. The filter coefficients are then:
+the least-squares fit evaluated at $u_0$ is $\mathbf{b}^T (V^T V)^{-1} V^T \mathbf{y}$, so the filter coefficients are
 
-$$c_k = \sum_{j=0}^{p} \beta_j \cdot u_k^{\,j} \quad (d = 0), \qquad c_k = \frac{1}{r} \sum_{j=0}^{p} \beta_j \cdot u_k^{\,j} \quad (d = 1)$$
+$$\mathbf{c} = V (V^T V)^{-1} \mathbf{b}$$
 
-The factor $1/r$ converts the derivative from $u$ back to index units, so the coefficients still satisfy the moment conditions above.
+This is exactly the **minimum-norm solution** of the underdetermined system
 
-**Note:** This formulation through normal equations is mathematically equivalent to least-squares polynomial fitting but more efficient computationally.
+$$V^T \mathbf{c} = \mathbf{b}$$
+
+which is the moment condition above written in matrix form. For a symmetric window ($u_0 = 0$) the right-hand side reduces to $b_j = \delta_{j,d}$. For the derivative the coefficients are divided by $r$, which converts it from $u$ back to index units.
+
+**Note:** The system is solved with a QR factorization of $V$ (LAPACK `dgels`), not through the normal equations $V^T V$. Forming $V^T V$ squares the condition number: at $p = 12$ with a 13-point window that cost 7 to 8 significant digits (v5.11.60).
 
 #### Computational Efficiency
 
@@ -1580,7 +1569,7 @@ void free_grid_analysis(GridAnalysis *analysis);
 | Method | Routine | Purpose |
 |--------|---------|---------|
 | POLYFIT | `dgelss` | SVD least squares solver (Vandermonde system) |
-| SAVGOL | `dposv` | Symmetric positive definite solver (coefficient computation) |
+| SAVGOL | `dgels` | QR minimum-norm solver (coefficients from $V^T c = b$) |
 | TIKHONOV | `dpbsv` | Banded symmetric positive definite solver (pentadiagonal, kd=2) |
 | BUTTERWORTH | None | Analytical biquad IC via Cramer's rule |
 
@@ -1630,8 +1619,10 @@ result->y_deriv[i] = (poly_degree > 0) ? rhs[1] / s : 0.0;
 **SAVGOL coefficient solver:**
 
 ```c
-// Solve linear system for Savitzky-Golay coefficients
-dposv_(&uplo, &matrix_size, &nrhs, A, &matrix_size, B, &matrix_size, &info);
+// Minimum-norm solution of V^T c = b (trans = 'T'); b goes in c,
+// dgels overwrites it with the Savitzky-Golay coefficients
+dgels_(&trans, &n_coeff, &matrix_size, &nrhs, V, &n_coeff, c, &n_coeff,
+       work, &lwork, &info);
 ```
 
 ### File Structure

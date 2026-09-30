@@ -1,5 +1,8 @@
 /*  Savitzky-Golay filter for data smoothing
  *  OPTIMIZED Implementation with pre-computed coefficients
+ *  V2.6/2026-09-30/ FIXED: coefficients via dgels on the Vandermonde matrix
+ *                   (min-norm solution of V^T c = b) instead of dposv on the
+ *                   normal equations, which squared cond(V): 4e-8 error at 13/12.
  *  V2.5/2026-06-01/ FIXED: boundary coefficient/alloc failure now returns NULL
  *                   (was silently substituting raw y[i]), matching central path.
  *  V2.4/2025-11-28/ FIXED: Allow deriv_order > poly_degree (returns zero coefficients)
@@ -24,8 +27,8 @@
 #define UNIFORMITY_CV_THRESHOLD 0.05
 
 /* LAPACK function declarations */
-extern void dposv_(char *uplo, int *n, int *nrhs, double *a, int *lda, 
-                   double *b, int *ldb, int *info);
+extern void dgels_(char *trans, int *m, int *n, int *nrhs, double *a, int *lda,
+                   double *b, int *ldb, double *work, int *lwork, int *info);
 
 /* Local function declarations */
 static double power(double x, int n);
@@ -56,25 +59,27 @@ static double power(double x, int n)
  * (mathematically the derivative of a lower-degree polynomial is zero).
  *
  * Assumes uniform spacing. The fit runs on u = (j - m) / d, m = (nr - nl)/2,
- * d = (nl + nr)/2: u in [-1, 1] keeps the moment matrix well conditioned.
- * The target point j = 0 is u0 = -m/d. Output coefficients are per index
- * unit: the derivative is dy/dj, which the caller divides by h.
+ * d = (nl + nr)/2: u in [-1, 1] keeps the Vandermonde matrix V (V[k][j] =
+ * u_k^j) well conditioned. The target point j = 0 is u0 = -m/d. The
+ * coefficients c = V (V^T V)^-1 b are the minimum-norm solution of
+ * V^T c = b (b = monomial row or its derivative at u0), which dgels finds
+ * from a QR of V: error ~ cond(V), where the normal equations had cond(V)^2.
+ * Output coefficients are per index unit: the derivative is dy/dj, which the
+ * caller divides by h.
  */
 static int savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order, double *c)
 {
     int i, j;
-    
-    /* Maximální velikosti polí dle DPMAX (definovano v savgol.c jako 12) 
-     * Max velikost matice: (12+1)^2 = 169 double hodnot (~1.3 kB) -> bezpečné pro stack
-     */
-    double A[(DPMAX + 1) * (DPMAX + 1)];
-    double B[DPMAX + 1];
-    double a[2 * DPMAX + 1];
-    
+
+    /* ponytail: minimal (unblocked) dgels workspace MN + max(MN, NRHS);
+     * blocking buys nothing at <= DPMAX+1 = 13 columns. */
+    double work[2 * (DPMAX + 1)];
+    int lwork = (int)(sizeof(work) / sizeof(work[0]));
+
     int matrix_size;
     int info;
     int nrhs = 1;
-    char uplo = 'U';
+    char trans = 'T';
     int n_coeff = nl + nr + 1;
     
     /* Input validation - initialize output array first for safety */
@@ -113,60 +118,53 @@ static int savgol_coefficients(int nl, int nr, int poly_degree, int deriv_order,
         return -1;
     }
     
-    /* Nulování paměti (náhrada za calloc) */
-    memset(A, 0, sizeof(A));
-    memset(B, 0, sizeof(B));
-    memset(a, 0, sizeof(a));
-    
     matrix_size = poly_degree + 1;
+
+    /* Column-major n_coeff x (p+1) Vandermonde; n_coeff = window size. */
+    double *V = malloc((size_t)n_coeff * matrix_size * sizeof(double));
+    if (V == NULL) {
+        fprintf(stderr, "ERROR: Memory allocation failed in savgol_coefficients\n");
+        return -1;
+    }
 
     /* Centred, scaled positions (see header comment). d >= 1: window >= 3. */
     double m = (nr - nl) / 2.0;
     double d = (nl + nr) / 2.0;
     double u0 = -m / d;
 
-    /* Fill 'a' array with the moments of the data positions */
-    for (i = 0; i <= 2 * poly_degree; i++) {
-        for (j = -nl; j <= nr; j++)
-            a[i] += power((j - m) / d, i);
+    for (i = 0; i < n_coeff; i++) {
+        double pos = (i - nl - m) / d;
+        for (j = 0; j <= poly_degree; j++)
+            V[i + j*n_coeff] = power(pos, j);
     }
 
-    /* Set up the normal equations for the desired polynomial fit. The RHS is
-     * the monomial row (or its derivative) at the target point u0, so the
-     * coefficients evaluate the fitted polynomial there. On a symmetric
-     * window u0 = 0 and this is the unit vector e_deriv_order. */
+    /* The RHS is the monomial row (or its derivative) at the target point
+     * u0, so the coefficients evaluate the fitted polynomial there. On a
+     * symmetric window u0 = 0 and this is the unit vector e_deriv_order.
+     * It goes into c (ldb = n_coeff >= p+1), which dgels overwrites with
+     * the solution. */
     for (j = 0; j <= poly_degree; j++) {
-        for (i = 0; i <= j; i++) {
-            A[i + j*matrix_size] = a[i + j];
-        }
-
         if (deriv_order == 0)
-            B[j] = power(u0, j);
+            c[j] = power(u0, j);
         else
-            B[j] = (j == 0) ? 0.0 : j * power(u0, j - 1);
+            c[j] = (j == 0) ? 0.0 : j * power(u0, j - 1);
     }
-    
-    /* Solve the linear system using LAPACK */
-    dposv_(&uplo, &matrix_size, &nrhs, A, &matrix_size, B, &matrix_size, &info);
-    
+
+    dgels_(&trans, &n_coeff, &matrix_size, &nrhs, V, &n_coeff, c, &n_coeff,
+           work, &lwork, &info);
+    free(V);
+
     if (info != 0) {
-        fprintf(stderr, "ERROR: LAPACK dposv failed with info = %d in savgol_coefficients\n", info);
-        /* Output array already zeroed at start */
+        fprintf(stderr, "ERROR: LAPACK dgels failed with info = %d in savgol_coefficients\n", info);
+        memset(c, 0, n_coeff * sizeof(double));
         return -1;
     }
-    
-    /* Compute the filter coefficients using the solution */
-    for (i = 0; i <= nl + nr; i++) {
-        double sum = B[0];
-        double pos = (i - nl - m) / d;
 
-        for (j = 1; j <= poly_degree; j++)
-            sum += B[j] * power(pos, j);
+    /* dy/du -> dy/dj */
+    if (deriv_order == 1)
+        for (i = 0; i < n_coeff; i++)
+            c[i] /= d;
 
-        /* dy/du -> dy/dj */
-        c[i] = (deriv_order == 1) ? sum / d : sum;
-    }
-    
     return 0;  /* Success */
 }
 
