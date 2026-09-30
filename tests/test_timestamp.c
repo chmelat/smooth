@@ -125,7 +125,7 @@ void test_convert_timestamps_basic(void) {
     double *x_out = NULL;
     int first_error = -1;
 
-    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, &x_out, &first_error);
+    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, NULL, &x_out, &first_error);
 
     TEST_ASSERT_NOT_NULL(ctx);
     TEST_ASSERT_NOT_NULL(x_out);
@@ -164,7 +164,7 @@ void test_convert_timestamps_with_errors(void) {
     double *x_out = NULL;
     int first_error = -1;
 
-    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, &x_out, &first_error);
+    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, NULL, &x_out, &first_error);
 
     TEST_ASSERT_NOT_NULL(ctx);
     TEST_ASSERT_NOT_NULL(x_out);
@@ -195,7 +195,7 @@ void test_convert_compacts_parallel_y(void) {
     double *x_out = NULL;
     int first_error = -1;
 
-    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, y, &x_out, &first_error);
+    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, y, NULL, &x_out, &first_error);
 
     TEST_ASSERT_NOT_NULL(ctx);
     TEST_ASSERT_EQUAL(3, ctx->n);
@@ -220,7 +220,7 @@ void test_convert_timestamps_all_invalid(void) {
     double *x_out = NULL;
     int first_error = -1;
 
-    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, &x_out, &first_error);
+    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, NULL, &x_out, &first_error);
 
     TEST_ASSERT_NULL(ctx);  /* Should return NULL when no valid timestamps */
     TEST_ASSERT_EQUAL(1, first_error);  /* First error on line 1 */
@@ -237,7 +237,7 @@ void test_convert_timestamps_preserves_format(void) {
     double *x_out = NULL;
     int first_error = -1;
 
-    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, &x_out, &first_error);
+    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, NULL, &x_out, &first_error);
 
     TEST_ASSERT_NOT_NULL(ctx);
 
@@ -256,10 +256,10 @@ void test_convert_timestamps_null_inputs(void) {
     double *x_out = NULL;
     int first_error = -1;
 
-    TEST_ASSERT_NULL(convert_timestamps_to_relative(NULL, 1, NULL, &x_out, &first_error));
-    TEST_ASSERT_NULL(convert_timestamps_to_relative(timestamps, 0, NULL, &x_out, &first_error));
-    TEST_ASSERT_NULL(convert_timestamps_to_relative(timestamps, 1, NULL, NULL, &first_error));
-    TEST_ASSERT_NULL(convert_timestamps_to_relative(timestamps, 1, NULL, &x_out, NULL));
+    TEST_ASSERT_NULL(convert_timestamps_to_relative(NULL, 1, NULL, NULL, &x_out, &first_error));
+    TEST_ASSERT_NULL(convert_timestamps_to_relative(timestamps, 0, NULL, NULL, &x_out, &first_error));
+    TEST_ASSERT_NULL(convert_timestamps_to_relative(timestamps, 1, NULL, NULL, NULL, &first_error));
+    TEST_ASSERT_NULL(convert_timestamps_to_relative(timestamps, 1, NULL, NULL, &x_out, NULL));
 }
 
 /* Test: free_timestamp_context with NULL */
@@ -298,7 +298,7 @@ void test_convert_timestamps_subsecond_accuracy(void) {
     double *x_out = NULL;
     int first_error = -1;
 
-    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, &x_out, &first_error);
+    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, NULL, &x_out, &first_error);
 
     TEST_ASSERT_NOT_NULL(ctx);
     TEST_ASSERT_EQUAL(0, ctx->errors_encountered);

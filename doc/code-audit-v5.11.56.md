@@ -28,7 +28,7 @@ A1–A6 současná testovací sada nezachytí.
 | A2 | vysoká    | `polyfit.c:79-95`                       | ~~výsledek závisí na jednotkách x (neškálovaná Vandermondova matice)~~ **FIXED v5.11.58** |
 | A3 | vysoká    | `savgol.c:120-134`                      | ~~okrajová (asymetrická) okna při velkém okně / stupni → chybné koeficienty~~ **FIXED v5.11.58** |
 | A4 | střední   | `timestamp.c:28-42`                     | offset časového pásma i koncové smetí tiše ignorovány |
-| A5 | střední   | `timestamp.c:149`, `grid_analysis.c:93` | chybová hlášení uvádějí index, ne řádek souboru |
+| A5 | střední   | `timestamp.c:149`, `grid_analysis.c:93` | ~~chybová hlášení uvádějí index, ne řádek souboru~~ **FIXED v5.11.61** |
 | A6 | střední   | `parser.c:148-169`                      | hlavička v `-T` módu je fatální chyba |
 | B1 | střední   | `tikhonov.c:374-376`                    | ~~horní mez GCV `1e6·h³` zastaví každý signál s periodou ≳ 500 vzorků~~ **FIXED v5.11.59** |
 | B2 | nízká     | `butterworth.c:471`                     | auto-cutoff má pevné minimum 0.02, bez varování |
@@ -186,7 +186,7 @@ Projde i koncové smetí: `2025-01-01T00:00:00garbage`, `2025-01-01T00:00:01.5.5
 **Fix:** za sekundami (a volitelnými zlomky) přijmout jen `\0`, `Z` nebo
 `±HH:MM` / `±HHMM`; offset odečíst od epochy. Cokoli jiného → `-1`.
 
-### A5. Chybová hlášení uvádějí index, ne řádek souboru — `timestamp.c:149`, `grid_analysis.c:93`
+### A5. ~~Chybová hlášení uvádějí index, ne řádek souboru~~ — `timestamp.c:149`, `grid_analysis.c:93` — **FIXED v5.11.61**
 
 `convert_timestamps_to_relative()` nastavuje `*first_error_line = i + 1`,
 kde `i` je index mezi řádky, které parser přijal — ne číslo řádku v souboru.
@@ -206,6 +206,13 @@ ve vstupu.
 **Fix:** parser si k akceptovaným řádkům ukládá `line_number` (paralelní
 pole, kompaktované v lockstepu jako `y_inout`); hlášení z timestamp i
 monotonicity pak tisknou skutečný řádek.
+
+**Opraveno (v5.11.61)** přesně takto: `convert_timestamps_to_relative()`
+dostala parametr `line_inout`, parser kontroluje monotonii sám a hlásí
+`ERROR: x data not strictly increasing at line 7 (previous data row: line 6)`
+(v `-T` módu „Timestamps“). Kontrola v `analyze_grid()` zůstává jako pojistka
+pro volání mimo CLI. Testy: `test_parser_ts_invalid_timestamp_reports_file_line`,
+`test_parser_nonmonotonic_x_reports_file_line`.
 
 ### A6. Hlavička v `-T` módu je fatální — `parser.c:148-169`
 

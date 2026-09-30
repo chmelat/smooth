@@ -1,6 +1,6 @@
 # smooth - Experimental Data Smoothing
 
-**Version 5.11.60** | September 30, 2026
+**Version 5.11.61** | September 30, 2026
 
 A command-line tool for smoothing noisy experimental data and computing derivatives. Implements four methods: polynomial fitting, Savitzky-Golay filtering, Tikhonov regularization, and Butterworth low-pass filtering. Reads two-column ASCII data, outputs smoothed results. Works as a Unix filter.
 
@@ -50,7 +50,7 @@ make                                    # Compile
 ```bash
 make                  # Standard compilation (clang, -O2)
 make debug            # Debug build (-g -O0)
-make test             # Build and run 146 unit tests
+make test             # Build and run 149 unit tests
 make test-valgrind    # Run tests with memory leak detection
 make clean            # Clean build artifacts
 make install-user     # Install to ~/bin
@@ -99,11 +99,11 @@ gcc -o smooth smooth.c polyfit.c savgol.c tikhonov.c butterworth.c \
 
 ### Input Format
 
-ASCII data with one record per line. By default, column 1 is x and column 2 is y; extra columns are ignored. Use `-k M` to pick a different y column, or `-k N:M` to pick both x and y columns (e.g. `-k 1:4` uses column 1 as x and column 4 as y). Comments (lines starting with `#`) are stripped automatically. Data must have strictly monotonic increasing x-values. If a line has fewer columns than requested, the program exits with an error identifying the offending line.
+ASCII data with one record per line. By default, column 1 is x and column 2 is y; extra columns are ignored. Use `-k M` to pick a different y column, or `-k N:M` to pick both x and y columns (e.g. `-k 1:4` uses column 1 as x and column 4 as y). Comments (lines starting with `#`) are stripped automatically. Data must have strictly increasing x-values; the first violation is reported with its line number in the file. If a line has fewer columns than requested, the program exits with an error identifying the offending line.
 
 Columns are split on whitespace; each whitespace-separated token is one logical column. Tokens that are not fully numeric (e.g. an ISO 8601 timestamp `2026-04-29T11:40:00`, a label, or a partially numeric `1.5e2x`) hold the column position but carry no value. If the selected x or y column lands on such a token, or on `NaN`/`Inf`, the row is skipped and a `# Skipped N data row(s) ...` summary is written to stdout. Other columns may be non-numeric without affecting parsing.
 
-In timestamp mode (`-T`), the same `-k N:M` selection applies, but column 1 (the default `N`) is the timestamp instead of a numeric x-value. The timestamp is treated as a single logical column even though the space-separated form (`YYYY-MM-DD HH:MM:SS.fff`) spans two whitespace tokens; the T-separated form (`YYYY-MM-DDTHH:MM:SS.fff`) is one token. Example: with input rows `ID 2025-09-25 14:06:06.390 25.5 100.2 980.1`, `-T -k 2:5` selects the timestamp at logical column 2 and y at logical column 5 (= `100.2`). The same skip-and-summarize behavior applies if the y-token is non-numeric or `NaN`/`Inf`; rows with an unparsable timestamp are reported separately by the timestamp parser.
+In timestamp mode (`-T`), the same `-k N:M` selection applies, but column 1 (the default `N`) is the timestamp instead of a numeric x-value. The timestamp is treated as a single logical column even though the space-separated form (`YYYY-MM-DD HH:MM:SS.fff`) spans two whitespace tokens; the T-separated form (`YYYY-MM-DDTHH:MM:SS.fff`) is one token. Example: with input rows `ID 2025-09-25 14:06:06.390 25.5 100.2 980.1`, `-T -k 2:5` selects the timestamp at logical column 2 and y at logical column 5 (= `100.2`). The same skip-and-summarize behavior applies if the y-token is non-numeric or `NaN`/`Inf`; rows with an unparsable timestamp are skipped and counted in a warning that names the file line of the first one.
 
 ### Unix Filter Usage
 
@@ -1657,14 +1657,14 @@ smooth/
 +--- tests/             # Unit testing framework (Unity)
     |--- unity.c/h                # Unity testing framework
     |--- unity_internals.h        # Unity internals
-    |--- test_main.c              # Test runner (146 tests)
+    |--- test_main.c              # Test runner (149 tests)
     |--- test_grid_analysis.c     # Grid analysis tests (17 tests)
     |--- test_polyfit.c           # Polyfit module tests (22 tests)
     |--- test_savgol.c            # Savgol module tests (18 tests)
     |--- test_tikhonov.c          # Tikhonov module tests (31 tests)
     |--- test_butterworth.c       # Butterworth module tests (22 tests)
     |--- test_timestamp.c         # Timestamp module tests (18 tests)
-    +--- test_parser.c            # Input parser tests (18 tests, end-to-end)
+    +--- test_parser.c            # Input parser tests (21 tests, end-to-end)
 ```
 
 ---

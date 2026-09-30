@@ -3,7 +3,14 @@
  *
  * Version History
  * ---------------
- * v5.11.60 (current): Savgol coefficients via dgels (min-norm solution of
+ * v5.11.61 (current): Error messages name the input-file line, not the index
+ *           among accepted rows (comments, blank and skipped lines shifted
+ *           it). The parser records each row's line; the invalid-timestamp
+ *           warning uses it via the new line_inout argument of
+ *           convert_timestamps_to_relative(), and the parser now checks x
+ *           monotonicity itself ("x data not strictly increasing at line N").
+ *           Audit A5 (doc/code-audit-v5.11.56.md).
+ * v5.11.60: Savgol coefficients via dgels (min-norm solution of
  *           V^T c = b, QR of the scaled Vandermonde V) instead of dposv on
  *           the normal equations V^T V, which squared cond(V). Error vs a
  *           60-digit reference at -n 13 -p 12 was 4e-8 in y, 2e-7 in y'; now
@@ -750,5 +757,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.60"
+#define VERSION "5.11.61"
 #define REVDATE "2026-09-30"

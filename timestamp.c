@@ -103,6 +103,7 @@ TimestampContext* convert_timestamps_to_relative(
     char **timestamp_strings,
     int n,
     double *y_inout,
+    int *line_inout,
     double **x_out,
     int *first_error_line)
 {
@@ -146,7 +147,7 @@ TimestampContext* convert_timestamps_to_relative(
             /* Invalid timestamp */
             ctx->errors_encountered++;
             if (*first_error_line == -1) {
-                *first_error_line = i + 1;  /* Line numbers start at 1 */
+                *first_error_line = line_inout ? line_inout[i] : i + 1;
             }
             continue;  /* Skip this timestamp */
         }
@@ -171,6 +172,9 @@ TimestampContext* convert_timestamps_to_relative(
          * valid_count <= i, so this never overwrites an entry not yet read. */
         if (y_inout) {
             y_inout[valid_count] = y_inout[i];
+        }
+        if (line_inout) {
+            line_inout[valid_count] = line_inout[i];
         }
         valid_count++;
     }

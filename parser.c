@@ -27,6 +27,7 @@ int parse_input(FILE *fp,
   int abuf = 0;
   double *x = NULL;
   double *y = NULL;
+  int *line_no = NULL;   /* input-file line of each accepted row, for messages */
   char **timestamp_strings = NULL;
   TimestampContext *ts_ctx = NULL;
 
@@ -42,7 +43,8 @@ int parse_input(FILE *fp,
       goto fail;
     }
     y = malloc(BUF * sizeof(double));
-    if (!y) {
+    line_no = malloc(BUF * sizeof(int));
+    if (!y || !line_no) {
       fprintf(stderr, "ERROR: No memory for data table\n");
       goto fail;
     }
@@ -195,6 +197,13 @@ int parse_input(FILE *fp,
           goto fail;
         }
         y = temp_y;
+
+        int *temp_line = (int*)realloc(line_no, abuf * sizeof(int));
+        if (!temp_line) {
+          fprintf(stderr, "ERROR: No memory for data table\n");
+          goto fail;
+        }
+        line_no = temp_line;
       }
 
       timestamp_strings[n] = strdup(timestamp_str);
@@ -203,6 +212,7 @@ int parse_input(FILE *fp,
         goto fail;
       }
       y[n] = y_value;
+      line_no[n] = line_number;
       n++;
 
     } else {
@@ -280,10 +290,18 @@ int parse_input(FILE *fp,
           goto fail;
         }
         y = temp_y;
+
+        int *temp_line = (int *)realloc(line_no, abuf * sizeof(int));
+        if (temp_line == NULL) {
+          fprintf(stderr, "ERROR: No memory for data table\n");
+          goto fail;
+        }
+        line_no = temp_line;
       }
 
       x[n] = values[x_column - 1];
       y[n] = values[y_column - 1];
+      line_no[n] = line_number;
       n++;
     }
   }
@@ -310,7 +328,7 @@ int parse_input(FILE *fp,
     }
 
     int first_error_line = -1;
-    ts_ctx = convert_timestamps_to_relative(timestamp_strings, n, y, &x, &first_error_line);
+    ts_ctx = convert_timestamps_to_relative(timestamp_strings, n, y, line_no, &x, &first_error_line);
     if (ts_ctx == NULL) {
       fprintf(stderr, "ERROR: No valid timestamps found in input\n");
       if (first_error_line > 0) {
@@ -332,6 +350,18 @@ int parse_input(FILE *fp,
     timestamp_strings = NULL;
   }
 
+  /* Checked here, not only in analyze_grid(), because only the parser knows
+   * which file line a row came from (audit A5). */
+  for (int i = 1; i < n; i++) {
+    if (x[i] <= x[i-1]) {
+      fprintf(stderr, "ERROR: %s not strictly increasing at line %d "
+              "(previous data row: line %d)\n",
+              timestamp_mode ? "Timestamps" : "x data", line_no[i], line_no[i-1]);
+      goto fail;
+    }
+  }
+  free(line_no);
+
   result->x = x;
   result->y = y;
   result->n = n;
@@ -345,6 +375,7 @@ fail:
   }
   free(x);
   free(y);
+  free(line_no);
   if (ts_ctx) free_timestamp_context(ts_ctx);
   return 1;
 }

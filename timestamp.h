@@ -40,6 +40,9 @@ int parse_timestamp(const char *str, double *epoch_seconds);
  *            valid-row entries are compacted in place to stay aligned with
  *            x_out, so y_inout[k] keeps matching x_out[k] after invalid
  *            timestamps are dropped. Pass NULL if there is no parallel array.
+ *   line_inout: Optional input-file line number of each entry (length n),
+ *            compacted in lockstep like y_inout. Pass NULL to number the
+ *            entries 1..n instead.
  *   x_out: Output pointer for relative time array (allocated by function)
  *   first_error_line: Output pointer for line number of first error (or -1 if none)
  *
@@ -51,6 +54,7 @@ TimestampContext* convert_timestamps_to_relative(
     char **timestamp_strings,
     int n,
     double *y_inout,
+    int *line_inout,
     double **x_out,
     int *first_error_line
 );

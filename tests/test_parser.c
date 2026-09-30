@@ -501,3 +501,65 @@ void test_parser_output_keeps_full_precision(void) {
     TEST_ASSERT_DOUBLE_WITHIN(1e-6, 101325.132, r.last_y);
     remove(path);
 }
+
+/* 1 if any line of smooth's combined stdout/stderr contains `needle`. */
+static int output_contains(const char *args, const char *fixture, const char *needle) {
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), SMOOTH_BIN " %s %s 2>&1", args, fixture);
+    FILE *p = popen(cmd, "r");
+    TEST_ASSERT_NOT_NULL_MESSAGE(p, "popen failed");
+    int found = 0;
+    char ln[1024];
+    while (fgets(ln, sizeof(ln), p))
+        if (strstr(ln, needle)) found = 1;
+    pclose(p);
+    return found;
+}
+
+/* Audit A5: messages name the line of the file, not the index among accepted
+ * rows. Comments and blank lines before the bad row used to shift the number. */
+void test_parser_ts_invalid_timestamp_reports_file_line(void) {
+    const char *path = "/tmp/test_parser_ts_badline.dat";
+    write_fixture(path,
+        "# header\n"
+        "\n"
+        "# another comment\n"
+        "2025-02-01 00:00:00 1\n"
+        "2025-02-01 00:00:01 2\n"
+        "2025-02-01 00:00:02 3\n"
+        "2025-02-30 00:00:03 4\n"      /* line 7: no 30 February */
+        "2025-02-01 00:00:04 5\n"
+        "2025-02-01 00:00:05 6\n");
+    TEST_ASSERT_TRUE(output_contains("-T -m0 -n3 -p1", path, "first error at line 7)"));
+    remove(path);
+}
+
+void test_parser_nonmonotonic_x_reports_file_line(void) {
+    const char *path = "/tmp/test_parser_nonmono.dat";
+    write_fixture(path,
+        "# header\n"
+        "# units\n"
+        "\n"
+        "1 1\n"
+        "2 2\n"
+        "3 3\n"
+        "2.5 4\n"                      /* line 7: x goes back */
+        "5 5\n");
+    TEST_ASSERT_TRUE(output_contains("-m0 -n3 -p1", path, "at line 7 "));
+    remove(path);
+}
+
+/* The line numbers must be dropped together with invalid timestamps: without
+ * that, the out-of-order row on line 5 would be reported as line 4. */
+void test_parser_ts_line_numbers_follow_dropped_rows(void) {
+    const char *path = "/tmp/test_parser_ts_compact.dat";
+    write_fixture(path,
+        "# header\n"
+        "2025-02-01 00:00:00 1\n"
+        "2025-02-01 00:00:02 2\n"
+        "2025-02-30 00:00:03 3\n"      /* line 4: invalid, dropped */
+        "2025-02-01 00:00:01 4\n");    /* line 5: goes back */
+    TEST_ASSERT_TRUE(output_contains("-T -m2", path,
+                                     "at line 5 (previous data row: line 3)"));
+    remove(path);
+}
