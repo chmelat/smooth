@@ -3,7 +3,12 @@
  *
  * Version History
  * ---------------
- * v5.11.70 (current): TimestampContext is gone: after v5.11.69 it held only
+ * v5.11.71 (current): -n and -p are validated, and n >= -n required, only
+ *           for polyfit and savgol, which use them; `smooth -m 2 -n 4` and
+ *           `-m 3 -n 101` on short data no longer fail. help(): -n/-p say
+ *           "polyfit and savgol only" (-p wrongly implied Tikhonov), and the
+ *           opening line names all four methods. Audit C3.
+ * v5.11.70: TimestampContext is gone: after v5.11.69 it held only
  *           the strings and an n equal to the row count. ParseResult
  *           carries char **timestamps; print_result() takes it and needs no
  *           timestamp_mode flag; free_timestamp_context() is a two-line
@@ -816,5 +821,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.70"
+#define VERSION "5.11.71"
 #define REVDATE "2026-10-01"

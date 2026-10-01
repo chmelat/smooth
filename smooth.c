@@ -221,12 +221,15 @@ int main(int argc, char **argv)
     }
   }
 
-  if ( sp<3 || !(sp%2) ) {
+  /* -n and -p belong to the moving-window methods only (audit C3) */
+  int windowed = (method == METHOD_POLYFIT || method == METHOD_SAVGOL);
+
+  if (windowed && (sp<3 || !(sp%2))) {
     fprintf(stderr,"Incorrect number points in moving windows (odd >= 3)!\n");
     exit (EXIT_FAILURE);
   }
 
-  if (dp < 0 || dp > DPMAX) {
+  if (windowed && (dp < 0 || dp > DPMAX)) {
     fprintf(stderr,"Incorrect degree of approx. polynom, (0<=p<=%d)!\n",DPMAX);
     exit (EXIT_FAILURE);
   }
@@ -264,7 +267,7 @@ int main(int argc, char **argv)
     timestamps = pr.timestamps;
   }
 
-  if (n < sp && method != METHOD_TIKHONOV) {
+  if (windowed && n < sp) {
     fprintf(stderr,"Need more data (n < %d)!\n",sp);
     goto cleanup;
   }
@@ -459,8 +462,8 @@ static void help(void)
 {
   static char *msg[] = {
     "-h, -?\tHelp",
-    "-n\tPoints in moving window, default 5 (not used for Tikhonov or Butterworth)",
-    "-p\tDegree of approx. polynom, default 2 (not used for Butterworth)",
+    "-n\tPoints in moving window, default 5 (polyfit and savgol only)",
+    "-p\tDegree of approx. polynom, default 2 (polyfit and savgol only)",
     "-m\tMethod: 0 (polyfit, default), 1 (savgol), 2 (tikhonov), or 3 (butterworth)",
     "-l\tLambda regularization parameter for Tikhonov method",
     "\tDefault is automatic selection via GCV (same as '-l auto')",
@@ -501,7 +504,8 @@ static void help(void)
     0
   };
   char **p = msg;
-  fprintf(stderr,"Data smooth by approximation polynom from moving window of data (least square)\n");
+  fprintf(stderr,"Data smoothing and differentiation: local polynomial fit, Savitzky-Golay,\n"
+                 "Tikhonov regularization or Butterworth low-pass filter\n");
   fprintf(stderr, "Usage: %s [options] [data_file|-]\n" ,progname);
   fprintf(stderr, "If data_file is omitted or '-', reads from stdin\n");
   fprintf(stderr,"-h or -? for help\n");

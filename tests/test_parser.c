@@ -660,3 +660,19 @@ void test_parser_ts_row_without_y(void) {
                                      "Line 3 has insufficient columns"));
     remove(path);
 }
+
+/* Audit C3: -n and -p are validated only for the windowed methods (polyfit,
+ * savgol) that use them; Tikhonov and Butterworth ignore them. */
+void test_cli_window_options_only_for_windowed_methods(void) {
+    const char *path = fixture_path("test_cli_np.dat");
+    char buf[2048];
+    size_t len = 0;
+    for (int i = 0; i < 40; i++)
+        len += (size_t)snprintf(buf + len, sizeof(buf) - len, "%d %.6f\n", i, sin(i / 5.0));
+    write_fixture(path, buf);
+    TEST_ASSERT_EQUAL_INT(40, run_smooth("-m2 -n 4 -p 99", path).data_rows);
+    TEST_ASSERT_EQUAL_INT(40, run_smooth("-m3 -n 101 -p 99", path).data_rows);
+    TEST_ASSERT_TRUE(output_contains("-m0 -n 4", path, "odd >= 3"));
+    TEST_ASSERT_TRUE(output_contains("-m1 -p 99", path, "Incorrect degree"));
+    remove(path);
+}

@@ -16,7 +16,7 @@ Hlavní nálezy: **tichá ztráta přesnosti na výstupu** (A1) a **numericky
 neškálované polynomiální fity** v polyfit i savgol (A2, A3). Žádnou z chyb
 A1–A6 současná testovací sada nezachytí.
 
-**Status:** A1 FIXED v5.11.57; A2, A3 FIXED v5.11.58; B1, C1, C2 FIXED v5.11.59; A5 FIXED v5.11.61; A6 FIXED v5.11.63–69 (platí v5.11.69); B2 FIXED v5.11.65/67; D2 FIXED v5.11.68; ostatní OPEN.
+**Status:** A1 FIXED v5.11.57; A2, A3 FIXED v5.11.58; B1, C1, C2 FIXED v5.11.59; A5 FIXED v5.11.61; A6 FIXED v5.11.63–69 (platí v5.11.69); B2 FIXED v5.11.65/67; C3 FIXED v5.11.71; D2 FIXED v5.11.68. Všechny nálezy uzavřeny (A4 nebude řešeno, B3 vyvráceno).
 
 ---
 
@@ -35,7 +35,7 @@ A1–A6 současná testovací sada nezachytí.
 | B3 | —         | `tikhonov.c:316-329`                    | aproximace stopy na nerovnoměrné mřížce — **vyvráceno** |
 | C1 | doc       | README:241-242, 1219; `tikhonov.c:372,434` | ~~nepravdivé „λ škáluje s amplitudou y"~~ **FIXED v5.11.59** |
 | C2 | doc       | `tikhonov.h:75`                         | ~~„13-point" sweep, kód má 21~~ **FIXED v5.11.59** |
-| C3 | nízká     | `smooth.c:225-237`                      | `-n`/`-p` validace i pro metody, které je nepoužívají |
+| C3 | nízká     | `smooth.c:225-237`                      | ~~`-n`/`-p` validace i pro metody, které je nepoužívají~~ **FIXED v5.11.71** |
 | D1 | testy     | `tests/`                                | chybějící regresní testy pro A1–A6 |
 | D2 | testy     | `tests/test_parser.c:141 ...`           | ~~pevné cesty v `/tmp`~~ **FIXED v5.11.68** |
 
@@ -448,13 +448,19 @@ amplitudě. Tvrzení svádí k ručnímu ladění λ podle amplitudy dat.
 
 Kód (`tikhonov.c:420`) i README:1191 mají 21 bodů.
 
-### C3. Validace nepoužívaných parametrů — `smooth.c:225-237`
+### C3. ~~Validace nepoužívaných parametrů~~ — `smooth.c:225-237` — **FIXED v5.11.71**
 
 `-n` se validuje (liché ≥ 3) i pro Tikhonov a Butterworth, které ho
 nepoužívají: `smooth -m 2 -n 4` skončí chybou. ~~Varování „High polynomial
 degree" se tiskne i pro Tikhonov, který `-p` nepoužívá.~~ Varování bylo ve
 v5.11.58 odstraněno úplně — po opravě A2/A3 už neoznačovalo žádnou
 nestabilitu. Úvodní řádek `help()` popisuje jen polyfit.
+
+**Opraveno (v5.11.71):** validace `-n`, `-p` i kontrola `n >= -n` platí jen
+pro polyfit a savgol (`windowed`); Butterworth má vlastní minimum bodů.
+`help()`: `-n`/`-p` „polyfit and savgol only“ (text u `-p` mylně naznačoval
+použití v Tikhonovovi), úvodní řádek jmenuje všechny čtyři metody. Test
+`test_cli_window_options_only_for_windowed_methods`.
 
 ---
 
@@ -502,4 +508,4 @@ nebo cesta s PID.
 2. ~~A2 + A3 společně, se vzájemným testem D1.3.~~ Hotovo ve v5.11.58.
 3. ~~A5~~ hotovo ve v5.11.61; ~~A6~~ hotovo ve v5.11.68. A4 se řešit nebude.
 4. ~~B1 (s ověřením podmíněnosti)~~ hotovo ve v5.11.59 (spolu s C1, C2); ~~B2~~ hotovo ve v5.11.65, v5.11.67 (poznámka).
-5. C3; ~~D2~~ hotovo ve v5.11.68.
+5. ~~C3~~ hotovo ve v5.11.71; ~~D2~~ hotovo ve v5.11.68.
