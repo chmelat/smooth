@@ -170,6 +170,11 @@ int parse_input(FILE *fp,
                         ? y_column - 1
                         : y_column - 1 + (ts_token_count - 1);
       if (y_token_idx >= ntok) {
+        double epoch;
+        if (parse_timestamp(timestamp_str, &epoch) != 0) {
+          skipped_malformed_ts++;  /* header such as "date value" (audit A6) */
+          continue;
+        }
         fprintf(stderr, "ERROR: Line %d has insufficient columns for y column %d\n",
                 line_number, y_column);
         goto fail;

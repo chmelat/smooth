@@ -16,7 +16,7 @@ Hlavní nálezy: **tichá ztráta přesnosti na výstupu** (A1) a **numericky
 neškálované polynomiální fity** v polyfit i savgol (A2, A3). Žádnou z chyb
 A1–A6 současná testovací sada nezachytí.
 
-**Status:** A1 FIXED v5.11.57; A2, A3 FIXED v5.11.58; B1, C1, C2 FIXED v5.11.59; ostatní OPEN.
+**Status:** A1 FIXED v5.11.57; A2, A3 FIXED v5.11.58; B1, C1, C2 FIXED v5.11.59; A5 FIXED v5.11.61; A6 FIXED v5.11.63; ostatní OPEN.
 
 ---
 
@@ -29,7 +29,7 @@ A1–A6 současná testovací sada nezachytí.
 | A3 | vysoká    | `savgol.c:120-134`                      | ~~okrajová (asymetrická) okna při velkém okně / stupni → chybné koeficienty~~ **FIXED v5.11.58** |
 | A4 | střední   | `timestamp.c:28-42`                     | offset časového pásma i koncové smetí tiše ignorovány — **NEBUDE ŘEŠENO** (okrajová záležitost) |
 | A5 | střední   | `timestamp.c:149`, `grid_analysis.c:93` | ~~chybová hlášení uvádějí index, ne řádek souboru~~ **FIXED v5.11.61** |
-| A6 | střední   | `parser.c:148-169`                      | hlavička v `-T` módu je fatální chyba |
+| A6 | střední   | `parser.c:148-169`                      | ~~hlavička v `-T` módu je fatální chyba~~ **FIXED v5.11.63** |
 | B1 | střední   | `tikhonov.c:374-376`                    | ~~horní mez GCV `1e6·h³` zastaví každý signál s periodou ≳ 500 vzorků~~ **FIXED v5.11.59** |
 | B2 | nízká     | `butterworth.c:471`                     | auto-cutoff má pevné minimum 0.02, bez varování |
 | B3 | —         | `tikhonov.c:316-329`                    | aproximace stopy na nerovnoměrné mřížce — **vyvráceno** |
@@ -217,7 +217,7 @@ dostala parametr `line_inout`, parser kontroluje monotonii sám a hlásí
 pro volání mimo CLI. Testy: `test_parser_ts_invalid_timestamp_reports_file_line`,
 `test_parser_nonmonotonic_x_reports_file_line`.
 
-### A6. Hlavička v `-T` módu je fatální — `parser.c:148-169`
+### A6. ~~Hlavička v `-T` módu je fatální~~ — `parser.c:148-169` — **FIXED v5.11.63**
 
 Formát razítka se určuje podle `strchr(token, 'T')`. Token bez `T` se
 považuje za datum ve formátu s mezerou a spotřebuje dva tokeny; kontrola
@@ -228,7 +228,7 @@ počtu sloupců pak proběhne dřív než validace razítka.
 | `date value`    | `ERROR: Line 1 has insufficient columns` (exit 1) | — |
 | `time value`    | `ERROR: Line 1 has insufficient columns` (exit 1) | — |
 | `Time Value`    | přeskočeno (`T` v „Time") | — |
-| `x y`           | — | přeskočeno |
+| `x y`           | `ERROR: Line 1 has insufficient columns` (exit 1) | přeskočeno |
 
 Chování závisí na velikosti písmen a je nekonzistentní s číselným módem,
 kde se nečíselná hlavička vždy jen přeskočí.
@@ -236,6 +236,14 @@ kde se nečíselná hlavička vždy jen přeskočí.
 **Fix:** řádek, jehož sestavené razítko neprojde `parse_timestamp()`, počítat
 jako `skipped_malformed_ts` a přeskočit ještě před kontrolou počtu sloupců
 pro y.
+
+**Opraveno (v5.11.63)** užší variantou: `parse_timestamp()` se volá jen ve
+větvi, která by jinak skončila „insufficient columns“. Neprojde-li razítko,
+řádek se započítá do `skipped_malformed_ts` a přeskočí; řádek s platným
+razítkem a chybějícím y zůstává fatální. Vadná razítka v řádcích, které y
+mají, jdou dál přes `convert_timestamps_to_relative()`, takže hlášení
+s číslem řádku z A5 zůstává. (Korekce tabulky: `x y` v `-T` módu také padal.)
+Test `test_parser_ts_header_line_is_skipped` (T i mezerový formát).
 
 ---
 
@@ -400,7 +408,7 @@ nestabilitu. Úvodní řádek `help()` popisuje jen polyfit.
 4. ~~**A4:**~~ (nebude řešeno) `parse_timestamp("...+02:00")` buď aplikuje offset, nebo vrátí -1;
    `"...00garbage"` vrátí -1.
 5. **A5:** `-T` s komentáři před vadným řádkem hlásí řádek souboru.
-6. **A6:** hlavička `date value` v `-T` módu se přeskočí.
+6. ~~**A6:**~~ hlavička `date value` v `-T` módu se přeskočí — `test_parser_ts_header_line_is_skipped` (v5.11.63).
 
 ### D2. Pevné cesty v `/tmp` — `tests/test_parser.c:141` a další
 
@@ -425,6 +433,6 @@ nebo cesta s PID.
 
 1. ~~A1 — jeden řádek, největší dopad.~~ Hotovo ve v5.11.57.
 2. ~~A2 + A3 společně, se vzájemným testem D1.3.~~ Hotovo ve v5.11.58.
-3. ~~A5~~ hotovo ve v5.11.61; A6. A4 se řešit nebude.
+3. ~~A5~~ hotovo ve v5.11.61; ~~A6~~ hotovo ve v5.11.63. A4 se řešit nebude.
 4. ~~B1 (s ověřením podmíněnosti)~~ hotovo ve v5.11.59 (spolu s C1, C2); B2.
 5. C3, D2.

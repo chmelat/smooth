@@ -3,7 +3,14 @@
  *
  * Version History
  * ---------------
- * v5.11.62 (current): A line of exactly MAX_LINE-1 = 4095 bytes (LF or CR LF
+ * v5.11.63 (current): A -T header without a capital T ("date value",
+ *           "x y") was read as a two-token timestamp, which pushed y past
+ *           the end of the line: fatal "insufficient columns". A row whose
+ *           y column is missing and whose timestamp does not parse is now
+ *           skipped and counted as a malformed timestamp. A row with a
+ *           valid timestamp and no y stays fatal. Audit A6
+ *           (doc/code-audit-v5.11.56.md).
+ * v5.11.62: A line of exactly MAX_LINE-1 = 4095 bytes (LF or CR LF
  *           terminated) was rejected as "exceeds 4096-byte read buffer":
  *           fgets filled the buffer and the unread terminator counted as
  *           more content. The terminator is now consumed; only a line with
@@ -762,5 +769,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.62"
-#define REVDATE "2026-09-30"
+#define VERSION "5.11.63"
+#define REVDATE "2026-10-01"
