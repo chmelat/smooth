@@ -210,15 +210,9 @@ void test_parse_timestamp_invalid_date(void);
 void test_parse_timestamp_nonexistent_date(void);
 void test_parse_timestamp_null_inputs(void);
 void test_parse_timestamp_malformed(void);
-void test_convert_timestamps_basic(void);
-void test_convert_timestamps_with_errors(void);
-void test_convert_compacts_parallel_y(void);
-void test_convert_timestamps_all_invalid(void);
-void test_convert_timestamps_preserves_format(void);
-void test_convert_timestamps_null_inputs(void);
 void test_free_timestamp_context_null(void);
 void test_parse_timestamp_dst_invariant(void);
-void test_convert_timestamps_subsecond_accuracy(void);
+void test_parse_timestamp_subsecond_differences(void);
 
 /* ============================================================================
  * MAIN FUNKCE - SPOUŠTÍ VŠECHNY TESTY
@@ -466,16 +460,10 @@ int main(void) {
     printf("\n--- DST invariance tests ---\n");
     RUN_TEST(test_parse_timestamp_dst_invariant);
 
-    printf("\n--- Timestamp conversion tests ---\n");
-    RUN_TEST(test_convert_timestamps_basic);
-    RUN_TEST(test_convert_timestamps_with_errors);
-    RUN_TEST(test_convert_compacts_parallel_y);
-    RUN_TEST(test_convert_timestamps_all_invalid);
-    RUN_TEST(test_convert_timestamps_preserves_format);
-    RUN_TEST(test_convert_timestamps_subsecond_accuracy);
+    printf("\n--- Timestamp difference tests ---\n");
+    RUN_TEST(test_parse_timestamp_subsecond_differences);
 
     printf("\n--- Edge cases and robustness tests ---\n");
-    RUN_TEST(test_convert_timestamps_null_inputs);
     RUN_TEST(test_free_timestamp_context_null);
 
     printf("\n");

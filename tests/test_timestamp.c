@@ -2,8 +2,6 @@
 
 #include "unity.h"
 #include "../timestamp.h"
-#include <stdlib.h>
-#include <string.h>
 #include <math.h>
 
 /* Test: parse_timestamp with space separator */
@@ -114,154 +112,6 @@ void test_parse_timestamp_malformed(void) {
     TEST_ASSERT_EQUAL(-1, parse_timestamp("14:06:06", &epoch));    /* Missing date */
 }
 
-/* Test: convert_timestamps_to_relative with valid data */
-void test_convert_timestamps_basic(void) {
-    char *timestamps[] = {
-        "2025-09-25 14:06:06.000",
-        "2025-09-25 14:06:07.000",
-        "2025-09-25 14:06:08.500"
-    };
-    int n = 3;
-    double *x_out = NULL;
-    int first_error = -1;
-
-    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, NULL, &x_out, &first_error);
-
-    TEST_ASSERT_NOT_NULL(ctx);
-    TEST_ASSERT_NOT_NULL(x_out);
-    TEST_ASSERT_EQUAL(3, ctx->n);
-    TEST_ASSERT_EQUAL(0, ctx->errors_encountered);
-    TEST_ASSERT_EQUAL(-1, first_error);
-
-    /* First timestamp should be t=0 */
-    TEST_ASSERT_DOUBLE_WITHIN(0.001, 0.0, x_out[0]);
-
-    /* Second timestamp: +1 second */
-    TEST_ASSERT_DOUBLE_WITHIN(0.001, 1.0, x_out[1]);
-
-    /* Third timestamp: +2.5 seconds */
-    TEST_ASSERT_DOUBLE_WITHIN(0.001, 2.5, x_out[2]);
-
-    /* Check original timestamps preserved */
-    TEST_ASSERT_EQUAL_STRING("2025-09-25 14:06:06.000", ctx->original_timestamps[0]);
-    TEST_ASSERT_EQUAL_STRING("2025-09-25 14:06:07.000", ctx->original_timestamps[1]);
-    TEST_ASSERT_EQUAL_STRING("2025-09-25 14:06:08.500", ctx->original_timestamps[2]);
-
-    free(x_out);
-    free_timestamp_context(ctx);
-}
-
-/* Test: convert_timestamps_to_relative with mixed valid/invalid */
-void test_convert_timestamps_with_errors(void) {
-    char *timestamps[] = {
-        "2025-09-25 14:06:06.000",
-        "invalid timestamp",           /* Error on line 2 */
-        "2025-09-25 14:06:08.000",
-        "also invalid",                /* Error on line 4 */
-        "2025-09-25 14:06:09.000"
-    };
-    int n = 5;
-    double *x_out = NULL;
-    int first_error = -1;
-
-    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, NULL, &x_out, &first_error);
-
-    TEST_ASSERT_NOT_NULL(ctx);
-    TEST_ASSERT_NOT_NULL(x_out);
-    TEST_ASSERT_EQUAL(3, ctx->n);  /* Only 3 valid timestamps */
-    TEST_ASSERT_EQUAL(2, ctx->errors_encountered);
-    TEST_ASSERT_EQUAL(2, first_error);  /* First error on line 2 */
-
-    /* Valid timestamps should have relative times */
-    TEST_ASSERT_DOUBLE_WITHIN(0.001, 0.0, x_out[0]);
-    TEST_ASSERT_DOUBLE_WITHIN(0.001, 2.0, x_out[1]);
-    TEST_ASSERT_DOUBLE_WITHIN(0.001, 3.0, x_out[2]);
-
-    free(x_out);
-    free_timestamp_context(ctx);
-}
-
-/* Test: parallel y array is compacted in lockstep with x (audit A1) */
-void test_convert_compacts_parallel_y(void) {
-    char *timestamps[] = {
-        "2025-09-25 14:06:06.000",
-        "invalid timestamp",           /* dropped (index 1) */
-        "2025-09-25 14:06:08.000",
-        "also invalid",                /* dropped (index 3) */
-        "2025-09-25 14:06:10.000"
-    };
-    int n = 5;
-    double y[] = {10.0, 20.0, 30.0, 40.0, 50.0};
-    double *x_out = NULL;
-    int first_error = -1;
-
-    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, y, NULL, &x_out, &first_error);
-
-    TEST_ASSERT_NOT_NULL(ctx);
-    TEST_ASSERT_EQUAL(3, ctx->n);
-
-    /* y for the surviving rows (indices 0, 2, 4) must move to 0, 1, 2 */
-    TEST_ASSERT_DOUBLE_WITHIN(0.001, 10.0, y[0]);
-    TEST_ASSERT_DOUBLE_WITHIN(0.001, 30.0, y[1]);
-    TEST_ASSERT_DOUBLE_WITHIN(0.001, 50.0, y[2]);
-
-    free(x_out);
-    free_timestamp_context(ctx);
-}
-
-/* Test: convert_timestamps_to_relative with all invalid */
-void test_convert_timestamps_all_invalid(void) {
-    char *timestamps[] = {
-        "invalid1",
-        "invalid2",
-        "invalid3"
-    };
-    int n = 3;
-    double *x_out = NULL;
-    int first_error = -1;
-
-    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, NULL, &x_out, &first_error);
-
-    TEST_ASSERT_NULL(ctx);  /* Should return NULL when no valid timestamps */
-    TEST_ASSERT_EQUAL(1, first_error);  /* First error on line 1 */
-}
-
-/* Test: convert_timestamps_to_relative preserves format */
-void test_convert_timestamps_preserves_format(void) {
-    char *timestamps[] = {
-        "2025-09-25 14:06:06.1",      /* 1 decimal place */
-        "2025-09-25T14:06:07.12",     /* T separator, 2 decimals */
-        "2025-09-25 14:06:08.123"     /* 3 decimal places */
-    };
-    int n = 3;
-    double *x_out = NULL;
-    int first_error = -1;
-
-    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, NULL, &x_out, &first_error);
-
-    TEST_ASSERT_NOT_NULL(ctx);
-
-    /* Original strings should be preserved exactly */
-    TEST_ASSERT_EQUAL_STRING("2025-09-25 14:06:06.1", ctx->original_timestamps[0]);
-    TEST_ASSERT_EQUAL_STRING("2025-09-25T14:06:07.12", ctx->original_timestamps[1]);
-    TEST_ASSERT_EQUAL_STRING("2025-09-25 14:06:08.123", ctx->original_timestamps[2]);
-
-    free(x_out);
-    free_timestamp_context(ctx);
-}
-
-/* Test: convert_timestamps_to_relative with NULL inputs */
-void test_convert_timestamps_null_inputs(void) {
-    char *timestamps[] = {"2025-09-25 14:06:06"};
-    double *x_out = NULL;
-    int first_error = -1;
-
-    TEST_ASSERT_NULL(convert_timestamps_to_relative(NULL, 1, NULL, NULL, &x_out, &first_error));
-    TEST_ASSERT_NULL(convert_timestamps_to_relative(timestamps, 0, NULL, NULL, &x_out, &first_error));
-    TEST_ASSERT_NULL(convert_timestamps_to_relative(timestamps, 1, NULL, NULL, NULL, &first_error));
-    TEST_ASSERT_NULL(convert_timestamps_to_relative(timestamps, 1, NULL, NULL, &x_out, NULL));
-}
-
 /* Test: free_timestamp_context with NULL */
 void test_free_timestamp_context_null(void) {
     /* Should not crash */
@@ -286,32 +136,13 @@ void test_parse_timestamp_dst_invariant(void) {
     TEST_ASSERT_DOUBLE_WITHIN(0.001, 3720.0, diff);  /* exactly 62 minutes */
 }
 
-/* Test: Time difference calculation accuracy */
-void test_convert_timestamps_subsecond_accuracy(void) {
+/* Test: sub-millisecond differences survive the epoch arithmetic */
+void test_parse_timestamp_subsecond_differences(void) {
     /* Test data from example.dat (first 3 lines) */
-    char *timestamps[] = {
-        "2025-09-25 14:06:06.390",
-        "2025-09-25 14:06:06.391",
-        "2025-09-25 14:06:06.763"
-    };
-    int n = 3;
-    double *x_out = NULL;
-    int first_error = -1;
-
-    TimestampContext *ctx = convert_timestamps_to_relative(timestamps, n, NULL, NULL, &x_out, &first_error);
-
-    TEST_ASSERT_NOT_NULL(ctx);
-    TEST_ASSERT_EQUAL(0, ctx->errors_encountered);
-
-    /* First point: t=0 */
-    TEST_ASSERT_DOUBLE_WITHIN(0.0001, 0.0, x_out[0]);
-
-    /* Second point: +0.001 seconds (1 millisecond) */
-    TEST_ASSERT_DOUBLE_WITHIN(0.0001, 0.001, x_out[1]);
-
-    /* Third point: +0.373 seconds */
-    TEST_ASSERT_DOUBLE_WITHIN(0.0001, 0.373, x_out[2]);
-
-    free(x_out);
-    free_timestamp_context(ctx);
+    double t0, t1, t2;
+    TEST_ASSERT_EQUAL(0, parse_timestamp("2025-09-25 14:06:06.390", &t0));
+    TEST_ASSERT_EQUAL(0, parse_timestamp("2025-09-25 14:06:06.391", &t1));
+    TEST_ASSERT_EQUAL(0, parse_timestamp("2025-09-25 14:06:06.763", &t2));
+    TEST_ASSERT_DOUBLE_WITHIN(0.0001, 0.001, t1 - t0);
+    TEST_ASSERT_DOUBLE_WITHIN(0.0001, 0.373, t2 - t0);
 }

@@ -1,10 +1,9 @@
-/* timestamp.c - RFC3339-style timestamp parsing and conversion */
+/* timestamp.c - RFC3339-style timestamp parsing */
 
 #define _DEFAULT_SOURCE  /* for timegm() */
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <time.h>
 #include <math.h>
 #include "timestamp.h"
@@ -96,110 +95,6 @@ int parse_timestamp(const char *str, double *epoch_seconds)
     *epoch_seconds = (double)epoch + subseconds;
 
     return 0;
-}
-
-/* Convert timestamp strings to relative time array */
-TimestampContext* convert_timestamps_to_relative(
-    char **timestamp_strings,
-    int n,
-    double *y_inout,
-    int *line_inout,
-    double **x_out,
-    int *first_error_line)
-{
-    if (!timestamp_strings || n <= 0 || !x_out || !first_error_line) {
-        return NULL;
-    }
-
-    *first_error_line = -1;
-
-    /* Allocate context */
-    TimestampContext *ctx = malloc(sizeof(TimestampContext));
-    if (!ctx) {
-        return NULL;
-    }
-
-    ctx->original_timestamps = NULL;
-    ctx->reference_epoch = 0.0;
-    ctx->n = 0;
-    ctx->errors_encountered = 0;
-
-    /* Allocate arrays for valid timestamps. x is sized for n points and handed
-     * to the caller as-is; rows dropped for an invalid timestamp leave it
-     * over-allocated, which is harmless since only ctx->n entries are read.
-     * calloc: the NULL pointers it guarantees are what makes the cleanup path
-     * below safe from any failure point. */
-    ctx->original_timestamps = calloc(n, sizeof(char*));
-    double *x = malloc(n * sizeof(double));
-
-    if (!ctx->original_timestamps || !x) {
-        goto fail;
-    }
-
-    /* Parse timestamps and build arrays */
-    int valid_count = 0;
-    int reference_set = 0;
-
-    for (int i = 0; i < n; i++) {
-        double epoch;
-
-        if (parse_timestamp(timestamp_strings[i], &epoch) != 0) {
-            /* Invalid timestamp */
-            ctx->errors_encountered++;
-            if (*first_error_line == -1) {
-                *first_error_line = line_inout ? line_inout[i] : i + 1;
-            }
-            continue;  /* Skip this timestamp */
-        }
-
-        /* Valid timestamp - store it */
-        ctx->original_timestamps[valid_count] = strdup(timestamp_strings[i]);
-        if (!ctx->original_timestamps[valid_count]) {
-            goto fail;
-        }
-
-        /* Set reference epoch from first valid timestamp */
-        if (!reference_set) {
-            ctx->reference_epoch = epoch;
-            reference_set = 1;
-        }
-
-        /* Calculate relative time in seconds */
-        x[valid_count] = epoch - ctx->reference_epoch;
-
-        /* Compact the parallel value array in lockstep so y_inout[k] keeps
-         * matching x[k] after invalid timestamps are dropped. Safe in place:
-         * valid_count <= i, so this never overwrites an entry not yet read. */
-        if (y_inout) {
-            y_inout[valid_count] = y_inout[i];
-        }
-        if (line_inout) {
-            line_inout[valid_count] = line_inout[i];
-        }
-        valid_count++;
-    }
-
-    /* Check if we got any valid timestamps */
-    if (valid_count == 0) {
-        goto fail;
-    }
-
-    ctx->n = valid_count;
-    *x_out = x;
-
-    return ctx;
-
-fail:
-    if (ctx->original_timestamps) {
-        /* Safe for every failure point: all n entries were NULLed up front. */
-        for (int i = 0; i < n; i++) {
-            free(ctx->original_timestamps[i]);
-        }
-        free(ctx->original_timestamps);
-    }
-    free(x);
-    free(ctx);
-    return NULL;
 }
 
 /* Free timestamp context */

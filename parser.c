@@ -37,21 +37,6 @@ int parse_input(FILE *fp,
   result->n = 0;
   result->ts_ctx = NULL;
 
-  if (timestamp_mode) {
-    timestamp_strings = malloc(BUF * sizeof(char*));
-    if (!timestamp_strings) {
-      fprintf(stderr, "ERROR: No memory for timestamp strings\n");
-      goto fail;
-    }
-    y = malloc(BUF * sizeof(double));
-    line_no = malloc(BUF * sizeof(int));
-    if (!y || !line_no) {
-      fprintf(stderr, "ERROR: No memory for data table\n");
-      goto fail;
-    }
-    abuf = BUF;
-  }
-
   while (fgets(line, sizeof(line), fp) != NULL) {
     line_number++;
 
@@ -109,14 +94,14 @@ int parse_input(FILE *fp,
       }
     }
 
+    double x_value, y_value;
+    char timestamp_str[100];
+
     if (timestamp_mode) {
       /* Timestamp mode with logical-column model: timestamp lives at logical
        * column x_column (default 1), y at logical column y_column (default 2).
        * Timestamp itself spans 1 (T-separator) or 2 (space-separator) whitespace
        * tokens; the logical-column abstraction hides that from the user. */
-      char timestamp_str[100];
-      double y_value;
-
       /* Tokenize line on whitespace (destructive on local MAX_LINE buffer) */
       char *tokens[MAX_COLS];
       int ntok = 0;
@@ -142,25 +127,25 @@ int parse_input(FILE *fp,
         }
       }
 
-      /* Assemble the timestamp (x_column is its 1-indexed logical column):
-       * one token if it contains 'T', else two (date, time). A row whose
-       * timestamp is missing or does not parse -- a header such as
+      /* Timestamp at logical column x_column: one token if that parses
+       * ("2025-01-01T00:00:00"), else two ("2025-01-01 00:00:00"). A row
+       * whose timestamp is missing or does not parse -- a header such as
        * "date value" (audit A6), a damaged or short row -- is skipped; the
-       * summary names the first such line.
-       * ponytail: convert_timestamps_to_relative() parses it again; keep the
-       * epoch from here if that ever shows up in a profile. */
+       * summary names the first such line. */
       int ts_tok_start = x_column - 1;
       int ts_token_count = 0;
-      if (ts_tok_start < ntok && strchr(tokens[ts_tok_start], 'T') != NULL) {
-        ts_token_count = 1;
+      if (ts_tok_start < ntok) {
         snprintf(timestamp_str, sizeof(timestamp_str), "%s", tokens[ts_tok_start]);
-      } else if (ts_tok_start + 1 < ntok) {
-        ts_token_count = 2;
-        snprintf(timestamp_str, sizeof(timestamp_str), "%s %s",
-                 tokens[ts_tok_start], tokens[ts_tok_start + 1]);
+        if (parse_timestamp(timestamp_str, &x_value) == 0) {
+          ts_token_count = 1;
+        } else if (ts_tok_start + 1 < ntok) {
+          snprintf(timestamp_str, sizeof(timestamp_str), "%s %s",
+                   tokens[ts_tok_start], tokens[ts_tok_start + 1]);
+          if (parse_timestamp(timestamp_str, &x_value) == 0)
+            ts_token_count = 2;
+        }
       }
-      double epoch;
-      if (ts_token_count == 0 || parse_timestamp(timestamp_str, &epoch) != 0) {
+      if (ts_token_count == 0) {
         if (skipped_malformed_ts++ == 0) first_malformed_ts_line = line_number;
         continue;
       }
@@ -185,41 +170,6 @@ int parse_input(FILE *fp,
         skipped_nonnumeric++;
         continue;  /* token is not a fully numeric finite value */
       }
-
-      /* Reallocate arrays if needed */
-      if (n == abuf) {
-        abuf = abuf ? abuf * 2 : BUF;
-
-        char **temp_ts = (char**)realloc(timestamp_strings, abuf * sizeof(char*));
-        if (!temp_ts) {
-          fprintf(stderr, "ERROR: No memory for timestamp strings\n");
-          goto fail;
-        }
-        timestamp_strings = temp_ts;
-
-        double *temp_y = (double*)realloc(y, abuf * sizeof(double));
-        if (!temp_y) {
-          fprintf(stderr, "ERROR: No memory for data table\n");
-          goto fail;
-        }
-        y = temp_y;
-
-        int *temp_line = (int*)realloc(line_no, abuf * sizeof(int));
-        if (!temp_line) {
-          fprintf(stderr, "ERROR: No memory for data table\n");
-          goto fail;
-        }
-        line_no = temp_line;
-      }
-
-      timestamp_strings[n] = strdup(timestamp_str);
-      if (!timestamp_strings[n]) {
-        fprintf(stderr, "ERROR: No memory for timestamp string\n");
-        goto fail;
-      }
-      y[n] = y_value;
-      line_no[n] = line_number;
-      n++;
 
     } else {
       /* Normal mode: parse whitespace-separated tokens.
@@ -280,36 +230,35 @@ int parse_input(FILE *fp,
         continue;
       }
 
-      if (n == abuf) {
-        abuf = abuf ? abuf * 2 : BUF;
-
-        double *temp_x = (double *)realloc(x, abuf * sizeof(double));
-        if (temp_x == NULL) {
-          fprintf(stderr, "ERROR: No memory for data table\n");
-          goto fail;
-        }
-        x = temp_x;
-
-        double *temp_y = (double *)realloc(y, abuf * sizeof(double));
-        if (temp_y == NULL) {
-          fprintf(stderr, "ERROR: No memory for data table\n");
-          goto fail;
-        }
-        y = temp_y;
-
-        int *temp_line = (int *)realloc(line_no, abuf * sizeof(int));
-        if (temp_line == NULL) {
-          fprintf(stderr, "ERROR: No memory for data table\n");
-          goto fail;
-        }
-        line_no = temp_line;
-      }
-
-      x[n] = values[x_column - 1];
-      y[n] = values[y_column - 1];
-      line_no[n] = line_number;
-      n++;
+      x_value = values[x_column - 1];
+      y_value = values[y_column - 1];
     }
+
+    /* Append the row (x is the absolute epoch in timestamp mode) */
+    if (n == abuf) {
+      abuf = abuf ? abuf * 2 : BUF;
+      double *temp_x = realloc(x, abuf * sizeof(double));
+      if (temp_x) x = temp_x;
+      double *temp_y = realloc(y, abuf * sizeof(double));
+      if (temp_y) y = temp_y;
+      int *temp_line = realloc(line_no, abuf * sizeof(int));
+      if (temp_line) line_no = temp_line;
+      char **temp_ts = timestamp_mode
+                       ? realloc(timestamp_strings, abuf * sizeof(char*)) : NULL;
+      if (temp_ts) timestamp_strings = temp_ts;
+      if (!temp_x || !temp_y || !temp_line || (timestamp_mode && !temp_ts)) {
+        fprintf(stderr, "ERROR: No memory for data table\n");
+        goto fail;
+      }
+    }
+    if (timestamp_mode && !(timestamp_strings[n] = strdup(timestamp_str))) {
+      fprintf(stderr, "ERROR: No memory for timestamp string\n");
+      goto fail;
+    }
+    x[n] = x_value;
+    y[n] = y_value;
+    line_no[n] = line_number;
+    n++;
   }
 
   if (skipped_nonnumeric > 0) {
@@ -334,17 +283,18 @@ int parse_input(FILE *fp,
       goto fail;
     }
 
-    /* Every timestamp was validated above, so this fails only on memory. */
-    int first_error_line;
-    ts_ctx = convert_timestamps_to_relative(timestamp_strings, n, y, line_no, &x, &first_error_line);
-    if (ts_ctx == NULL) {
-      fprintf(stderr, "ERROR: Timestamp conversion failed\n");
+    /* x becomes seconds since the first timestamp; the strings move into
+     * the context, which keeps them for output. */
+    ts_ctx = malloc(sizeof(*ts_ctx));
+    if (!ts_ctx) {
+      fprintf(stderr, "ERROR: No memory for timestamp context\n");
       goto fail;
     }
-
-    for (int i = 0; i < n; i++) free(timestamp_strings[i]);
-    free(timestamp_strings);
+    ts_ctx->original_timestamps = timestamp_strings;
+    ts_ctx->n = n;
     timestamp_strings = NULL;
+    double t0 = x[0];
+    for (int i = 0; i < n; i++) x[i] -= t0;
   }
 
   /* Checked here, not only in analyze_grid(), because only the parser knows

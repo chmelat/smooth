@@ -1,6 +1,6 @@
 # smooth - Experimental Data Smoothing
 
-**Version 5.11.68** | October 1, 2026
+**Version 5.11.69** | October 1, 2026
 
 A command-line tool for smoothing noisy experimental data and computing derivatives. Implements four methods: polynomial fitting, Savitzky-Golay filtering, Tikhonov regularization, and Butterworth low-pass filtering. Reads two-column ASCII data, outputs smoothed results. Works as a Unix filter.
 

@@ -558,8 +558,8 @@ void test_parser_nonmonotonic_x_reports_file_line(void) {
     remove(path);
 }
 
-/* The line numbers must be dropped together with invalid timestamps: without
- * that, the out-of-order row on line 5 would be reported as line 4. */
+/* A row dropped for an invalid timestamp must not shift the line numbers of
+ * later rows: the out-of-order row on line 5 is reported as line 5. */
 void test_parser_ts_line_numbers_follow_dropped_rows(void) {
     const char *path = fixture_path("test_parser_ts_compact.dat");
     write_fixture(path,

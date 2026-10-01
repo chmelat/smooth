@@ -3,7 +3,15 @@
  *
  * Version History
  * ---------------
- * v5.11.68 (current): -T validates every timestamp in the parser, in one
+ * v5.11.69 (current): -T: the timestamp is one token if that parses, else
+ *           two -- no more guessing by a capital 'T'. The parser keeps the
+ *           epoch it already computed and makes x relative itself, so
+ *           convert_timestamps_to_relative() (whose skip/compaction path
+ *           was dead since v5.11.68) and TimestampContext's
+ *           reference_epoch/errors_encountered are gone; each timestamp is
+ *           parsed once. Both row-append blocks are one. Output unchanged on
+ *           all repo and generated data. Fourth code review of A6.
+ * v5.11.68: -T validates every timestamp in the parser, in one
  *           place: a row whose timestamp is missing or does not parse
  *           (header, damaged or too short row) is skipped and counted in
  *           one "# Skipped ... malformed timestamp ... (first at line L)"
@@ -802,5 +810,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.68"
+#define VERSION "5.11.69"
 #define REVDATE "2026-10-01"

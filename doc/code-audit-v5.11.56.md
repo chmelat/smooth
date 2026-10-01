@@ -16,7 +16,7 @@ Hlavní nálezy: **tichá ztráta přesnosti na výstupu** (A1) a **numericky
 neškálované polynomiální fity** v polyfit i savgol (A2, A3). Žádnou z chyb
 A1–A6 současná testovací sada nezachytí.
 
-**Status:** A1 FIXED v5.11.57; A2, A3 FIXED v5.11.58; B1, C1, C2 FIXED v5.11.59; A5 FIXED v5.11.61; A6 FIXED v5.11.63–68 (platí v5.11.68); B2 FIXED v5.11.65/67; D2 FIXED v5.11.68; ostatní OPEN.
+**Status:** A1 FIXED v5.11.57; A2, A3 FIXED v5.11.58; B1, C1, C2 FIXED v5.11.59; A5 FIXED v5.11.61; A6 FIXED v5.11.63–69 (platí v5.11.69); B2 FIXED v5.11.65/67; D2 FIXED v5.11.68; ostatní OPEN.
 
 ---
 
@@ -280,6 +280,14 @@ fatální. Hlavičky vč. `Timestamp Value` se hlásí jednotně jako vadné
 razítko. Vědomé meze: razítko se parsuje dvakrát (parser + převod;
 `ponytail:` v kódu) a řádek uříznutý v sekundách (`...T00:00:0`) projde
 benevolentním `parse_timestamp()` (A4) a skončí jako platné razítko bez y.
+
+**Dočištění (v5.11.69, čtvrté code review):** šířka razítka se už neodhaduje
+podle `strchr(token, 'T')`: jeden token, pokud projde `parse_timestamp()`,
+jinak dva. Parser si nechá epochu, kterou spočítal, a x převede na relativní
+sám; `convert_timestamps_to_relative()` (jejíž přeskakování a kompaktace byly
+od v5.11.68 mrtvé) zmizela, každé razítko se parsuje jednou. Výstup na
+datech z repa i generovaných `-T` datech (mezerový, `T`, smíšený s vadnými
+řádky; metody 0–3) shodný s v5.11.68.
 
 ---
 

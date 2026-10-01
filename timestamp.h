@@ -1,4 +1,4 @@
-/* timestamp.h - RFC3339-style timestamp parsing and conversion
+/* timestamp.h - RFC3339-style timestamp parsing
  * Supports formats: YYYY-MM-DD HH:MM:SS[.fff] or YYYY-MM-DDTHH:MM:SS[.fff]
  * No timezone support (assumes all timestamps in same timezone)
  */
@@ -6,12 +6,11 @@
 #ifndef TIMESTAMP_H
 #define TIMESTAMP_H
 
-/* Context for timestamp conversion - preserves original strings */
+/* Original timestamp strings of the accepted rows, kept for output.
+ * Built by parse_input(); free with free_timestamp_context(). */
 typedef struct {
     char **original_timestamps;  /* Array of original timestamp strings */
-    double reference_epoch;      /* Unix epoch of first timestamp (seconds) */
     int n;                       /* Number of timestamps */
-    int errors_encountered;      /* Count of skipped invalid timestamps */
 } TimestampContext;
 
 /* Parse timestamp string to Unix epoch (seconds since 1970-01-01 00:00:00 UTC)
@@ -27,37 +26,6 @@ typedef struct {
  *   -1 on parse error
  */
 int parse_timestamp(const char *str, double *epoch_seconds);
-
-/* Convert array of timestamp strings to relative time in seconds
- * First valid timestamp becomes reference (t=0)
- * Subsequent timestamps are converted to seconds since reference
- * Invalid timestamps are skipped with warning on first occurrence
- *
- * Parameters:
- *   timestamp_strings: Array of timestamp strings from input
- *   n: Number of timestamps
- *   y_inout: Optional parallel value array (length n). If non-NULL, its
- *            valid-row entries are compacted in place to stay aligned with
- *            x_out, so y_inout[k] keeps matching x_out[k] after invalid
- *            timestamps are dropped. Pass NULL if there is no parallel array.
- *   line_inout: Optional input-file line number of each entry (length n),
- *            compacted in lockstep like y_inout. Pass NULL to number the
- *            entries 1..n instead.
- *   x_out: Output pointer for relative time array (allocated by function)
- *   first_error_line: Output pointer for line number of first error (or -1 if none)
- *
- * Returns:
- *   TimestampContext pointer on success (must be freed with free_timestamp_context)
- *   NULL on error (no valid timestamps found)
- */
-TimestampContext* convert_timestamps_to_relative(
-    char **timestamp_strings,
-    int n,
-    double *y_inout,
-    int *line_inout,
-    double **x_out,
-    int *first_error_line
-);
 
 /* Free timestamp context and all allocated memory */
 void free_timestamp_context(TimestampContext *ctx);
