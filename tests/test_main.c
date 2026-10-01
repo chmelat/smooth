@@ -197,6 +197,7 @@ void test_parser_nonmonotonic_x_reports_file_line(void);
 void test_parser_ts_line_numbers_follow_dropped_rows(void);
 void test_parser_line_filling_buffer_is_not_truncated(void);
 void test_parser_ts_header_line_is_skipped(void);
+void test_parser_ts_row_without_y_after_data_is_fatal(void);
 
 // Testy pro timestamp.c
 void test_parse_timestamp_space_separator(void);
@@ -503,6 +504,7 @@ int main(void) {
     RUN_TEST(test_parser_ts_line_numbers_follow_dropped_rows);
     RUN_TEST(test_parser_line_filling_buffer_is_not_truncated);
     RUN_TEST(test_parser_ts_header_line_is_skipped);
+    RUN_TEST(test_parser_ts_row_without_y_after_data_is_fatal);
 
     /* UNITY_END() ukončí Unity framework a vrátí výsledek
      * Návratová hodnota:

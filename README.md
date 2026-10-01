@@ -1,6 +1,6 @@
 # smooth - Experimental Data Smoothing
 
-**Version 5.11.63** | October 1, 2026
+**Version 5.11.64** | October 1, 2026
 
 A command-line tool for smoothing noisy experimental data and computing derivatives. Implements four methods: polynomial fitting, Savitzky-Golay filtering, Tikhonov regularization, and Butterworth low-pass filtering. Reads two-column ASCII data, outputs smoothed results. Works as a Unix filter.
 
@@ -103,7 +103,7 @@ ASCII data with one record per line. By default, column 1 is x and column 2 is y
 
 Columns are split on whitespace; each whitespace-separated token is one logical column. Tokens that are not fully numeric (e.g. an ISO 8601 timestamp `2026-04-29T11:40:00`, a label, or a partially numeric `1.5e2x`) hold the column position but carry no value. If the selected x or y column lands on such a token, or on `NaN`/`Inf`, the row is skipped and a `# Skipped N data row(s) ...` summary is written to stdout. Other columns may be non-numeric without affecting parsing.
 
-In timestamp mode (`-T`), the same `-k N:M` selection applies, but column 1 (the default `N`) is the timestamp instead of a numeric x-value. The timestamp is treated as a single logical column even though the space-separated form (`YYYY-MM-DD HH:MM:SS.fff`) spans two whitespace tokens; the T-separated form (`YYYY-MM-DDTHH:MM:SS.fff`) is one token. Example: with input rows `ID 2025-09-25 14:06:06.390 25.5 100.2 980.1`, `-T -k 2:5` selects the timestamp at logical column 2 and y at logical column 5 (= `100.2`). The same skip-and-summarize behavior applies if the y-token is non-numeric or `NaN`/`Inf`; rows with an unparsable timestamp are skipped and counted in a warning that names the file line of the first one. A header line such as `date value` is skipped the same way and counted in a `# Skipped N data row(s) with malformed timestamp ...` summary.
+In timestamp mode (`-T`), the same `-k N:M` selection applies, but column 1 (the default `N`) is the timestamp instead of a numeric x-value. The timestamp is treated as a single logical column even though the space-separated form (`YYYY-MM-DD HH:MM:SS.fff`) spans two whitespace tokens; the T-separated form (`YYYY-MM-DDTHH:MM:SS.fff`) is one token. Example: with input rows `ID 2025-09-25 14:06:06.390 25.5 100.2 980.1`, `-T -k 2:5` selects the timestamp at logical column 2 and y at logical column 5 (= `100.2`). The same skip-and-summarize behavior applies if the y-token is non-numeric or `NaN`/`Inf`; rows with an unparsable timestamp are skipped and counted in a warning that names the file line of the first one. A header line before the first data row (e.g. `date value`) is skipped too and counted in one of the `# Skipped N data row(s) ...` summaries (malformed timestamp or non-numeric y, depending on its shape). A row further down whose y column is missing, such as a date without its time or a line cut off mid-write, stops the run with its line number.
 
 ### Unix Filter Usage
 

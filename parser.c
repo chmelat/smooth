@@ -170,9 +170,12 @@ int parse_input(FILE *fp,
                         ? y_column - 1
                         : y_column - 1 + (ts_token_count - 1);
       if (y_token_idx >= ntok) {
+        /* Before the first data row, an unparsable timestamp is a header
+         * such as "date value" (audit A6): skip it. Further down it is a
+         * damaged row (date without time, line cut off): stay fatal. */
         double epoch;
-        if (parse_timestamp(timestamp_str, &epoch) != 0) {
-          skipped_malformed_ts++;  /* header such as "date value" (audit A6) */
+        if (n == 0 && parse_timestamp(timestamp_str, &epoch) != 0) {
+          skipped_malformed_ts++;
           continue;
         }
         fprintf(stderr, "ERROR: Line %d has insufficient columns for y column %d\n",

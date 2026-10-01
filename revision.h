@@ -3,7 +3,13 @@
  *
  * Version History
  * ---------------
- * v5.11.63 (current): A -T header without a capital T ("date value",
+ * v5.11.64 (current): The v5.11.63 skip also swallowed damaged data rows
+ *           that lack y ("2026-01-02 3", a line cut off mid-write): they
+ *           vanished into the malformed-timestamp count with exit 0 instead
+ *           of failing with their line. The skip now applies only before
+ *           the first data row, where a header lives; below it such a row
+ *           is fatal again. Code review of audit A6.
+ * v5.11.63: A -T header without a capital T ("date value",
  *           "x y") was read as a two-token timestamp, which pushed y past
  *           the end of the line: fatal "insufficient columns". A row whose
  *           y column is missing and whose timestamp does not parse is now
@@ -769,5 +775,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.63"
+#define VERSION "5.11.64"
 #define REVDATE "2026-10-01"
