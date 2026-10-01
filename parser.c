@@ -30,12 +30,11 @@ int parse_input(FILE *fp,
   double *y = NULL;
   int *line_no = NULL;   /* input-file line of each accepted row, for messages */
   char **timestamp_strings = NULL;
-  TimestampContext *ts_ctx = NULL;
 
   result->x = NULL;
   result->y = NULL;
   result->n = 0;
-  result->ts_ctx = NULL;
+  result->timestamps = NULL;
 
   while (fgets(line, sizeof(line), fp) != NULL) {
     line_number++;
@@ -96,6 +95,7 @@ int parse_input(FILE *fp,
 
     double x_value, y_value;
     char timestamp_str[100];
+    const char *ts = NULL;  /* -T: the row's timestamp text */
 
     if (timestamp_mode) {
       /* Timestamp mode with logical-column model: timestamp lives at logical
@@ -135,13 +135,14 @@ int parse_input(FILE *fp,
       int ts_tok_start = x_column - 1;
       int ts_token_count = 0;
       if (ts_tok_start < ntok) {
-        snprintf(timestamp_str, sizeof(timestamp_str), "%s", tokens[ts_tok_start]);
-        if (parse_timestamp(timestamp_str, &x_value) == 0) {
+        ts = tokens[ts_tok_start];
+        if (parse_timestamp(ts, &x_value) == 0) {
           ts_token_count = 1;
         } else if (ts_tok_start + 1 < ntok) {
           snprintf(timestamp_str, sizeof(timestamp_str), "%s %s",
                    tokens[ts_tok_start], tokens[ts_tok_start + 1]);
-          if (parse_timestamp(timestamp_str, &x_value) == 0)
+          ts = timestamp_str;
+          if (parse_timestamp(ts, &x_value) == 0)
             ts_token_count = 2;
         }
       }
@@ -251,7 +252,7 @@ int parse_input(FILE *fp,
         goto fail;
       }
     }
-    if (timestamp_mode && !(timestamp_strings[n] = strdup(timestamp_str))) {
+    if (timestamp_mode && !(timestamp_strings[n] = strdup(ts))) {
       fprintf(stderr, "ERROR: No memory for timestamp string\n");
       goto fail;
     }
@@ -283,17 +284,7 @@ int parse_input(FILE *fp,
       goto fail;
     }
 
-    /* x becomes seconds since the first timestamp; the strings move into
-     * the context, which keeps them for output. */
-    ts_ctx = malloc(sizeof(*ts_ctx));
-    if (!ts_ctx) {
-      fprintf(stderr, "ERROR: No memory for timestamp context\n");
-      goto fail;
-    }
-    ts_ctx->original_timestamps = timestamp_strings;
-    ts_ctx->n = n;
-    timestamp_strings = NULL;
-    double t0 = x[0];
+    double t0 = x[0];  /* x becomes seconds since the first timestamp */
     for (int i = 0; i < n; i++) x[i] -= t0;
   }
 
@@ -312,7 +303,7 @@ int parse_input(FILE *fp,
   result->x = x;
   result->y = y;
   result->n = n;
-  result->ts_ctx = ts_ctx;
+  result->timestamps = timestamp_strings;
   return 0;
 
 fail:
@@ -323,6 +314,5 @@ fail:
   free(x);
   free(y);
   free(line_no);
-  if (ts_ctx) free_timestamp_context(ts_ctx);
   return 1;
 }

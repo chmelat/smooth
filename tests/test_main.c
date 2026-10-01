@@ -210,7 +210,6 @@ void test_parse_timestamp_invalid_date(void);
 void test_parse_timestamp_nonexistent_date(void);
 void test_parse_timestamp_null_inputs(void);
 void test_parse_timestamp_malformed(void);
-void test_free_timestamp_context_null(void);
 void test_parse_timestamp_dst_invariant(void);
 void test_parse_timestamp_subsecond_differences(void);
 
@@ -462,9 +461,6 @@ int main(void) {
 
     printf("\n--- Timestamp difference tests ---\n");
     RUN_TEST(test_parse_timestamp_subsecond_differences);
-
-    printf("\n--- Edge cases and robustness tests ---\n");
-    RUN_TEST(test_free_timestamp_context_null);
 
     printf("\n");
     printf("========================================\n");

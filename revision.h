@@ -3,7 +3,13 @@
  *
  * Version History
  * ---------------
- * v5.11.69 (current): -T: the timestamp is one token if that parses, else
+ * v5.11.70 (current): TimestampContext is gone: after v5.11.69 it held only
+ *           the strings and an n equal to the row count. ParseResult
+ *           carries char **timestamps; print_result() takes it and needs no
+ *           timestamp_mode flag; free_timestamp_context() is a two-line
+ *           loop in smooth.c. The parser parses a one-token timestamp in
+ *           place. Output unchanged. Ponytail review.
+ * v5.11.69: -T: the timestamp is one token if that parses, else
  *           two -- no more guessing by a capital 'T'. The parser keeps the
  *           epoch it already computed and makes x relative itself, so
  *           convert_timestamps_to_relative() (whose skip/compaction path
@@ -810,5 +816,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.69"
+#define VERSION "5.11.70"
 #define REVDATE "2026-10-01"

@@ -22,7 +22,6 @@
 #include "savgol.h"
 #include "butterworth.h"
 #include "grid_analysis.h"
-#include "timestamp.h"
 #include "parser.h"
 
 #define N 5
@@ -42,10 +41,10 @@
 /* Local declare functions */
 static void help(void);
 static void print_result(const double *x,
-                         const TimestampContext *ts_ctx,
+                         char *const *timestamps,
                          const double *y_smooth,
                          const double *y_deriv,
-                         int n, int show_derivative, int timestamp_mode);
+                         int n, int show_derivative);
 
 /* CLI numeric argument parsing.
  *
@@ -109,7 +108,7 @@ int main(int argc, char **argv)
   int x_column = 1;  /* Default: first column for x-data (1-indexed) */
   int y_column = 2;  /* Default: second column (1=first, 2=second, etc.) */
   int timestamp_mode = 0;  /* Flag for timestamp input mode */
-  TimestampContext *ts_ctx = NULL;  /* Timestamp conversion context */
+  char **timestamps = NULL;  /* -T: original timestamp strings, for output */
   GridAnalysis *grid_info = NULL;
   int exit_status = EXIT_FAILURE;
 
@@ -262,7 +261,7 @@ int main(int argc, char **argv)
     x = pr.x;
     y = pr.y;
     n = pr.n;
-    ts_ctx = pr.ts_ctx;
+    timestamps = pr.timestamps;
   }
 
   if (n < sp && method != METHOD_TIKHONOV) {
@@ -322,8 +321,8 @@ int main(int argc, char **argv)
                  result->regularization_term / result->total_functional);
         }
 
-        print_result(x, ts_ctx, result->y_smooth, result->y_deriv, n,
-                     show_derivative, timestamp_mode);
+        print_result(x, timestamps, result->y_smooth, result->y_deriv, n,
+                     show_derivative);
 
         /* Clean up */
         free_tikhonov_result(result);
@@ -343,8 +342,8 @@ int main(int argc, char **argv)
         
         printf("# Data smooth - Savitzky-Golay filter, poly deg %d from %d points of moving window\n", dp, sp);
 
-        print_result(x, ts_ctx, result->y_smooth, result->y_deriv, n,
-                     show_derivative, timestamp_mode);
+        print_result(x, timestamps, result->y_smooth, result->y_deriv, n,
+                     show_derivative);
 
         free_savgol_result(result);
       }
@@ -371,8 +370,8 @@ int main(int argc, char **argv)
                result->cutoff_freq * result->sample_rate / 2.0);
         printf("# Effective order after filtfilt: %d\n", 2 * result->order);
 
-        print_result(x, ts_ctx, result->y_smooth, result->y_deriv, n,
-                     show_derivative, timestamp_mode);
+        print_result(x, timestamps, result->y_smooth, result->y_deriv, n,
+                     show_derivative);
 
         /* Clean up */
         free_butterworth_result(result);
@@ -393,8 +392,8 @@ int main(int argc, char **argv)
 
         printf("# Data smooth - aprox. pol. %ddg from %d points of moving window (least square)\n", dp, sp);
 
-        print_result(x, ts_ctx, result->y_smooth, result->y_deriv, n,
-                     show_derivative, timestamp_mode);
+        print_result(x, timestamps, result->y_smooth, result->y_deriv, n,
+                     show_derivative);
 
         free_polyfit_result(result);
       }
@@ -406,7 +405,8 @@ int main(int argc, char **argv)
 cleanup:
   free(x);
   free(y);
-  if (ts_ctx) free_timestamp_context(ts_ctx);
+  for (int i = 0; timestamps && i < n; i++) free(timestamps[i]);
+  free(timestamps);
   if (grid_info) free_grid_analysis(grid_info);
   if (fp && fp != stdin) fclose(fp);
 
@@ -414,15 +414,15 @@ cleanup:
 }
 
 /* Print column header and data rows for any smoothing method.
- * In timestamp_mode the x array is ignored and ts_ctx->original_timestamps is used.
- * y_deriv is ignored when show_derivative is 0 (may be NULL). */
+ * With timestamps (-T) the x array is ignored and the original strings are
+ * printed. y_deriv is ignored when show_derivative is 0 (may be NULL). */
 static void print_result(const double *x,
-                         const TimestampContext *ts_ctx,
+                         char *const *timestamps,
                          const double *y_smooth,
                          const double *y_deriv,
-                         int n, int show_derivative, int timestamp_mode)
+                         int n, int show_derivative)
 {
-  if (timestamp_mode) {
+  if (timestamps) {
     if (show_derivative) {
       printf("# Derivative units: dy/dt (t in seconds)\n");
       printf("#    timestamp          y          y'\n");
@@ -438,11 +438,11 @@ static void print_result(const double *x,
   }
 
   for (int i = 0; i < n; i++) {
-    if (timestamp_mode) {
+    if (timestamps) {
       if (show_derivative) {
-        printf("%s %12.15lG %12.15lG\n", ts_ctx->original_timestamps[i], y_smooth[i], y_deriv[i]);
+        printf("%s %12.15lG %12.15lG\n", timestamps[i], y_smooth[i], y_deriv[i]);
       } else {
-        printf("%s %12.15lG\n", ts_ctx->original_timestamps[i], y_smooth[i]);
+        printf("%s %12.15lG\n", timestamps[i], y_smooth[i]);
       }
     } else {
       if (show_derivative) {

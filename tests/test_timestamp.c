@@ -112,13 +112,6 @@ void test_parse_timestamp_malformed(void) {
     TEST_ASSERT_EQUAL(-1, parse_timestamp("14:06:06", &epoch));    /* Missing date */
 }
 
-/* Test: free_timestamp_context with NULL */
-void test_free_timestamp_context_null(void) {
-    /* Should not crash */
-    free_timestamp_context(NULL);
-    TEST_ASSERT_TRUE(1);  /* If we get here, test passed */
-}
-
 /* Test: DST transition does not corrupt relative timestamps.
  * 2025-03-30 is CET→CEST spring-forward in Europe/Prague.
  * 01:59 CET + 62 min = 03:01 CEST.  With timegm (UTC) the

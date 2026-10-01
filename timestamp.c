@@ -3,7 +3,6 @@
 #define _DEFAULT_SOURCE  /* for timegm() */
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <time.h>
 #include <math.h>
 #include "timestamp.h"
@@ -95,21 +94,4 @@ int parse_timestamp(const char *str, double *epoch_seconds)
     *epoch_seconds = (double)epoch + subseconds;
 
     return 0;
-}
-
-/* Free timestamp context */
-void free_timestamp_context(TimestampContext *ctx)
-{
-    if (!ctx) {
-        return;
-    }
-
-    if (ctx->original_timestamps) {
-        for (int i = 0; i < ctx->n; i++) {
-            free(ctx->original_timestamps[i]);
-        }
-        free(ctx->original_timestamps);
-    }
-
-    free(ctx);
 }

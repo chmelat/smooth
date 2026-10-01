@@ -2,27 +2,26 @@
  *
  * Reads a whitespace-separated table of numeric values (normal mode) or
  * timestamp+value pairs (timestamp mode) from an open stream, and produces
- * parallel x[]/y[] arrays plus, in timestamp mode, a TimestampContext
- * holding the original timestamp strings and the relative-time conversion.
+ * parallel x[]/y[] arrays plus, in timestamp mode, the original timestamp
+ * strings (x is then seconds since the first timestamp).
  */
 
 #ifndef PARSER_H
 #define PARSER_H
 
 #include <stdio.h>
-#include "timestamp.h"
 
 typedef struct {
   double *x;                 /* allocated array of length n */
   double *y;                 /* allocated array of length n */
   int n;                     /* number of valid data points */
-  TimestampContext *ts_ctx;  /* NULL unless timestamp_mode */
+  char **timestamps;         /* timestamp_mode: n original strings; else NULL */
 } ParseResult;
 
 /* Parse a smooth-format data table from `fp`. The caller owns `fp` and
  * is responsible for closing it. On success the function returns 0 and
  * populates `result`; ownership of `result->x`, `result->y`, and
- * `result->ts_ctx` transfers to the caller. On failure it returns a
+ * `result->timestamps` (each string and the array) transfers to the caller. On failure it returns a
  * non-zero status, prints `ERROR:` to stderr, and frees any partial
  * allocations (the fields of `result` are NULL/0 on return).
  *

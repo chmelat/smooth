@@ -592,33 +592,20 @@ void test_parser_line_filling_buffer_is_not_truncated(void) {
     remove(path);
 }
 
-/* A -T header without a capital T ("date value") was taken as a two-token
- * timestamp, which pushed y past the end of the line: fatal "insufficient
- * columns" instead of a skip (audit A6). Both timestamp formats, and "x y". */
+/* A -T header line ("date value", "x y") is skipped, not fatal (audit A6).
+ * Both timestamp formats. */
 void test_parser_ts_header_line_is_skipped(void) {
     const char *path = fixture_path("test_parser_ts_header.dat");
-    const char *fixtures[] = {
-        "date value\n"
-        "2026-01-01T00:00:00 1\n"
-        "2026-01-01T00:00:01 2\n"
-        "2026-01-01T00:00:02 3\n"
-        "2026-01-01T00:00:03 4\n"
-        "2026-01-01T00:00:04 5\n",
-        "date value\n"
-        "2026-01-01 00:00:00 1\n"
-        "2026-01-01 00:00:01 2\n"
-        "2026-01-01 00:00:02 3\n"
-        "2026-01-01 00:00:03 4\n"
-        "2026-01-01 00:00:04 5\n",
-        "x y\n"
-        "2026-01-01T00:00:00 1\n"
-        "2026-01-01T00:00:01 2\n"
-        "2026-01-01T00:00:02 3\n"
-        "2026-01-01T00:00:03 4\n"
-        "2026-01-01T00:00:04 5\n"
-    };
+    const char *hdr[] = { "date value", "date value", "x y" };
+    const char sep[] = { 'T', ' ', 'T' };
+    char buf[256];
     for (int k = 0; k < 3; k++) {
-        write_fixture(path, fixtures[k]);
+        snprintf(buf, sizeof(buf), "%s\n"
+                 "2026-01-01%c00:00:00 1\n" "2026-01-01%c00:00:01 2\n"
+                 "2026-01-01%c00:00:02 3\n" "2026-01-01%c00:00:03 4\n"
+                 "2026-01-01%c00:00:04 5\n",
+                 hdr[k], sep[k], sep[k], sep[k], sep[k], sep[k]);
+        write_fixture(path, buf);
         SmoothRunTs r = run_smooth_ts("-T -m0 -n3 -p1", path);
         TEST_ASSERT_EQUAL_INT(5, r.data_rows);
         TEST_ASSERT_EQUAL_INT(1, r.skip_malformed);
