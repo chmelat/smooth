@@ -16,7 +16,7 @@ Hlavní nálezy: **tichá ztráta přesnosti na výstupu** (A1) a **numericky
 neškálované polynomiální fity** v polyfit i savgol (A2, A3). Žádnou z chyb
 A1–A6 současná testovací sada nezachytí.
 
-**Status:** A1 FIXED v5.11.57; A2, A3 FIXED v5.11.58; B1, C1, C2 FIXED v5.11.59; A5 FIXED v5.11.61; A6 FIXED v5.11.63/64; B2 FIXED v5.11.65; ostatní OPEN.
+**Status:** A1 FIXED v5.11.57; A2, A3 FIXED v5.11.58; B1, C1, C2 FIXED v5.11.59; A5 FIXED v5.11.61; A6 FIXED v5.11.63/64/66; B2 FIXED v5.11.65; ostatní OPEN.
 
 ---
 
@@ -29,7 +29,7 @@ A1–A6 současná testovací sada nezachytí.
 | A3 | vysoká    | `savgol.c:120-134`                      | ~~okrajová (asymetrická) okna při velkém okně / stupni → chybné koeficienty~~ **FIXED v5.11.58** |
 | A4 | střední   | `timestamp.c:28-42`                     | offset časového pásma i koncové smetí tiše ignorovány — **NEBUDE ŘEŠENO** (okrajová záležitost) |
 | A5 | střední   | `timestamp.c:149`, `grid_analysis.c:93` | ~~chybová hlášení uvádějí index, ne řádek souboru~~ **FIXED v5.11.61** |
-| A6 | střední   | `parser.c:148-169`                      | ~~hlavička v `-T` módu je fatální chyba~~ **FIXED v5.11.63, v5.11.64** |
+| A6 | střední   | `parser.c:148-169`                      | ~~hlavička v `-T` módu je fatální chyba~~ **FIXED v5.11.63, v5.11.64, v5.11.66** |
 | B1 | střední   | `tikhonov.c:374-376`                    | ~~horní mez GCV `1e6·h³` zastaví každý signál s periodou ≳ 500 vzorků~~ **FIXED v5.11.59** |
 | B2 | nízká     | `butterworth.c:471`                     | ~~auto-cutoff má pevné minimum 0.02, bez varování~~ **FIXED v5.11.65** (varování) |
 | B3 | —         | `tikhonov.c:316-329`                    | aproximace stopy na nerovnoměrné mřížce — **vyvráceno** |
@@ -217,7 +217,7 @@ dostala parametr `line_inout`, parser kontroluje monotonii sám a hlásí
 pro volání mimo CLI. Testy: `test_parser_ts_invalid_timestamp_reports_file_line`,
 `test_parser_nonmonotonic_x_reports_file_line`.
 
-### A6. ~~Hlavička v `-T` módu je fatální~~ — `parser.c:148-169` — **FIXED v5.11.63, v5.11.64**
+### A6. ~~Hlavička v `-T` módu je fatální~~ — `parser.c:148-169` — **FIXED v5.11.63, v5.11.64, v5.11.66**
 
 Formát razítka se určuje podle `strchr(token, 'T')`. Token bez `T` se
 považuje za datum ve formátu s mezerou a spotřebuje dva tokeny; kontrola
@@ -256,6 +256,17 @@ rozhodování formátu podle `strchr(token, 'T')` (citlivé na velikost písmen;
 `Timestamp Value` se hlásí jako nečíselné y, ne jako vadné razítko) —
 zůstává; hlubší oprava by zkoušela `parse_timestamp()` na jedno- i
 dvoutokenovou variantu.
+
+**Korekce (v5.11.66, druhé code review):** `n == 0` znamená „zatím žádný
+přijatý řádek“, ne „před prvním datovým řádkem“: uříznutý *první* datový
+řádek zmizel dál tiše s exit 0 a `bad-ts 2` (vadný token bez `T`) končil
+zavádějícím „insufficient columns for y“. Nové pravidlo bez heuristiky:
+řádek bez y, jehož razítko neprojde `parse_timestamp()`, se přeskočí vždy
+a souhrn `# Skipped N ... malformed timestamp in column K (first at line L)`
+uvádí řádek prvního z nich; platné razítko bez y zůstává fatální. Kořen
+(`strchr(token, 'T')`) se vědomě neřeší: hlavička `Timestamp Value` se
+přeskočí jako nečíselné y, ne jako vadné razítko — přeskočí se ale vždy.
+Test `test_parser_ts_row_without_y` (vadný řádek první i uprostřed).
 
 ---
 

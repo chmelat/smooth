@@ -619,26 +619,37 @@ void test_parser_ts_header_line_is_skipped(void) {
     remove(path);
 }
 
-/* The A6 skip is for a header only, i.e. before the first data row. A row
- * further down that lacks y -- a date without its time ("2026-01-02 3"), a
- * line cut off mid-write, or a valid timestamp alone -- stays fatal and names
- * its line. */
-void test_parser_ts_row_without_y_after_data_is_fatal(void) {
+/* A row without y whose timestamp does not parse -- a date without its time
+ * ("2026-01-02 3"), a line cut off mid-write, a bad token without a capital
+ * T ("bad-ts 2") -- is skipped and the summary names its line, also when it
+ * is the first data row. A valid timestamp without y stays fatal. */
+void test_parser_ts_row_without_y(void) {
     const char *path = "/tmp/test_parser_ts_no_y.dat";
-    const char *bad[] = { "2026-01-02 3", "2026-01-01 00:0", "2026-01-01T00:00:02" };
+    const char *bad[] = { "2026-01-02 3", "2026-01-01 00:0", "bad-ts 2" };
     char buf[256];
     for (int k = 0; k < 3; k++) {
-        snprintf(buf, sizeof(buf),
-                 "2026-01-01 00:00:00 1\n"
-                 "2026-01-01 00:00:01 2\n"
-                 "%s\n"
-                 "2026-01-01 00:00:03 4\n"
-                 "2026-01-01 00:00:04 5\n", bad[k]);
-        write_fixture(path, buf);
-        TEST_ASSERT_TRUE_MESSAGE(output_contains("-T -m0 -n3 -p1", path,
-                                                 "Line 3 has insufficient columns"),
-                                 bad[k]);
+        for (int first = 0; first < 2; first++) {
+            snprintf(buf, sizeof(buf),
+                     "%s\n"
+                     "2026-01-01T00:00:01 2\n"
+                     "%s\n"
+                     "2026-01-01T00:00:03 4\n"
+                     "2026-01-01T00:00:04 5\n",
+                     first ? bad[k] : "2026-01-01T00:00:00 1",
+                     first ? "2026-01-01T00:00:02 3" : bad[k]);
+            write_fixture(path, buf);
+            const char *needle = first ? "malformed timestamp in column 1 (first at line 1)"
+                                       : "malformed timestamp in column 1 (first at line 3)";
+            TEST_ASSERT_TRUE_MESSAGE(output_contains("-T -m0 -n3 -p1", path, needle), bad[k]);
+        }
     }
+    write_fixture(path,
+        "2026-01-01T00:00:00 1\n"
+        "2026-01-01T00:00:01 2\n"
+        "2026-01-01T00:00:02\n"
+        "2026-01-01T00:00:03 4\n");
+    TEST_ASSERT_TRUE(output_contains("-T -m0 -n3 -p1", path,
+                                     "Line 3 has insufficient columns"));
     remove(path);
 }
 

@@ -3,7 +3,14 @@
  *
  * Version History
  * ---------------
- * v5.11.65 (current): Butterworth auto cutoff warns when its smallest
+ * v5.11.66 (current): -T rows without y: the v5.11.64 rule (skip only
+ *           before the first accepted row) still dropped a damaged first
+ *           row silently and called "bad-ts 2" a missing y column. Now any
+ *           row without y whose timestamp does not parse (header, date
+ *           without time, cut-off line) is skipped, and the malformed-
+ *           timestamp summary names the first line. A valid timestamp
+ *           without y stays fatal. Code review of audit A6.
+ * v5.11.65: Butterworth auto cutoff warns when its smallest
  *           candidate, fc = 0.02, already meets the discrepancy principle:
  *           the optimum may be lower (n = 20000, period 2000 samples:
  *           RMSE 0.030 at 0.02, 0.023 at 0.005). The scan is not extended,
@@ -781,5 +788,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.65"
+#define VERSION "5.11.66"
 #define REVDATE "2026-10-01"

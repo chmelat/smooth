@@ -23,6 +23,7 @@ int parse_input(FILE *fp,
   int line_number = 0;
   int skipped_nonnumeric = 0;
   int skipped_malformed_ts = 0;
+  int first_malformed_ts_line = 0;
   int n = 0;
   int abuf = 0;
   double *x = NULL;
@@ -159,8 +160,9 @@ int parse_input(FILE *fp,
         snprintf(timestamp_str, sizeof(timestamp_str), "%s %s",
                  tokens[ts_tok_start], tokens[ts_tok_start + 1]);
       } else {
-        skipped_malformed_ts++;
-        continue;  /* malformed: space-format expects two tokens, only one present */
+        /* malformed: space-format expects two tokens, only one present */
+        if (skipped_malformed_ts++ == 0) first_malformed_ts_line = line_number;
+        continue;
       }
 
       /* Map logical y_column to whitespace-token index. Logical columns before
@@ -170,12 +172,13 @@ int parse_input(FILE *fp,
                         ? y_column - 1
                         : y_column - 1 + (ts_token_count - 1);
       if (y_token_idx >= ntok) {
-        /* Before the first data row, an unparsable timestamp is a header
-         * such as "date value" (audit A6): skip it. Further down it is a
-         * damaged row (date without time, line cut off): stay fatal. */
+        /* No y and no valid timestamp: a header such as "date value"
+         * (audit A6) or a damaged row (date without time, line cut off).
+         * Skip it; the summary names the line. A valid timestamp without
+         * y is a broken data row: fatal. */
         double epoch;
-        if (n == 0 && parse_timestamp(timestamp_str, &epoch) != 0) {
-          skipped_malformed_ts++;
+        if (parse_timestamp(timestamp_str, &epoch) != 0) {
+          if (skipped_malformed_ts++ == 0) first_malformed_ts_line = line_number;
           continue;
         }
         fprintf(stderr, "ERROR: Line %d has insufficient columns for y column %d\n",
@@ -329,8 +332,9 @@ int parse_input(FILE *fp,
   }
 
   if (skipped_malformed_ts > 0) {
-    printf("# Skipped %d data row(s) with malformed timestamp in column %d\n",
-           skipped_malformed_ts, x_column);
+    printf("# Skipped %d data row(s) with malformed timestamp in column %d "
+           "(first at line %d)\n",
+           skipped_malformed_ts, x_column, first_malformed_ts_line);
   }
 
   if (timestamp_mode) {
