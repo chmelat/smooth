@@ -510,6 +510,15 @@ static double estimate_cutoff_frequency(const double *y, int n)
     if (selected_res >= 0.0) {
         printf("# Auto cutoff: selected fc = %.4f (residual std = %.4e)\n",
                selected, selected_res);
+        /* Audit B2: the scan cannot go lower -- below fc ~ 0.017 the poles
+         * pass POLE_RADIUS_WARN -- so the user has to. */
+        if (selected == fc_candidates[0]) {
+            printf("# WARNING: Auto cutoff: the smallest candidate fc = %.4f "
+                   "already satisfies the discrepancy principle; the optimum "
+                   "may be lower. Set -f manually (below ~0.017 the "
+                   "pole-radius warning applies) or use Tikhonov (-m 2).\n",
+                   selected);
+        }
     } else {
         printf("# WARNING: Auto cutoff: no candidate satisfied the discrepancy "
                "principle; falling back to the largest (weakest) fc = %.4f. "

@@ -3,7 +3,13 @@
  *
  * Version History
  * ---------------
- * v5.11.64 (current): The v5.11.63 skip also swallowed damaged data rows
+ * v5.11.65 (current): Butterworth auto cutoff warns when its smallest
+ *           candidate, fc = 0.02, already meets the discrepancy principle:
+ *           the optimum may be lower (n = 20000, period 2000 samples:
+ *           RMSE 0.030 at 0.02, 0.023 at 0.005). The scan is not extended,
+ *           since below fc ~ 0.017 the pole-radius warning fires. The
+ *           selected fc is unchanged. Audit B2 (doc/code-audit-v5.11.56.md).
+ * v5.11.64: The v5.11.63 skip also swallowed damaged data rows
  *           that lack y ("2026-01-02 3", a line cut off mid-write): they
  *           vanished into the malformed-timestamp count with exit 0 instead
  *           of failing with their line. The skip now applies only before
@@ -775,5 +781,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.64"
+#define VERSION "5.11.65"
 #define REVDATE "2026-10-01"
