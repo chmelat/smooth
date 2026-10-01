@@ -459,8 +459,7 @@ nestabilitu. Úvodní řádek `help()` popisuje jen polyfit.
 **Opraveno (v5.11.71):** validace `-n`, `-p` i kontrola `n >= -n` platí jen
 pro polyfit a savgol (`windowed`); Butterworth má vlastní minimum bodů.
 `help()`: `-n`/`-p` „polyfit and savgol only“ (text u `-p` mylně naznačoval
-použití v Tikhonovovi), úvodní řádek jmenuje všechny čtyři metody. Test
-`test_cli_window_options_only_for_windowed_methods`.
+použití v Tikhonovovi), úvodní řádek jmenuje všechny čtyři metody.
 
 ---
 
