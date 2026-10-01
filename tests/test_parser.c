@@ -652,32 +652,3 @@ void test_parser_ts_row_without_y(void) {
                                      "Line 3 has insufficient columns"));
     remove(path);
 }
-
-/* Audit B2: when even the smallest auto-cutoff candidate (0.02) meets the
- * discrepancy principle, the optimum may lie lower; say so. A slow sine stops
- * at 0.02 and warns, a fast one picks a larger fc and does not. Noise is a
- * fixed LCG so the fixture is deterministic. */
-void test_butterworth_auto_cutoff_lower_edge_warns(void) {
-    const char *path = "/tmp/test_butterworth_auto_edge.dat";
-    static char buf[2000 * 32];
-    const double periods[] = { 1000.0, 50.0 };
-    for (int k = 0; k < 2; k++) {
-        unsigned int s = 12345u;
-        size_t len = 0;
-        for (int i = 0; i < 2000; i++) {
-            s = s * 1103515245u + 12345u;
-            double noise = 0.3 * ((double)(s >> 8) / 16777216.0 - 0.5);
-            len += (size_t)snprintf(buf + len, sizeof(buf) - len, "%d %.6f\n",
-                                    i, sin(2.0 * M_PI * i / periods[k]) + noise);
-        }
-        write_fixture(path, buf);
-        int warned = output_contains("-m3", path, "optimum may be lower");
-        if (k == 0) {
-            TEST_ASSERT_TRUE(output_contains("-m3", path, "selected fc = 0.0200"));
-            TEST_ASSERT_TRUE(warned);
-        } else {
-            TEST_ASSERT_FALSE(warned);
-        }
-    }
-    remove(path);
-}

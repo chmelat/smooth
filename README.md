@@ -1,6 +1,6 @@
 # smooth - Experimental Data Smoothing
 
-**Version 5.11.66** | October 1, 2026
+**Version 5.11.67** | October 1, 2026
 
 A command-line tool for smoothing noisy experimental data and computing derivatives. Implements four methods: polynomial fitting, Savitzky-Golay filtering, Tikhonov regularization, and Butterworth low-pass filtering. Reads two-column ASCII data, outputs smoothed results. Works as a Unix filter.
 
@@ -297,7 +297,7 @@ Good balance: both terms contribute 30-70% of total. Data term > 95% means under
 
 **Quick start:** The default is `-f auto` (described below). To override, pass a numeric value: start with fc = 0.15. Too noisy after smoothing? Decrease fc. Lost important details? Increase fc.
 
-**Automatic selection (default):** Without `-f` (or with explicit `-f auto`) the program selects fc via **Morozov's discrepancy principle**. It estimates noise $\hat{\sigma}$ from the MAD of second differences, then scans candidate cutoffs $\{0.02, 0.05, 0.1, 0.2, 0.35, 0.5\}$ in increasing order and picks the smallest fc whose residual std does not exceed a tolerance multiple of $\hat{\sigma}$ (i.e. the most aggressive smoothing that still leaves only noise-sized residuals). If no candidate satisfies the criterion (broadband signal or pathological data), it falls back to the largest candidate, fc = 0.5, which smooths least, and prints a `# WARNING`. If the smallest candidate, fc = 0.02, already satisfies it, the optimum may lie lower and a `# WARNING` says so; the scan does not go below 0.02 because under fc $\approx$ 0.017 the filter poles pass the pole-radius warning threshold (0.99), so set `-f` manually or use Tikhonov. The selected fc is reported in the output header. For unusual data, manual tuning is still recommended.
+**Automatic selection (default):** Without `-f` (or with explicit `-f auto`) the program selects fc via **Morozov's discrepancy principle**. It estimates noise $\hat{\sigma}$ from the MAD of second differences, then scans candidate cutoffs $\{0.02, 0.05, 0.1, 0.2, 0.35, 0.5\}$ in increasing order and picks the smallest fc whose residual std does not exceed a tolerance multiple of $\hat{\sigma}$ (i.e. the most aggressive smoothing that still leaves only noise-sized residuals). If no candidate satisfies the criterion (broadband signal or pathological data), it falls back to the largest candidate, fc = 0.5, which smooths least, and prints a `# WARNING`. If the smallest candidate, fc = 0.02, already satisfies it, a `# Auto cutoff: ...` note says the optimum may be lower. The scan goes no further down because a lower fc puts the filter poles past the pole-radius warning threshold (0.99); set `-f` manually if needed. The selected fc is reported in the output header. For unusual data, manual tuning is still recommended.
 
 **Physical interpretation:**
 

@@ -584,3 +584,37 @@ void test_butterworth_no_memory_leaks(void) {
     free(grid);
     TEST_ASSERT_TRUE(1);  // Passed if no crashes
 }
+
+/* Audit B2: auto cutoff stops at its smallest candidate, 0.02, for a slow
+ * sine (and then notes that the optimum may be lower), and picks a larger fc
+ * for a fast one. Noise is a fixed LCG so the data are deterministic. */
+void test_butterworth_auto_cutoff_lower_edge(void) {
+    const int n = 2000;
+    const double periods[] = { 1000.0, 50.0 };
+    double *x = malloc(n * sizeof(double));
+    double *y = malloc(n * sizeof(double));
+    TEST_ASSERT_NOT_NULL(x);
+    TEST_ASSERT_NOT_NULL(y);
+    create_uniform_grid(x, n, 0.0, 1.0);
+    GridAnalysis *grid = analyze_grid(x, n);
+
+    for (int k = 0; k < 2; k++) {
+        unsigned int s = 12345u;
+        for (int i = 0; i < n; i++) {
+            s = s * 1103515245u + 12345u;
+            y[i] = sin(2.0 * M_PI * i / periods[k])
+                 + 0.3 * ((double)(s >> 8) / 16777216.0 - 0.5);
+        }
+        ButterworthResult *result = butterworth_filtfilt(x, y, n, 0.0, 1, grid);
+        TEST_ASSERT_NOT_NULL(result);
+        if (k == 0) {
+            TEST_ASSERT_DOUBLE_WITHIN(1e-12, 0.02, result->cutoff_freq);
+        } else {
+            TEST_ASSERT_TRUE(result->cutoff_freq > 0.02);
+        }
+        free_butterworth_result(result);
+    }
+    free(grid);
+    free(x);
+    free(y);
+}

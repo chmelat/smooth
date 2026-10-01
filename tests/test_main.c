@@ -172,6 +172,7 @@ void test_butterworth_large_dataset(void);
 // Testy pro butterworth.c - Memory management
 void test_butterworth_free_null_safe(void);
 void test_butterworth_no_memory_leaks(void);
+void test_butterworth_auto_cutoff_lower_edge(void);
 
 // Testy pro parser (smooth.c via popen)
 void test_parser_iso_t_timestamp_one_column(void);
@@ -198,7 +199,6 @@ void test_parser_ts_line_numbers_follow_dropped_rows(void);
 void test_parser_line_filling_buffer_is_not_truncated(void);
 void test_parser_ts_header_line_is_skipped(void);
 void test_parser_ts_row_without_y(void);
-void test_butterworth_auto_cutoff_lower_edge_warns(void);
 
 // Testy pro timestamp.c
 void test_parse_timestamp_space_separator(void);
@@ -443,6 +443,7 @@ int main(void) {
     printf("\n--- Memory management tests ---\n");
     RUN_TEST(test_butterworth_free_null_safe);
     RUN_TEST(test_butterworth_no_memory_leaks);
+    RUN_TEST(test_butterworth_auto_cutoff_lower_edge);
 
     printf("\n");
     printf("========================================\n");
@@ -506,7 +507,6 @@ int main(void) {
     RUN_TEST(test_parser_line_filling_buffer_is_not_truncated);
     RUN_TEST(test_parser_ts_header_line_is_skipped);
     RUN_TEST(test_parser_ts_row_without_y);
-    RUN_TEST(test_butterworth_auto_cutoff_lower_edge_warns);
 
     /* UNITY_END() ukončí Unity framework a vrátí výsledek
      * Návratová hodnota:

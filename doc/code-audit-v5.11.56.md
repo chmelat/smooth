@@ -16,7 +16,7 @@ Hlavní nálezy: **tichá ztráta přesnosti na výstupu** (A1) a **numericky
 neškálované polynomiální fity** v polyfit i savgol (A2, A3). Žádnou z chyb
 A1–A6 současná testovací sada nezachytí.
 
-**Status:** A1 FIXED v5.11.57; A2, A3 FIXED v5.11.58; B1, C1, C2 FIXED v5.11.59; A5 FIXED v5.11.61; A6 FIXED v5.11.63/64/66; B2 FIXED v5.11.65; ostatní OPEN.
+**Status:** A1 FIXED v5.11.57; A2, A3 FIXED v5.11.58; B1, C1, C2 FIXED v5.11.59; A5 FIXED v5.11.61; A6 FIXED v5.11.63/64/66; B2 FIXED v5.11.65/67; ostatní OPEN.
 
 ---
 
@@ -31,7 +31,7 @@ A1–A6 současná testovací sada nezachytí.
 | A5 | střední   | `timestamp.c:149`, `grid_analysis.c:93` | ~~chybová hlášení uvádějí index, ne řádek souboru~~ **FIXED v5.11.61** |
 | A6 | střední   | `parser.c:148-169`                      | ~~hlavička v `-T` módu je fatální chyba~~ **FIXED v5.11.63, v5.11.64, v5.11.66** |
 | B1 | střední   | `tikhonov.c:374-376`                    | ~~horní mez GCV `1e6·h³` zastaví každý signál s periodou ≳ 500 vzorků~~ **FIXED v5.11.59** |
-| B2 | nízká     | `butterworth.c:471`                     | ~~auto-cutoff má pevné minimum 0.02, bez varování~~ **FIXED v5.11.65** (varování) |
+| B2 | nízká     | `butterworth.c:471`                     | ~~auto-cutoff má pevné minimum 0.02, bez varování~~ **FIXED v5.11.65, v5.11.67** (poznámka) |
 | B3 | —         | `tikhonov.c:316-329`                    | aproximace stopy na nerovnoměrné mřížce — **vyvráceno** |
 | C1 | doc       | README:241-242, 1219; `tikhonov.c:372,434` | ~~nepravdivé „λ škáluje s amplitudou y"~~ **FIXED v5.11.59** |
 | C2 | doc       | `tikhonov.h:75`                         | ~~„13-point" sweep, kód má 21~~ **FIXED v5.11.59** |
@@ -353,7 +353,7 @@ stopa, `solveh_banded` = LAPACK `dpbsv`; reference mpmath 60 číslic):
   `data.txt` 0.065 → 0.016 — GCV tam má plochou kotlinu (1.457e-2 vs
   1.493e-2 v sousedních bodech), rozlišení sweepu, ne regrese.
 
-### B2. ~~Auto-cutoff Butterwortha nikdy nejde pod 0.02~~ — `butterworth.c:471` — **FIXED v5.11.65** (varování)
+### B2. ~~Auto-cutoff Butterwortha nikdy nejde pod 0.02~~ — `butterworth.c:471` — **FIXED v5.11.65, v5.11.67** (poznámka)
 
 Kandidáti `{0.02, 0.05, 0.1, 0.2, 0.35, 0.5}` jsou pevní. Na stejných datech
 jako B1 vybere auto první kandidát 0.02:
@@ -381,6 +381,14 @@ o přesnosti. Mez 0.02 tomu zjevně odpovídá. Rozšíření by vyžadovalo nej
 ověřit skutečnou přesnost kaskády při r → 1 a práh snížit. Test
 `test_butterworth_auto_cutoff_lower_edge_warns` (e2e: pomalý sinus varuje,
 rychlý ne).
+
+**Korekce (v5.11.67, code review):** `# WARNING` se vypisoval i pro čistý
+šum, kde je 0.02 správná volba, a radil fc, které spustí druhé varování
+(o pólech). Teď je to informativní řádek `# Auto cutoff: fc = 0.0200 is the
+smallest candidate; the optimum may be lower (set -f manually)` bez natvrdo
+zapsaného „~0.017“. Test přesunut do `tests/test_butterworth.c` jako unit test
+zvoleného fc (`test_butterworth_auto_cutoff_lower_edge`: pomalý sinus → 0.02,
+rychlý → > 0.02).
 
 ### B3. Aproximace stopy na nerovnoměrné mřížce — vyvráceno
 
@@ -469,5 +477,5 @@ nebo cesta s PID.
 1. ~~A1 — jeden řádek, největší dopad.~~ Hotovo ve v5.11.57.
 2. ~~A2 + A3 společně, se vzájemným testem D1.3.~~ Hotovo ve v5.11.58.
 3. ~~A5~~ hotovo ve v5.11.61; ~~A6~~ hotovo ve v5.11.63, v5.11.64. A4 se řešit nebude.
-4. ~~B1 (s ověřením podmíněnosti)~~ hotovo ve v5.11.59 (spolu s C1, C2); ~~B2~~ hotovo ve v5.11.65 (varování).
+4. ~~B1 (s ověřením podmíněnosti)~~ hotovo ve v5.11.59 (spolu s C1, C2); ~~B2~~ hotovo ve v5.11.65, v5.11.67 (poznámka).
 5. C3, D2.

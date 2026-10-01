@@ -3,7 +3,12 @@
  *
  * Version History
  * ---------------
- * v5.11.66 (current): -T rows without y: the v5.11.64 rule (skip only
+ * v5.11.67 (current): The v5.11.65 auto-cutoff lower-edge message is a
+ *           "# Auto cutoff:" note, not a WARNING (for plain noise fc = 0.02
+ *           is a fine choice), without the hardcoded "~0.017". Its test
+ *           moved to test_butterworth.c as a unit test of the selected fc.
+ *           Code review of audit B2.
+ * v5.11.66: -T rows without y: the v5.11.64 rule (skip only
  *           before the first accepted row) still dropped a damaged first
  *           row silently and called "bad-ts 2" a missing y column. Now any
  *           row without y whose timestamp does not parse (header, date
@@ -788,5 +793,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.66"
+#define VERSION "5.11.67"
 #define REVDATE "2026-10-01"
