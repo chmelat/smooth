@@ -249,7 +249,7 @@ int main(int argc, char **argv)
   }
 
   /* Parse the input table. parse_input() prints `# Skipped ...` to stdout
-   * and any `Warning: ...` for invalid timestamps to stderr; on hard errors
+   * (including rows with invalid timestamps); on hard errors
    * it prints `ERROR: ...` to stderr, frees its partial allocations, and
    * returns non-zero. */
   {

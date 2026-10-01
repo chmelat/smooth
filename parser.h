@@ -32,9 +32,9 @@ typedef struct {
  *
  * Diagnostic output written by the parser:
  *   stdout `# Skipped %d ...`  rows whose selected x/y column was
- *                              non-numeric or NaN/Inf
- *   stderr `Warning: Skipped %d line(s) with invalid timestamps ...`
- *                              timestamp_mode only
+ *                              non-numeric or NaN/Inf, and (timestamp_mode)
+ *                              rows whose timestamp is missing or invalid,
+ *                              with the line of the first one
  */
 int parse_input(FILE *fp,
                 int timestamp_mode,

@@ -142,25 +142,25 @@ int parse_input(FILE *fp,
         }
       }
 
-      /* Validate timestamp position (x_column is 1-indexed logical column) */
+      /* Assemble the timestamp (x_column is its 1-indexed logical column):
+       * one token if it contains 'T', else two (date, time). A row whose
+       * timestamp is missing or does not parse -- a header such as
+       * "date value" (audit A6), a damaged or short row -- is skipped; the
+       * summary names the first such line.
+       * ponytail: convert_timestamps_to_relative() parses it again; keep the
+       * epoch from here if that ever shows up in a profile. */
       int ts_tok_start = x_column - 1;
-      if (ts_tok_start >= ntok) {
-        fprintf(stderr, "ERROR: Line %d has %d token(s), but timestamp column %d was requested\n",
-                line_number, ntok, x_column);
-        goto fail;
-      }
-
-      /* Detect timestamp format and assemble timestamp_str */
-      int ts_token_count;
-      if (strchr(tokens[ts_tok_start], 'T') != NULL) {
+      int ts_token_count = 0;
+      if (ts_tok_start < ntok && strchr(tokens[ts_tok_start], 'T') != NULL) {
         ts_token_count = 1;
         snprintf(timestamp_str, sizeof(timestamp_str), "%s", tokens[ts_tok_start]);
       } else if (ts_tok_start + 1 < ntok) {
         ts_token_count = 2;
         snprintf(timestamp_str, sizeof(timestamp_str), "%s %s",
                  tokens[ts_tok_start], tokens[ts_tok_start + 1]);
-      } else {
-        /* malformed: space-format expects two tokens, only one present */
+      }
+      double epoch;
+      if (ts_token_count == 0 || parse_timestamp(timestamp_str, &epoch) != 0) {
         if (skipped_malformed_ts++ == 0) first_malformed_ts_line = line_number;
         continue;
       }
@@ -171,16 +171,7 @@ int parse_input(FILE *fp,
       int y_token_idx = (y_column < x_column)
                         ? y_column - 1
                         : y_column - 1 + (ts_token_count - 1);
-      if (y_token_idx >= ntok) {
-        /* No y and no valid timestamp: a header such as "date value"
-         * (audit A6) or a damaged row (date without time, line cut off).
-         * Skip it; the summary names the line. A valid timestamp without
-         * y is a broken data row: fatal. */
-        double epoch;
-        if (parse_timestamp(timestamp_str, &epoch) != 0) {
-          if (skipped_malformed_ts++ == 0) first_malformed_ts_line = line_number;
-          continue;
-        }
+      if (y_token_idx >= ntok) {  /* valid timestamp, no y: broken data row */
         fprintf(stderr, "ERROR: Line %d has insufficient columns for y column %d\n",
                 line_number, y_column);
         goto fail;
@@ -343,25 +334,15 @@ int parse_input(FILE *fp,
       goto fail;
     }
 
-    int first_error_line = -1;
+    /* Every timestamp was validated above, so this fails only on memory. */
+    int first_error_line;
     ts_ctx = convert_timestamps_to_relative(timestamp_strings, n, y, line_no, &x, &first_error_line);
     if (ts_ctx == NULL) {
-      fprintf(stderr, "ERROR: No valid timestamps found in input\n");
-      if (first_error_line > 0) {
-        fprintf(stderr, "First invalid timestamp at line %d\n", first_error_line);
-      }
+      fprintf(stderr, "ERROR: Timestamp conversion failed\n");
       goto fail;
     }
 
-    if (ts_ctx->errors_encountered > 0) {
-      fprintf(stderr, "Warning: Skipped %d line(s) with invalid timestamps (first error at line %d)\n",
-              ts_ctx->errors_encountered, first_error_line);
-    }
-
-    int n_parsed = n;
-    n = ts_ctx->n;
-
-    for (int i = 0; i < n_parsed; i++) free(timestamp_strings[i]);
+    for (int i = 0; i < n; i++) free(timestamp_strings[i]);
     free(timestamp_strings);
     timestamp_strings = NULL;
   }

@@ -3,7 +3,16 @@
  *
  * Version History
  * ---------------
- * v5.11.67 (current): The v5.11.65 auto-cutoff lower-edge message is a
+ * v5.11.68 (current): -T validates every timestamp in the parser, in one
+ *           place: a row whose timestamp is missing or does not parse
+ *           (header, damaged or too short row) is skipped and counted in
+ *           one "# Skipped ... malformed timestamp ... (first at line L)"
+ *           summary. This replaces the stderr "Warning: Skipped ... invalid
+ *           timestamps", which named a different first line, and the fatal
+ *           "timestamp column N was requested" for short rows. Test
+ *           fixtures get per-process /tmp names (audit D2). Third code
+ *           review of A6/B2.
+ * v5.11.67: The v5.11.65 auto-cutoff lower-edge message is a
  *           "# Auto cutoff:" note, not a WARNING (for plain noise fc = 0.02
  *           is a fine choice), without the hardcoded "~0.017". Its test
  *           moved to test_butterworth.c as a unit test of the selected fc.
@@ -793,5 +802,5 @@
  * v5.1:     Optional derivative output with `-d` flag.
  * v5.0:     Complete modularization.
  */
-#define VERSION "5.11.67"
+#define VERSION "5.11.68"
 #define REVDATE "2026-10-01"

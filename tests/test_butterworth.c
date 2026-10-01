@@ -614,7 +614,7 @@ void test_butterworth_auto_cutoff_lower_edge(void) {
         }
         free_butterworth_result(result);
     }
-    free(grid);
+    free_grid_analysis(grid);
     free(x);
     free(y);
 }

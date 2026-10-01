@@ -16,7 +16,7 @@ Hlavní nálezy: **tichá ztráta přesnosti na výstupu** (A1) a **numericky
 neškálované polynomiální fity** v polyfit i savgol (A2, A3). Žádnou z chyb
 A1–A6 současná testovací sada nezachytí.
 
-**Status:** A1 FIXED v5.11.57; A2, A3 FIXED v5.11.58; B1, C1, C2 FIXED v5.11.59; A5 FIXED v5.11.61; A6 FIXED v5.11.63/64/66; B2 FIXED v5.11.65/67; ostatní OPEN.
+**Status:** A1 FIXED v5.11.57; A2, A3 FIXED v5.11.58; B1, C1, C2 FIXED v5.11.59; A5 FIXED v5.11.61; A6 FIXED v5.11.63–68 (platí v5.11.68); B2 FIXED v5.11.65/67; D2 FIXED v5.11.68; ostatní OPEN.
 
 ---
 
@@ -29,7 +29,7 @@ A1–A6 současná testovací sada nezachytí.
 | A3 | vysoká    | `savgol.c:120-134`                      | ~~okrajová (asymetrická) okna při velkém okně / stupni → chybné koeficienty~~ **FIXED v5.11.58** |
 | A4 | střední   | `timestamp.c:28-42`                     | offset časového pásma i koncové smetí tiše ignorovány — **NEBUDE ŘEŠENO** (okrajová záležitost) |
 | A5 | střední   | `timestamp.c:149`, `grid_analysis.c:93` | ~~chybová hlášení uvádějí index, ne řádek souboru~~ **FIXED v5.11.61** |
-| A6 | střední   | `parser.c:148-169`                      | ~~hlavička v `-T` módu je fatální chyba~~ **FIXED v5.11.63, v5.11.64, v5.11.66** |
+| A6 | střední   | `parser.c:148-169`                      | ~~hlavička v `-T` módu je fatální chyba~~ **FIXED v5.11.68** (předchozí pokusy v5.11.63/64/66) |
 | B1 | střední   | `tikhonov.c:374-376`                    | ~~horní mez GCV `1e6·h³` zastaví každý signál s periodou ≳ 500 vzorků~~ **FIXED v5.11.59** |
 | B2 | nízká     | `butterworth.c:471`                     | ~~auto-cutoff má pevné minimum 0.02, bez varování~~ **FIXED v5.11.65, v5.11.67** (poznámka) |
 | B3 | —         | `tikhonov.c:316-329`                    | aproximace stopy na nerovnoměrné mřížce — **vyvráceno** |
@@ -37,7 +37,7 @@ A1–A6 současná testovací sada nezachytí.
 | C2 | doc       | `tikhonov.h:75`                         | ~~„13-point" sweep, kód má 21~~ **FIXED v5.11.59** |
 | C3 | nízká     | `smooth.c:225-237`                      | `-n`/`-p` validace i pro metody, které je nepoužívají |
 | D1 | testy     | `tests/`                                | chybějící regresní testy pro A1–A6 |
-| D2 | testy     | `tests/test_parser.c:141 ...`           | pevné cesty v `/tmp` |
+| D2 | testy     | `tests/test_parser.c:141 ...`           | ~~pevné cesty v `/tmp`~~ **FIXED v5.11.68** |
 
 ---
 
@@ -217,7 +217,7 @@ dostala parametr `line_inout`, parser kontroluje monotonii sám a hlásí
 pro volání mimo CLI. Testy: `test_parser_ts_invalid_timestamp_reports_file_line`,
 `test_parser_nonmonotonic_x_reports_file_line`.
 
-### A6. ~~Hlavička v `-T` módu je fatální~~ — `parser.c:148-169` — **FIXED v5.11.63, v5.11.64, v5.11.66**
+### A6. ~~Hlavička v `-T` módu je fatální~~ — `parser.c:148-169` — **FIXED v5.11.68** (předchozí pokusy v5.11.63/64/66)
 
 Formát razítka se určuje podle `strchr(token, 'T')`. Token bez `T` se
 považuje za datum ve formátu s mezerou a spotřebuje dva tokeny; kontrola
@@ -251,7 +251,7 @@ pravidlu „bez `T` = dva tokeny“ vidí jako razítko bez y; ve v5.11.63 proto
 zmizel v počtu „malformed timestamp“ s exit 0. Přeskok teď platí jen před
 prvním přijatým datovým řádkem (`n == 0`), kde je hlavička; níž je takový
 řádek opět fatální s číslem řádku. Test
-`test_parser_ts_row_without_y_after_data_is_fatal`. Kořen —
+`test_parser_ts_row_without_y_after_data_is_fatal` (ve v5.11.66 nahrazen). Kořen —
 rozhodování formátu podle `strchr(token, 'T')` (citlivé na velikost písmen;
 `Timestamp Value` se hlásí jako nečíselné y, ne jako vadné razítko) —
 zůstává; hlubší oprava by zkoušela `parse_timestamp()` na jedno- i
@@ -267,6 +267,19 @@ uvádí řádek prvního z nich; platné razítko bez y zůstává fatální. Ko
 (`strchr(token, 'T')`) se vědomě neřeší: hlavička `Timestamp Value` se
 přeskočí jako nečíselné y, ne jako vadné razítko — přeskočí se ale vždy.
 Test `test_parser_ts_row_without_y` (vadný řádek první i uprostřed).
+
+**Konečný stav (v5.11.68, třetí code review):** v5.11.66 měla dva kanály
+pro vadná razítka (parser na stdout pro řádky bez y, `convert_timestamps_to_
+relative()` na stderr pro řádky s y), každý s jiným „prvním“ řádkem, a krátký
+řádek (méně tokenů než sloupec razítka) byl fatální. Teď parser ověří razítko
+každého řádku hned po sestavení, na jediném místě: chybí-li nebo neprojde-li
+`parse_timestamp()`, řádek se přeskočí a jediný souhrn
+`# Skipped N ... malformed timestamp in column K (first at line L)` uvádí
+řádek prvního z nich (hlášení z A5 je teď toto). Platné razítko bez y je
+fatální. Hlavičky vč. `Timestamp Value` se hlásí jednotně jako vadné
+razítko. Vědomé meze: razítko se parsuje dvakrát (parser + převod;
+`ponytail:` v kódu) a řádek uříznutý v sekundách (`...T00:00:0`) projde
+benevolentním `parse_timestamp()` (A4) a skončí jako platné razítko bez y.
 
 ---
 
@@ -451,13 +464,16 @@ nestabilitu. Úvodní řádek `help()` popisuje jen polyfit.
 4. ~~**A4:**~~ (nebude řešeno) `parse_timestamp("...+02:00")` buď aplikuje offset, nebo vrátí -1;
    `"...00garbage"` vrátí -1.
 5. **A5:** `-T` s komentáři před vadným řádkem hlásí řádek souboru.
-6. ~~**A6:**~~ hlavička `date value` v `-T` módu se přeskočí — `test_parser_ts_header_line_is_skipped` (v5.11.63, v5.11.64).
+6. ~~**A6:**~~ hlavička `date value` v `-T` módu se přeskočí — `test_parser_ts_header_line_is_skipped`, `test_parser_ts_row_without_y` (v5.11.68).
 
-### D2. Pevné cesty v `/tmp` — `tests/test_parser.c:141` a další
+### D2. ~~Pevné cesty v `/tmp`~~ — `tests/test_parser.c:141` a další — **FIXED v5.11.68**
 
 Parser testy zapisují do pevných souborů (`/tmp/test_parser_iso_t.dat`, …).
 Dva souběžné běhy (dva checkouty, CI matrix) si je přepíšou. `mkstemp()`
 nebo cesta s PID.
+
+**Opraveno (v5.11.68):** `fixture_path(name)` v `tests/test_parser.c` vrací
+`/tmp/smooth_test_<pid>_<name>`; všech 24 fixture cest jde přes ni.
 
 ---
 
@@ -476,6 +492,6 @@ nebo cesta s PID.
 
 1. ~~A1 — jeden řádek, největší dopad.~~ Hotovo ve v5.11.57.
 2. ~~A2 + A3 společně, se vzájemným testem D1.3.~~ Hotovo ve v5.11.58.
-3. ~~A5~~ hotovo ve v5.11.61; ~~A6~~ hotovo ve v5.11.63, v5.11.64. A4 se řešit nebude.
+3. ~~A5~~ hotovo ve v5.11.61; ~~A6~~ hotovo ve v5.11.68. A4 se řešit nebude.
 4. ~~B1 (s ověřením podmíněnosti)~~ hotovo ve v5.11.59 (spolu s C1, C2); ~~B2~~ hotovo ve v5.11.65, v5.11.67 (poznámka).
-5. C3, D2.
+5. C3; ~~D2~~ hotovo ve v5.11.68.

@@ -464,7 +464,8 @@ static int run_filtfilt_trial(const double *y, double *out, int n, double fc)
  * 1. Estimate noise sigma from MAD of second differences.
  * 2. For increasing fc candidates, find smallest fc where residual std
  *    does not exceed DISCREPANCY_TOLERANCE * sigma_hat (signal preserved).
- * 3. On failure, return AUTO_CUTOFF_FALLBACK.
+ * 3. If no candidate qualifies, return the largest (weakest) one; if noise
+ *    estimation or allocation fails, return AUTO_CUTOFF_FALLBACK.
  */
 static double estimate_cutoff_frequency(const double *y, int n)
 {
